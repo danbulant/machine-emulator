@@ -18,10 +18,7 @@ src/cartesi-jsonrpc-machine
 src/cartesi-hash-tree-hash
 src/tests/test-machine-c-api
 
-doc/html
-doc/api.md
-doc/html/
-doc/xml/
+doc/doxygen/html
 
 .clangd
 .venv
