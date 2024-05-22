@@ -3,7 +3,8 @@ local cartesi = require"cartesi"
 local util = require"cartesi.util"
 
 -- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
+local config = require(arg[1])
+local machine = cartesi.machine(config)
 
 -- Run machine until it halts or yields
 local max_mcycle = tonumber(arg[2])

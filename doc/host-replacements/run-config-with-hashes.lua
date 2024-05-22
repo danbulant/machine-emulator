@@ -14,7 +14,8 @@ local function hexhash(hash)
 end
 
 -- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
+local config = require(arg[1])
+local machine = cartesi.machine(config)
 
 -- Print the initial hash
 stderr("%u: %s\n", machine:read_mcycle(), hexhash(machine:get_root_hash()))

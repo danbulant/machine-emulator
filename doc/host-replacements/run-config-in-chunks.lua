@@ -2,7 +2,8 @@
 local cartesi = require"cartesi"
 
 -- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
+local config = require(arg[1])
+local machine = cartesi.machine(config)
 
 local CHUNK = 1000000 -- 1 million cycles
 -- Loop until machine halts or yields

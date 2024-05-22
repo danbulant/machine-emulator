@@ -2,7 +2,8 @@
 local cartesi = require"cartesi"
 
 -- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
+local config = require(arg[1])
+local machine = cartesi.machine(config)
 
 -- Run machine until it halts or yields
 while not machine:read_iflags_H() and not machine:read_iflags_Y() do
