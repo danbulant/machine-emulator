@@ -54,8 +54,22 @@ LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
 NUM_JOBS ?= $(shell nproc)
 endif
 
+LUAROCKS_PATH := $(shell luarocks --lua-version 5.4 path --lr-path 2>/dev/null)
+LUAROCKS_CPATH := $(shell luarocks --lua-version 5.4 path --lr-cpath 2>/dev/null)
+export LUA_PATH_5_4 := $(LUA_PATH_5_4);$(LUAROCKS_PATH)
+export LUA_CPATH_5_4 := $(LUA_CPATH_5_4);$(LUAROCKS_CPATH)
+
+export CM_CLI ?= $(abspath ../src/cartesi-machine.lua)
+LUA_CLI ?= $(LUA)
+
 ifeq ($(coverage),yes)
 NUM_JOBS = 1
+export LUA_CLI = $(LUA) -lluacov
+LUACOV_DIR := $(BUILDDIR)/luacov
+LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
+LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
+export LUACOV_STATS
+export LUACOV_CONFIG
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -226,9 +240,21 @@ test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
 test-evmu:
-	$(LUA) lua/test-evmu.lua
+ifeq ($(coverage),yes)
+	mkdir -p $(LUACOV_DIR)
+endif
+	$(LUA_CLI) lua/test-evmu.lua
+
+test-cm-cli: | $(CARTESI_IMAGES)
+ifeq ($(coverage),yes)
+	mkdir -p $(LUACOV_DIR)
+endif
+	$(LUA) lua/test-cm-cli.lua
 
 test-lua: | $(CARTESI_IMAGES)
+ifeq ($(coverage),yes)
+	mkdir -p $(LUACOV_DIR)
+endif
 	./scripts/run-lua-tests.sh '$(LUA)'
 
 test-c-api: | $(CARTESI_IMAGES)
@@ -298,10 +324,12 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 coverage-report: $(COVERAGE_OUTPUT_DIR)
 	$(LUA) ./scripts/run-gcov.lua ../src '$(GCOV)'
 	$(UARCH_PCS_TO_GCOV_CMD)
+	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
+	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi/evmu.lua ../src
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step test-evmu
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step test-evmu test-cm-cli
 
 lint format check-format:
 	@$(MAKE) -C misc $@

@@ -392,7 +392,8 @@ install-tests: | $(LUA_INSTALL_PATH) $(BIN_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL
 	$(INSTALL_DIR) $(TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH) $(TESTS_SCRIPTS_INSTALL_PATH)
 	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g;s|ARG_TESTS_PATH|$(TESTS_DATA_RUNTIME_PATH)/machine|g' tools/template/cartesi-machine-tests.template > $(BIN_INSTALL_PATH)/cartesi-machine-tests
 	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g;s|ARG_TESTS_UARCH_PATH|$(TESTS_DATA_RUNTIME_PATH)/uarch|g' tools/template/uarch-riscv-tests.template > $(BIN_INSTALL_PATH)/uarch-riscv-tests
-	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine-tests $(BIN_INSTALL_PATH)/uarch-riscv-tests
+	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g;s|ARG_CM_CLI|$(LUA_RUNTIME_PATH)/cartesi-machine.lua|g' tools/template/test-cm-cli.template > $(BIN_INSTALL_PATH)/test-cm-cli
+	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine-tests $(BIN_INSTALL_PATH)/uarch-riscv-tests $(BIN_INSTALL_PATH)/test-cm-cli
 
 tests-data-debian-package: install-tests-data
 	mkdir -p $(DESTDIR)/DEBIAN $(TESTS_DATA_DOC_INSTALL_PATH)

@@ -34,8 +34,14 @@ mtime-interrupt.lua
 test-spec.lua
 )
 
+
 cd $SCRIPT_DIR/../lua
 for x in ${TEST_LIST[@]}; do
+    test_path="$SCRIPT_DIR/../lua/$x"
+    if [ ! -f "$test_path" ]; then
+        echo "Skipping $x (not installed)"
+        continue
+    fi
     echo "Running $x"
-    echo -n 'CTSICTSI' | (bash -c "${LUA} $SCRIPT_DIR/../lua/$x local") || exit 1;
+    echo -n 'CTSICTSI' | (bash -c "${LUA} $test_path local") || exit 1
 done

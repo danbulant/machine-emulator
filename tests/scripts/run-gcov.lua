@@ -68,8 +68,8 @@ for f in popen("ls %s/*.gcda 2>/dev/null", src_dir) do
 end
 
 if n == 0 then
-    io.stderr:write("run-gcov: no .gcda files found\n")
-    os.exit(1)
+    io.stderr:write("run-gcov: no .gcda files found, skipping C/C++ coverage merge\n")
+    os.exit(0)
 end
 
 -- Per source file, we track:
