@@ -22,6 +22,7 @@ ENV CARTESI_TESTS_PATH=/usr/share/cartesi-machine/tests/data/machine
 ENV CARTESI_TESTS_UARCH_PATH=/usr/share/cartesi-machine/tests/data/uarch
 ENV CARTESI_CMIO_PATH=/tmp/cartesi-machine/tests/data/cmio
 ENV CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs
+ENV CM_CLI=/usr/share/lua/5.4/cartesi-machine.lua
 
 USER root
 

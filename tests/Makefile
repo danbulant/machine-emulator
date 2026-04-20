@@ -243,13 +243,13 @@ test-evmu:
 ifeq ($(coverage),yes)
 	mkdir -p $(LUACOV_DIR)
 endif
-	$(LUA_CLI) lua/test-evmu.lua
+	$(LUA_CLI) lua/test-spec.lua --filter='cartesi evmu'
 
 test-cm-cli: | $(CARTESI_IMAGES)
 ifeq ($(coverage),yes)
 	mkdir -p $(LUACOV_DIR)
 endif
-	$(LUA) lua/test-cm-cli.lua
+	$(LUA) lua/test-spec.lua --filter='cartesi%-machine CLI'
 
 test-lua: | $(CARTESI_IMAGES)
 ifeq ($(coverage),yes)
@@ -329,7 +329,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step test-evmu test-cm-cli
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step
 
 lint format check-format:
 	@$(MAKE) -C misc $@

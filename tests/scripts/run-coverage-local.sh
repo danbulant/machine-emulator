@@ -64,8 +64,6 @@ if [ "$SKIP_TESTS" = false ]; then
         test-save-and-load \
         test-machine \
         test-lua \
-        test-evmu \
-        test-cm-cli \
         test-jsonrpc \
         test-c-api \
         test-coverage-machine \
