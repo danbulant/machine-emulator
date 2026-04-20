@@ -467,6 +467,35 @@ describe("cartesi-machine CLI", function()
     end)
 
     -- -------------------------------------------------------------------------
+    -- NVRAM end-to-end
+    --
+    -- What: Boot the guest with a labeled --nvram backed by a host file
+    --       (create,shared,user:dapp), write 8 big-endian bytes to it from
+    --       inside the machine via `writebe64 | writemmap <label> 0 8`,
+    --       then `yield manual rx-accepted 0` to break out of the run loop
+    --       cleanly (so the machine destructor flushes the shared mapping),
+    --       read the host file back, and assert the value round-trips.
+    -- How:  run_ok() the CLI with a single command string after `--`; open
+    --       the backing file in-process and unpack big-endian u64.
+    -- -------------------------------------------------------------------------
+    it("nvram end-to-end write and readback", function()
+        local ram_bin = scratch_path(".bin")
+        run_ok({
+            "--nvram=start:0x90000000000000,length:0x1000,label:ramtest,"
+                .. "data_filename:"
+                .. ram_bin
+                .. ",create,shared,user:dapp",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "writebe64 0xcafebabe | writemmap ramtest 0 8 && yield manual rx-accepted 0",
+        })
+        local f <close> = assert(io.open(ram_bin, "rb"))
+        expect.equal(string.unpack(">I8", f:read(8)), 0xcafebabe)
+    end)
+
+    -- -------------------------------------------------------------------------
     -- HTIF yield masks and console-getchar flags
     --
     -- What: --no-htif-yield-manual, --no-htif-yield-automatic, --unreproducible,
@@ -765,13 +794,15 @@ describe("cartesi-machine CLI", function()
         -- --dense-uarch-hashes=N single-argument form
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dump-memory-ranges: writes one <start>--<length>.bin per PMA to cwd.
-        -- Verify each expected file exists, then remove it.
-        run_ok({ "--dump-memory-ranges", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per PMA under <dir>.
+        -- Use the scratch area because the installed tests cwd may be read-only.
+        local dump_dir = scratch_path(".dump")
+        assert(os.execute("mkdir -p " .. shquote(dump_dir)))
+        run_ok({ "--dump-memory-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
         for _, v in ipairs(m:get_address_ranges()) do
-            local filename = string.format("%016x--%016x.bin", v.start, v.length)
+            local filename = dump_dir .. "/" .. string.format("%016x--%016x.bin", v.start, v.length)
             local f = io.open(filename, "r")
             assert(f, "--dump-memory-ranges: expected file not created: " .. filename)
             f:close()

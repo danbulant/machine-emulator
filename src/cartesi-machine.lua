@@ -686,8 +686,9 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
-  --dump-memory-ranges
-    dump all memory ranges to disk when done.
+  --dump-memory-ranges[=<dir>]
+    dump all memory ranges to files under <dir>.
+    If <dir> is omitted, files are written to the current directory.
 
   --assert-rolling-template
     exit with failure in case the generated machine is not compatible with
@@ -1647,10 +1648,17 @@ local options = {
         end,
     },
     {
-        "^%-%-dump%-memory%-ranges$",
-        function(all)
-            if not all then return false end
-            dump_memory_ranges = true
+        "^%-%-dump%-memory%-ranges(%=?)(%g*)$",
+        function(opts, v)
+            if not opts then return false end
+            if opts == "=" then
+                if not v or #v < 1 then return false end
+                dump_memory_ranges = v
+            elseif #v ~= 0 then
+                return false
+            else
+                dump_memory_ranges = true
+            end
             return true
         end,
     },
@@ -2435,9 +2443,10 @@ local function store_machine(machine, config, dir, sharing)
     machine:store(name, sharing)
 end
 
-local function dump_pmas(machine)
+local function dump_pmas(machine, dir)
+    local prefix = type(dir) == "string" and dir .. "/" or ""
     for _, v in ipairs(machine:get_address_ranges()) do
-        local filename = string.format("%016x--%016x.bin", v.start, v.length)
+        local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
         assert(file:write(machine:read_memory(v.start, v.length)))
     end
@@ -2709,7 +2718,7 @@ if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
     util.dump_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if dump_memory_ranges then dump_pmas(machine) end
+if dump_memory_ranges then dump_pmas(machine, dump_memory_ranges) end
 if final_hash then
     assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
