@@ -1,5 +1,7 @@
 name: Build/Test/Release
 on: [push]
+env:
+  DOCKER_BUILD_SUMMARY: false
 jobs:
   check-commits:
     name: Check Commits
