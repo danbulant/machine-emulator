@@ -5,6 +5,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## Added
+- Added `--nvram` command line option and `nvram_configs` machine configuration for UIO-backed memory ranges, exposed to the guest via `generic-uio`
+- Added `label` field to flash drive and nvram configurations, propagated to the guest through DTB properties
+- Added optional directory argument to `--dump-memory-ranges` to support read-only install locations
+- Added decoding of RISC-V Zcb compressed instructions (required by kernels built with GCC 14)
+- Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
+- Added `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, and `CM_MEMORY_RANGE_LABEL_MAX` constants to the public C API
+- Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
+- Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
+
+## Fixed
+- Fixed firmware reserved region in the DTB being too small for OpenSBI built with GCC 14
+- Fixed missing validation of memory range labels and of `replace_memory_range` arguments
+- Fixed boolean merging in `merge_memory_range_opts` so options can be explicitly overridden to `false`
+- Fixed `--no-root-flash-drive` bootargs substitution pattern
+- Fixed `dump_pmas()` still calling the removed `get_memory_ranges()` method
+- Fixed unanchored patterns matching `--quiet` and `--assert-rolling-template`
+- Fixed `help()` internally calling `os.exit()`
+
+## Changed
+- Renamed all C++ headers from `.h` to `.hpp`, and renamed `machine-c-api.{h,cpp}` to `cm.{h,cpp}`
+- Bumped machine configuration archive version from 6 to 7 (for the new `nvram_configs` and `label` fields)
+- Moved the `/run/cartesi/memoryranges/` sysfs setup from the DTB init script into `cartesi-init`
+- Updated guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
+- Bumped test `linux.bin` and `rootfs.ext2` images
 
 ## [0.20.0] - 2026-04-09
 ## Added
