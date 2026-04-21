@@ -39,7 +39,6 @@
 #include "i-uarch-state-access.hpp"
 #include "keccak-256-hasher.hpp"
 #include "machine-hash.hpp"
-#include "machine-reg.hpp"
 #include "machine.hpp"
 #include "meta.hpp"
 #include "shadow-tlb.hpp"
@@ -274,8 +273,8 @@ private:
         m_context.next_access++;
     }
 
-    void check_write_reg_access(machine_reg reg, uint64_t val) const {
-        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
+    void check_write_reg_access(shadow_uarch_state_what what, uint64_t val) const {
+        check_write_word_access(shadow_uarch_state_get_what_address(what), val, shadow_uarch_state_get_what_name(what));
     }
 
     uint64_t check_read_word_access(uint64_t paddr, const char *text) const {
@@ -292,8 +291,9 @@ private:
         return val;
     }
 
-    uint64_t check_read_reg_access(machine_reg reg) const {
-        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
+    uint64_t check_read_reg_access(shadow_uarch_state_what what) const {
+        return check_read_word_access(shadow_uarch_state_get_what_address(what),
+            shadow_uarch_state_get_what_name(what));
     }
 
     auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) const {
@@ -318,11 +318,11 @@ private:
     friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
 
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
-        return check_read_reg_access(machine_reg_enum(what));
+        return check_read_reg_access(what);
     }
 
     void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
-        check_write_reg_access(machine_reg_enum(what), val);
+        check_write_reg_access(what, val);
     }
 
     // -----

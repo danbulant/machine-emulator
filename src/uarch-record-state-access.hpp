@@ -144,8 +144,8 @@ private:
         return val;
     }
 
-    uint64_t log_read_reg_access(machine_reg reg) const {
-        return log_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
+    uint64_t log_read_reg_access(shadow_uarch_state_what what) const {
+        return log_read_word_access(shadow_uarch_state_get_what_address(what), shadow_uarch_state_get_what_name(what));
     }
 
     template <typename WRITE_UPDATE_F>
@@ -174,16 +174,16 @@ private:
         log_access(std::move(a), text);
     }
 
-    void log_write_reg_access(machine_reg reg, uint64_t val) const {
+    void log_write_reg_access(shadow_uarch_state_what what, uint64_t val) const {
         log_write_access(
-            machine_reg_address(reg), log2_size_v<uint64_t>,
-            [this, reg, val]() {
-                m_m.write_reg(reg, val);
-                if (!m_m.update_hash_tree_page(machine_reg_address(reg))) {
+            shadow_uarch_state_get_what_address(what), log2_size_v<uint64_t>,
+            [this, what, val]() {
+                m_m.write_reg(machine_reg_enum(what), val);
+                if (!m_m.update_hash_tree_page(shadow_uarch_state_get_what_address(what))) {
                     throw std::invalid_argument{"error updating hash tree"};
                 };
             },
-            machine_reg_get_name(reg));
+            shadow_uarch_state_get_what_name(what));
     }
 
     // -----
@@ -192,11 +192,11 @@ private:
     friend i_prefer_shadow_uarch_state<uarch_record_state_access>;
 
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
-        return log_read_reg_access(machine_reg_enum(what));
+        return log_read_reg_access(what);
     }
 
     void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
-        log_write_reg_access(machine_reg_enum(what), val);
+        log_write_reg_access(what, val);
     }
 
     // -----

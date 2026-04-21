@@ -209,39 +209,6 @@ static constexpr machine_reg machine_reg_enum(shadow_uarch_state_what reg) {
     return static_cast<machine_reg>(reg);
 }
 
-static constexpr const char *machine_reg_get_name(machine_reg reg) {
-    const auto ureg = static_cast<uint64_t>(reg);
-    if (ureg >= static_cast<uint64_t>(machine_reg::first_) && ureg <= static_cast<uint64_t>(machine_reg::last_)) {
-        return shadow_registers_get_what_name(static_cast<shadow_registers_what>(reg));
-    }
-    if (ureg >= static_cast<uint64_t>(machine_reg::uarch_first_) &&
-        ureg <= static_cast<uint64_t>(machine_reg::uarch_last_)) {
-        return shadow_uarch_state_get_what_name(static_cast<shadow_uarch_state_what>(reg));
-    }
-    switch (reg) {
-        case machine_reg::htif_tohost_dev:
-            return "htif.tohost_dev";
-        case machine_reg::htif_tohost_cmd:
-            return "htif.tohost_cmd";
-        case machine_reg::htif_tohost_reason:
-            return "htif.tohost_reason";
-        case machine_reg::htif_tohost_data:
-            return "htif.tohost_data";
-        case machine_reg::htif_fromhost_dev:
-            return "htif.fromhost_dev";
-        case machine_reg::htif_fromhost_cmd:
-            return "htif.fromhost_cmd";
-        case machine_reg::htif_fromhost_reason:
-            return "htif.fromhost_reason";
-        case machine_reg::htif_fromhost_data:
-            return "htif.fromhost_data";
-        case machine_reg::unknown_:
-            [[fallthrough]];
-        default:
-            return "unknown";
-    }
-}
-
 static_assert(machine_reg_address(machine_reg::uarch_first_) > machine_reg_address(machine_reg::last_));
 
 static_assert(machine_reg_address(machine_reg::x0, 1) == machine_reg_address(machine_reg::x1));
