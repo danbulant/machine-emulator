@@ -663,7 +663,7 @@ public:
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest
     /// \returns Description of what is at that address
-    static const char *get_what_name(uint64_t paddr);
+    static std::string get_address_name(uint64_t paddr);
 
     /// \brief Increments a counter
     /// \param name Counter name.

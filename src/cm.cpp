@@ -1103,6 +1103,24 @@ cm_error cm_get_default_config(const cm_machine *m, const char **config) try {
     return cm_result_failure();
 }
 
+CM_API cm_error cm_get_address_name(const cm_machine *m, uint64_t paddr, const char **name) try {
+    if (name == nullptr) {
+        throw std::invalid_argument("invalid name output");
+    }
+    if (m != nullptr) {
+        const auto *cpp_m = convert_from_c(m);
+        *name = cm_set_temp_string(cpp_m->get_address_name(paddr));
+    } else {
+        *name = cm_set_temp_string(cartesi::machine::get_address_name(paddr));
+    }
+    return cm_result_success();
+} catch (...) {
+    if (name != nullptr) {
+        *name = nullptr;
+    }
+    return cm_result_failure();
+}
+
 cm_error cm_replace_memory_range(cm_machine *m, const char *range_config) try {
     auto *cpp_m = convert_from_c(m);
     if (range_config == nullptr) {

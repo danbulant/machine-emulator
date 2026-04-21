@@ -331,11 +331,13 @@ private:
     friend i_uarch_state_access<uarch_replay_state_access>;
 
     uint64_t do_read_word(uint64_t paddr) const {
-        return check_read_word_access(paddr, machine::get_what_name(paddr));
+        const auto name = machine::get_address_name(paddr);
+        return check_read_word_access(paddr, name.c_str());
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) const {
-        check_write_word_access(paddr, val, machine::get_what_name(paddr));
+        const auto name = machine::get_address_name(paddr);
+        check_write_word_access(paddr, val, name.c_str());
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

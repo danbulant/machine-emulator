@@ -1497,7 +1497,7 @@ machine_hash machine::get_root_hash() const {
     return m_ht.get_root_hash();
 }
 
-const char *machine::get_what_name(uint64_t paddr) {
+std::string machine::get_address_name(uint64_t paddr) {
     if (paddr >= AR_UARCH_RAM_START && paddr - AR_UARCH_RAM_START < AR_UARCH_RAM_LENGTH) {
         return "uarch.ram";
     }

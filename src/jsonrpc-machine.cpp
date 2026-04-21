@@ -909,6 +909,12 @@ machine_config jsonrpc_machine::do_get_default_config() const {
     return result;
 }
 
+std::string jsonrpc_machine::do_get_address_name(uint64_t paddr) const {
+    std::string result;
+    request("machine.get_address_name", std::tie(paddr), result);
+    return result;
+}
+
 interpreter_break_reason jsonrpc_machine::do_verify_step(const machine_hash &root_hash_before,
     const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     interpreter_break_reason result = interpreter_break_reason::failed;

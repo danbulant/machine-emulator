@@ -363,6 +363,14 @@ CM_API cm_error cm_get_default_config(const cm_machine *m, const char **config);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *val);
 
+/// \brief Gets a description of what is at a given target physical address
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param paddr Target physical address of interest
+/// \param name Receives the name in a string, guaranteed to remain valid only until
+/// the next CM_API function is called from the same thread. Set to NULL on failure.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_get_address_name(const cm_machine *m, uint64_t paddr, const char **name);
+
 // -----------------------------------------------------------------------------
 // Machine API functions
 // -----------------------------------------------------------------------------

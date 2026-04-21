@@ -1531,6 +1531,17 @@ static json jsonrpc_machine_get_default_config_handler(const json &j,
     return jsonrpc_response_ok(j, cartesi::machine::get_default_config());
 }
 
+/// \brief JSONRPC handler for the machine.get_address_name method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_get_address_name_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
+    static const char *const param_name[] = {"paddr"};
+    auto args = parse_args<uint64_t>(j, param_name);
+    auto paddr = std::get<0>(args);
+    return jsonrpc_response_ok(j, cartesi::machine::get_address_name(paddr));
+}
+
 /// \brief JSONRPC handler for the machine.get_address_ranges method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1684,6 +1695,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.get_reg_address", jsonrpc_machine_get_reg_address_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
+        {"machine.get_address_name", jsonrpc_machine_get_address_name_handler},
         {"machine.get_runtime_config", jsonrpc_machine_get_runtime_config_handler},
         {"machine.set_runtime_config", jsonrpc_machine_set_runtime_config_handler},
         {"machine.verify_hash_tree", jsonrpc_machine_verify_hash_tree_handler},

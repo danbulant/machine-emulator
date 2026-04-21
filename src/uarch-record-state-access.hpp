@@ -205,10 +205,12 @@ private:
     friend i_uarch_state_access<uarch_record_state_access>;
 
     uint64_t do_read_word(uint64_t paddr) const {
-        return log_read_word_access(paddr, machine::get_what_name(paddr));
+        const auto name = machine::get_address_name(paddr);
+        return log_read_word_access(paddr, name.c_str());
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) const {
+        const auto name = machine::get_address_name(paddr);
         log_write_access(
             paddr, log2_size_v<uint64_t>,
             [this, paddr, val]() {
@@ -217,7 +219,7 @@ private:
                     throw std::invalid_argument{"error updating hash tree"};
                 };
             },
-            machine::get_what_name(paddr));
+            name.c_str());
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,

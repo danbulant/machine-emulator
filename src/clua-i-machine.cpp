@@ -1140,6 +1140,18 @@ static int machine_obj_index_get_default_config(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:get_address_name() method implementation
+/// \param L Lua state.
+static int machine_obj_index_get_address_name(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const char *name = nullptr;
+    if (cm_get_address_name(m.get(), luaL_checkinteger(L, 2), &name) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushstring(L, name);
+    return 1;
+}
+
 /// \brief This is the machine:get_reg_address() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_reg_address(lua_State *L) {
@@ -1238,6 +1250,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"destroy", machine_obj_index_destroy},
     {"get_default_config", machine_obj_index_get_default_config},
     {"get_initial_config", machine_obj_index_get_initial_config},
+    {"get_address_name", machine_obj_index_get_address_name},
     {"get_address_ranges", machine_obj_index_get_address_ranges},
     {"get_proof", machine_obj_index_get_proof},
     {"get_hash_tree_stats", machine_obj_index_get_hash_tree_stats},

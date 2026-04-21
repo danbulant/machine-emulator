@@ -155,6 +155,7 @@ private:
         const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
+    std::string do_get_address_name(uint64_t paddr) const override;
     interpreter_break_reason do_verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
         uint64_t mcycle_count, const machine_hash &root_hash_after) const override;
     void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,

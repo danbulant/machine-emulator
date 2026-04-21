@@ -957,6 +957,27 @@
       }
     },
     {
+      "name": "machine.get_address_name",
+      "summary": "Returns a description of what is at a given target physical address",
+      "params": [
+        {
+          "name": "paddr",
+          "description": "Target physical address of interest",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "name",
+        "description": "Description of what is at that address",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    {
       "name": "machine.verify_hash_tree",
       "summary": "Verifies sanity of hash tree",
       "params": [],

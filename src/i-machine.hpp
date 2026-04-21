@@ -284,6 +284,11 @@ public:
         return do_get_default_config();
     }
 
+    /// \brief Gets a description of what is at a given target physical address
+    std::string get_address_name(uint64_t paddr) const {
+        return do_get_address_name(paddr);
+    }
+
     /// \brief Checks the validity of a state transition caused by log_step.
     interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
         uint64_t mcycle_count, const machine_hash &root_hash_after) const {
@@ -359,6 +364,7 @@ private:
         const access_log::type &log_type) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
+    virtual std::string do_get_address_name(uint64_t paddr) const = 0;
     virtual interpreter_break_reason do_verify_step(const machine_hash &root_hash_before,
         const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const = 0;
     virtual void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,

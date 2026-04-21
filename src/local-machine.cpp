@@ -227,6 +227,10 @@ machine_config local_machine::do_get_default_config() const {
     return machine::get_default_config();
 }
 
+std::string local_machine::do_get_address_name(uint64_t paddr) const {
+    return machine::get_address_name(paddr);
+}
+
 interpreter_break_reason local_machine::do_verify_step(const machine_hash &root_hash_before,
     const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     return machine::verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
