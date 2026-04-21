@@ -15,6 +15,7 @@
 //
 
 #include "cm.h"
+#include "cm-exception.hpp"
 
 #include <algorithm>
 #include <any>
@@ -101,63 +102,8 @@ const char *cm_set_temp_string(const std::string &s) {
     return temp_string.c_str();
 }
 
-cm_error cm_result_failure() try { throw; } catch (const std::exception &e) {
-    try {
-        get_last_err_msg_storage() = e.what();
-        throw;
-    } catch (const std::invalid_argument &ex) {
-        return CM_ERROR_INVALID_ARGUMENT;
-    } catch (const std::domain_error &ex) {
-        return CM_ERROR_DOMAIN_ERROR;
-    } catch (const std::length_error &ex) {
-        return CM_ERROR_LENGTH_ERROR;
-    } catch (const std::out_of_range &ex) {
-        return CM_ERROR_OUT_OF_RANGE;
-    } catch (const std::logic_error &ex) {
-        return CM_ERROR_LOGIC_ERROR;
-    } catch (const std::bad_optional_access &ex) {
-        return CM_ERROR_BAD_OPTIONAL_ACCESS;
-    } catch (const std::range_error &ex) {
-        return CM_ERROR_RANGE_ERROR;
-    } catch (const std::overflow_error &ex) {
-        return CM_ERROR_OVERFLOW_ERROR;
-    } catch (const std::underflow_error &ex) {
-        return CM_ERROR_UNDERFLOW_ERROR;
-    } catch (const std::regex_error &ex) {
-        return CM_ERROR_REGEX_ERROR;
-    } catch (const std::system_error &ex) {
-        return CM_ERROR_SYSTEM_ERROR;
-    } catch (const std::runtime_error &ex) {
-        return CM_ERROR_RUNTIME_ERROR;
-    } catch (const std::bad_typeid &ex) {
-        return CM_ERROR_BAD_TYPEID;
-    } catch (const std::bad_any_cast &ex) {
-        return CM_ERROR_BAD_ANY_CAST;
-    } catch (const std::bad_cast &ex) {
-        return CM_ERROR_BAD_CAST;
-    } catch (const std::bad_weak_ptr &ex) {
-        return CM_ERROR_BAD_WEAK_PTR;
-    } catch (const std::bad_function_call &ex) {
-        return CM_ERROR_BAD_FUNCTION_CALL;
-    } catch (const std::bad_array_new_length &ex) {
-        return CM_ERROR_BAD_ARRAY_NEW_LENGTH;
-    } catch (const std::bad_alloc &ex) {
-        return CM_ERROR_BAD_ALLOC;
-    } catch (const std::bad_exception &ex) {
-        return CM_ERROR_BAD_EXCEPTION;
-    } catch (const std::bad_variant_access &ex) {
-        return CM_ERROR_BAD_VARIANT_ACCESS;
-    } catch (const std::exception &e) {
-        return CM_ERROR_EXCEPTION;
-    }
-} catch (...) {
-    try {
-        get_last_err_msg_storage() = std::string("unknown error");
-    } catch (...) {
-        // Failed to allocate string, last resort is to set an empty error.
-        get_last_err_msg_storage().clear();
-    }
-    return CM_ERROR_UNKNOWN;
+cm_error cm_result_failure() {
+    return cartesi::cm_exception_to_error_code(get_last_err_msg_storage());
 }
 
 cm_error cm_result_success() {

@@ -260,6 +260,9 @@ endif
 test-c-api: | $(CARTESI_IMAGES)
 	./build/misc/test-machine-c-api
 
+test-c-api-remote: | test-c-api $(CARTESI_IMAGES)
+	CARTESI_JSONRPC_TEST_REMOTE=../src/cartesi-jsonrpc-machine ./build/misc/test-machine-c-api
+
 test-c-jsonrpc-api: | $(CARTESI_IMAGES)
 	CARTESI_JSONRPC_MACHINE=../src/cartesi-jsonrpc-machine ./build/misc/test-machine-c-jsonrpc-api
 
@@ -272,7 +275,7 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-fuzz: build-tests-fuzz
 	@$(MAKE) -C fuzz CC=clang CXX=clang++ fuzz=yes run-fuzz-interpret
 
-test-misc: test-c-api test-c-jsonrpc-api test-save-and-load test-yield-and-save
+test-misc: test-c-api test-c-api-remote test-c-jsonrpc-api test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs

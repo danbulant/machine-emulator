@@ -74,6 +74,7 @@
 #include "access-log.hpp"
 #include "back-merkle-tree.hpp"
 #include "base64.hpp"
+#include "cm-exception.hpp"
 #include "json-util.hpp"
 #include "jsonrpc-discover.hpp"
 #include "jsonrpc-fork-result.hpp"
@@ -441,14 +442,6 @@ static json jsonrpc_response_invalid_request(const json &j, const std::string &m
     return jsonrpc_response_error(j, jsonrpc_error_code::invalid_request, message);
 }
 
-/// \brief Returns an internal error JSONRPC response as a JSON object
-/// \param j JSON request, from which an id is obtained
-/// \param message Error message
-/// \returns JSON object with response
-static json jsonrpc_response_internal_error(const json &j, const std::string &message) {
-    return jsonrpc_response_error(j, jsonrpc_error_code::internal_error, message);
-}
-
 /// \brief Returns a server error JSONRPC response as a JSON object
 /// \param j JSON request, from which an id is obtained
 /// \param message Error message
@@ -465,12 +458,28 @@ static json jsonrpc_response_method_not_found(const json &j, const std::string &
     return jsonrpc_response_error(j, jsonrpc_error_code::method_not_found, message);
 }
 
-/// \brief Returns a invalid params JSONRPC response as a JSON object
+/// \brief Returns a failed JSONRPC response for a machine-layer exception, encoding the cm_error code in error.data
 /// \param j JSON request, from which an id is obtained
+/// \param code JSONRPC error code
 /// \param message Error message
+/// \param cm_error_code cm_error code matching the cm_error enum in cm-error.h
 /// \returns JSON object with response
-static json jsonrpc_response_invalid_params(const json &j, const std::string &message) {
-    return jsonrpc_response_error(j, jsonrpc_error_code::invalid_params, message);
+static json jsonrpc_response_machine_error(const json &j, jsonrpc_error_code code, const std::string &message,
+    int cm_error_code) {
+    return {{"jsonrpc", "2.0"}, {"id", j.contains("id") ? j["id"] : json{nullptr}},
+        {"error", {{"code", code}, {"message", message}, {"data", cm_error_code}}}};
+}
+
+/// \brief Returns a failed JSONRPC response for the exception currently being handled
+/// \details Encodes the cm_error code in error.data so the client can reconstruct the original type.
+/// \param j JSON request, from which an id is obtained
+/// \returns JSON object with response
+static json jsonrpc_response_from_exception(const json &j) {
+    std::string message;
+    const cm_error code = cartesi::cm_exception_to_error_code(message);
+    const auto jsonrpc_code =
+        (code == CM_ERROR_INVALID_ARGUMENT) ? jsonrpc_error_code::invalid_params : jsonrpc_error_code::internal_error;
+    return jsonrpc_response_machine_error(j, jsonrpc_code, message, static_cast<int>(code));
 }
 
 /// \brief Checks that a JSON object contains only fields with allowed keys
@@ -1712,10 +1721,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         return found->second(j, session);
     }
     return jsonrpc_response_method_not_found(j, method);
-} catch (const std::invalid_argument &x) {
-    return jsonrpc_response_invalid_params(j, x.what());
-} catch (const std::exception &x) {
-    return jsonrpc_response_internal_error(j, x.what());
+} catch (...) {
+    return jsonrpc_response_from_exception(j);
 }
 
 //------------------------------------------------------------------------------

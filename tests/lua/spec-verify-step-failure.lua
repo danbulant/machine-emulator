@@ -58,21 +58,21 @@ local function produce_valid_step_log()
     return root_hash_before, mcycle_count, root_hash_after, log_data
 end
 
--- Write log_data to a temp file, call verify_step, clean up
-local function verify_step_with_data(root_hash_before, mcycle_count, root_hash_after, log_data)
+-- Write log_data to a temp file, call verify_step on machine, clean up
+local function verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
     local log_filename = os.tmpname()
     local f <close> = assert(io.open(log_filename, "wb"))
     f:write(log_data)
     f:close()
     local ok, err = pcall(function()
-        cartesi.machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
+        machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
     end)
     os.remove(log_filename)
     return ok, err
 end
 
 -- Helper: produce a valid log, corrupt it, verify it fails with expected error
-local function should_fail(expected_error, corrupt)
+local function should_fail(machine, expected_error, corrupt)
     local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
     local corrupted = corrupt(log_data, root_hash_before, mcycle_count, root_hash_after)
     if type(corrupted) == "table" then
@@ -84,15 +84,15 @@ local function should_fail(expected_error, corrupt)
     else
         log_data = corrupted
     end
-    local ok, err = verify_step_with_data(root_hash_before, mcycle_count, root_hash_after, log_data)
+    local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
     expect.falsy(ok)
     expect.truthy(err and err:find(expected_error, 1, true), err)
 end
 
 -- Helper: verify the happy path works
-local function should_succeed()
+local function should_succeed(machine)
     local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-    local ok, err = verify_step_with_data(root_hash_before, mcycle_count, root_hash_after, log_data)
+    local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, log_data)
     expect.truthy(ok, err)
 end
 
@@ -173,10 +173,10 @@ end
 
 --------------------------------------------------------------------------------
 
-describe("verify_step", function()
+local function register_verify_step_tests(machine)
     describe("happy path", function()
         it("should accept a valid step log", function()
-            should_succeed()
+            should_succeed(machine)
         end)
     end)
 
@@ -184,45 +184,45 @@ describe("verify_step", function()
         it("should reject empty log", function()
             -- An empty file (0 bytes) fails at mmap level before the constructor runs.
             -- A file with just a few bytes reaches the constructor's first check.
-            should_fail("root hash before past end of step log", function()
+            should_fail(machine, "root hash before past end of step log", function()
                 return string.rep("\0", 4) -- too short for root_hash_before
             end)
         end)
 
         it("should reject log truncated before mcycle_count", function()
-            should_fail("mcycle count past end of step log", function(log_data)
+            should_fail(machine, "mcycle count past end of step log", function(log_data)
                 return log_data:sub(1, OFFSET_MCYCLE_COUNT)
             end)
         end)
 
         it("should reject log truncated before root_hash_after", function()
-            should_fail("root hash after past end of step log", function(log_data)
+            should_fail(machine, "root hash after past end of step log", function(log_data)
                 return log_data:sub(1, OFFSET_ROOT_HASH_AFTER)
             end)
         end)
 
         it("should reject log truncated before hash_function", function()
-            should_fail("hash function type past end of step log", function(log_data)
+            should_fail(machine, "hash function type past end of step log", function(log_data)
                 return log_data:sub(1, OFFSET_HASH_FUNCTION)
             end)
         end)
 
         it("should reject log truncated before page_count", function()
-            should_fail("page count past end of step log", function(log_data)
+            should_fail(machine, "page count past end of step log", function(log_data)
                 return log_data:sub(1, OFFSET_PAGE_COUNT)
             end)
         end)
 
         it("should reject log truncated in the middle of page data", function()
             -- Truncate one byte into the first page entry
-            should_fail("page data past end of step log", function(log_data)
+            should_fail(machine, "page data past end of step log", function(log_data)
                 return log_data:sub(1, OFFSET_FIRST_PAGE + 1)
             end)
         end)
 
         it("should reject log truncated before sibling_count", function()
             -- Parse page_count to find where sibling_count should be
-            should_fail("sibling count past end of step log", function(log_data)
+            should_fail(machine, "sibling count past end of step log", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
                 return log_data:sub(1, sibling_count_offset)
@@ -230,7 +230,7 @@ describe("verify_step", function()
         end)
 
         it("should reject log truncated in the middle of sibling hashes", function()
-            should_fail("sibling hashes past end of step log", function(log_data)
+            should_fail(machine, "sibling hashes past end of step log", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
                 local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
@@ -243,7 +243,7 @@ describe("verify_step", function()
 
     describe("constructor: format validation errors", function()
         it("should reject unsupported hash function type", function()
-            should_fail("unsupported hash function type", function(log_data)
+            should_fail(machine, "unsupported hash function type", function(log_data)
                 -- Replace hash_function field (at offset 72) with an invalid value (0xFF)
                 local bad_hash_fn = string.pack("<I8", 0xFF)
                 return replace_at(log_data, OFFSET_HASH_FUNCTION, bad_hash_fn)
@@ -253,7 +253,7 @@ describe("verify_step", function()
         it("should reject page count of zero", function()
             -- Build a log with page_count = 0. We need to also adjust the file
             -- size to match (remove all page data and sibling hashes).
-            should_fail("page count is zero", function(log_data)
+            should_fail(machine, "page count is zero", function(log_data)
                 -- header (88 bytes) with page_count = 0, then sibling_count = 0
                 local header = log_data:sub(1, OFFSET_PAGE_COUNT)
                     .. string.pack("<I8", 0) -- page_count = 0
@@ -263,13 +263,13 @@ describe("verify_step", function()
         end)
 
         it("should reject extra data at end of step log", function()
-            should_fail("extra data at end of step log", function(log_data)
+            should_fail(machine, "extra data at end of step log", function(log_data)
                 return log_data .. "\0"
             end)
         end)
 
         it("should reject page index not in increasing order", function()
-            should_fail("page index is not in increasing order", function(log_data)
+            should_fail(machine, "page index is not in increasing order", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 if page_count < 2 then
                     error("test requires at least 2 pages")
@@ -288,7 +288,7 @@ describe("verify_step", function()
         end)
 
         it("should reject page scratch hash area that is not zero", function()
-            should_fail("page scratch hash area is not zero", function(log_data)
+            should_fail(machine, "page scratch hash area is not zero", function(log_data)
                 -- The scratch hash is at offset 8 + PAGE_SIZE within each page entry
                 local scratch_offset = OFFSET_FIRST_PAGE + 8 + PAGE_SIZE
                 return replace_at(log_data, scratch_offset, string.rep("\xff", HASH_SIZE))
@@ -296,7 +296,7 @@ describe("verify_step", function()
         end)
 
         it("should reject initial root hash mismatch", function()
-            should_fail("initial root hash mismatch", function(log_data)
+            should_fail(machine, "initial root hash mismatch", function(log_data)
                 -- Corrupt a byte in the first page's data so the computed hash won't match
                 local data_offset = OFFSET_FIRST_PAGE + 8 -- skip page_index
                 local byte_val = log_data:byte(data_offset + 1)
@@ -311,7 +311,7 @@ describe("verify_step", function()
             -- Pass a wrong root_hash_after to verify_step
             local bad_hash = string.rep("\xba", HASH_SIZE)
             local root_hash_before, mcycle_count, _, log_data = produce_valid_step_log()
-            local ok, err = verify_step_with_data(root_hash_before, mcycle_count, bad_hash, log_data)
+            local ok, err = verify_step_with_data(machine, root_hash_before, mcycle_count, bad_hash, log_data)
             expect.falsy(ok)
             -- The error could be "root hash after mismatch" (from machine::verify_step)
             -- or "final root hash mismatch" (from replay_step_state_access::finish)
@@ -323,14 +323,15 @@ describe("verify_step", function()
         it("should reject root hash before mismatch with log header", function()
             local bad_hash = string.rep("\xba", HASH_SIZE)
             local _, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-            local ok, err = verify_step_with_data(bad_hash, mcycle_count, root_hash_after, log_data)
+            local ok, err = verify_step_with_data(machine, bad_hash, mcycle_count, root_hash_after, log_data)
             expect.falsy(ok)
             expect.truthy(err and err:find("root hash before mismatch", 1, true), err)
         end)
 
         it("should reject mcycle count mismatch with log header", function()
             local root_hash_before, mcycle_count, root_hash_after, log_data = produce_valid_step_log()
-            local ok, err = verify_step_with_data(root_hash_before, mcycle_count + 1, root_hash_after, log_data)
+            local ok, err =
+                verify_step_with_data(machine, root_hash_before, mcycle_count + 1, root_hash_after, log_data)
             expect.falsy(ok)
             expect.truthy(err and err:find("mcycle count mismatch", 1, true), err)
         end)
@@ -390,7 +391,8 @@ describe("verify_step", function()
 
             -- verify_step should pass the constructor (initial hash matches)
             -- but fail during interpret() when it accesses the missing page
-            local ok, err = verify_step_with_data(root_hash_before, mcycle_count, root_hash_after, adversarial_log)
+            local ok, err =
+                verify_step_with_data(machine, root_hash_before, mcycle_count, root_hash_after, adversarial_log)
             expect.falsy(ok)
             expect.truthy(err and err:find("required page not found", 1, true), err)
         end)
@@ -461,7 +463,8 @@ describe("verify_step", function()
             local adversarial_log =
                 build_step_log(new_root_hash, mcycle_count, root_hash_after, hash_function, pages, siblings)
 
-            local ok, err = verify_step_with_data(new_root_hash, mcycle_count, root_hash_after, adversarial_log)
+            local ok, err =
+                verify_step_with_data(machine, new_root_hash, mcycle_count, root_hash_after, adversarial_log)
             expect.falsy(ok)
             -- The abrt lambda (L463) is invoked through ABRTF in the
             -- address_range constructor, called from make_mock_address_range
@@ -473,7 +476,7 @@ describe("verify_step", function()
         it("should reject too many pages in log", function()
             -- Add an extra page with index >= 2^52 (beyond the tree's page index
             -- range). The tree walk never reaches it, so next_page < page_count.
-            should_fail("too many pages in log", function(log_data)
+            should_fail(machine, "too many pages in log", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
 
@@ -491,7 +494,7 @@ describe("verify_step", function()
         end)
 
         it("should reject too few sibling hashes (internal level)", function()
-            should_fail("too few sibling hashes in log", function(log_data)
+            should_fail(machine, "too few sibling hashes in log", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
                 local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
@@ -514,13 +517,13 @@ describe("verify_step", function()
                 { index = 3, data = dummy_page_data },
             }
             local log_data = build_step_log(dummy_hash, 1, dummy_hash, 0, pages, {})
-            local ok, err = verify_step_with_data(dummy_hash, 1, dummy_hash, log_data)
+            local ok, err = verify_step_with_data(machine, dummy_hash, 1, dummy_hash, log_data)
             expect.falsy(ok)
             expect.truthy(err and err:find("too few sibling hashes in log", 1, true), err)
         end)
 
         it("should reject too many sibling hashes", function()
-            should_fail("too many sibling hashes in log", function(log_data)
+            should_fail(machine, "too many sibling hashes in log", function(log_data)
                 local page_count = string.unpack("<I8", log_data, OFFSET_PAGE_COUNT + 1)
                 local sibling_count_offset = OFFSET_FIRST_PAGE + PAGE_ENTRY_SIZE * page_count
                 local sibling_count = string.unpack("<I8", log_data, sibling_count_offset + 1)
@@ -534,4 +537,15 @@ describe("verify_step", function()
             end)
         end)
     end)
+end
+
+describe("verify_step (local)", function()
+    register_verify_step_tests(cartesi.machine)
+end)
+
+describe("verify_step (remote)", function()
+    local jsonrpc = require("cartesi.jsonrpc")
+    local machine <close> =
+        jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({ ram = { length = 0x1000 } })
+    register_verify_step_tests(machine)
 end)

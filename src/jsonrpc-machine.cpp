@@ -15,6 +15,7 @@
 //
 
 #include "jsonrpc-machine.hpp"
+#include "cm-exception.hpp"
 #include "os-features.hpp"
 
 #include <cassert>
@@ -322,12 +323,14 @@ static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::
         if (!jerror.contains("code") || !jerror["code"].is_number_integer()) {
             throw std::runtime_error(R"(jsonrpc server error: invalid "error/code" field (expected integer))"s);
         }
-        auto code = jerror["code"].template get<int>();
         if (!jerror.contains("message") || !jerror["message"].is_string()) {
             throw std::runtime_error(R"(jsonrpc server error: invalid "error/message" field (expected string))"s);
         }
         auto message = jerror["message"].template get<std::string>();
-        throw std::runtime_error("jsonrpc error: "s + message + " (code "s + std::to_string(code) + ")"s);
+        if (jerror.contains("data") && jerror["data"].is_number_integer()) {
+            cartesi::cm_error_code_to_exception(static_cast<cm_error>(jerror["data"].template get<int>()), message);
+        }
+        throw std::runtime_error(message);
     }
     try {
         cartesi::ju_get_field(response, "result"s, result, ""s);

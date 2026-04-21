@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
 
 #include "access-log.hpp"
@@ -160,21 +161,33 @@ public:
 
     /// \brief Reads a chunk of data from the machine memory.
     void read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+        if (data == nullptr && length > 0) {
+            throw std::invalid_argument("invalid data buffer");
+        }
         do_read_memory(address, data, length);
     }
 
     /// \brief Writes a chunk of data to the machine memory.
     void write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+        if (data == nullptr && length > 0) {
+            throw std::invalid_argument("invalid data buffer");
+        }
         do_write_memory(address, data, length);
     }
 
     /// \brief Reads a chunk of data from the machine virtual memory.
     void read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) {
+        if (data == nullptr && length > 0) {
+            throw std::invalid_argument("invalid data buffer");
+        }
         do_read_virtual_memory(address, data, length);
     }
 
     /// \brief Writes a chunk of data to the machine virtual memory.
     void write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+        if (data == nullptr && length > 0) {
+            throw std::invalid_argument("invalid data buffer");
+        }
         do_write_virtual_memory(address, data, length);
     }
 

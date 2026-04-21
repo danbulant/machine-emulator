@@ -489,22 +489,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(fork_server_test, spawned_server_fixture) {
     cm_delete(forked);
 }
 
-// What: cm_create_new / cm_read_reg / cm_destroy all work end-to-end when the
-//       underlying handle is a remote (JSON-RPC) machine.
-// How:  against the fixture server, call cm_create_new with a minimal config,
-//       read MCYCLE, then call cm_destroy and check each step returns OK.
-BOOST_FIXTURE_TEST_CASE_NOLINT(remote_create_and_destroy_test, spawned_server_fixture) {
-    std::string cfg = minimal_machine_config();
-    cm_error err = cm_create_new(cfg.c_str(), nullptr, nullptr, &m);
-    BOOST_REQUIRE_EQUAL(err, CM_ERROR_OK);
-
-    uint64_t mcycle{};
-    BOOST_CHECK_EQUAL(cm_read_reg(m, CM_REG_MCYCLE, &mcycle), CM_ERROR_OK);
-
-    cm_error derr = cm_destroy(m);
-    BOOST_CHECK_EQUAL(derr, CM_ERROR_OK);
-}
-
 // What: the CM_JSONRPC_SHUTDOWN cleanup mode shuts the server down when the
 //       client handle is deleted.
 // How:  spawn a server, set cleanup to SHUTDOWN, cm_delete the handle, then
@@ -541,7 +525,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(cleanup_destroy_test) {
 
     // Create a machine so that destroy has something to do.
     std::string cfg = minimal_machine_config();
-    cm_create_new(cfg.c_str(), nullptr, nullptr, &m);
+    cm_create(m, cfg.c_str(), nullptr, nullptr);
 
     cm_jsonrpc_set_cleanup_call(m, CM_JSONRPC_DESTROY);
     cm_delete(m); // implicitly destroys the machine but leaves server alive
@@ -696,8 +680,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_unknown_method_test, spawned_server_fixtu
 // How:  POST a request for "get_version" with no "id" field and assert the
 //       HTTP status is 200 and the response body is empty.
 BOOST_FIXTURE_TEST_CASE_NOLINT(jsonrpc_notification_no_response_test, spawned_server_fixture) {
-    auto [status, body] = http_raw(bound_address, "POST", "/",
-        R"({"jsonrpc":"2.0","method":"get_version"})");
+    auto [status, body] = http_raw(bound_address, "POST", "/", R"({"jsonrpc":"2.0","method":"get_version"})");
     BOOST_CHECK_EQUAL(status, 200);
     BOOST_CHECK(body.empty());
 }

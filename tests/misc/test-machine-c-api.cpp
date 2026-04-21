@@ -34,10 +34,12 @@
 #include <json.hpp>
 
 #include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
+#include <cm-jsonrpc.h>
 #include <cm.h>
 #include <riscv-constants.hpp>
 #include <uarch-constants.hpp>
@@ -56,6 +58,83 @@
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
 // NOLINTNEXTLINE
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
+
+// When CARTESI_JSONRPC_TEST_REMOTE is set to the cartesi-jsonrpc-machine binary,
+// a single server is spawned once and all tests run against it over the network.
+// The server can hold at most one machine, so every wrapper destroys any existing
+// machine before creating or loading a new one.
+static cm_machine *g_server = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+struct remote_server_global_fixture {
+    remote_server_global_fixture() {
+        const char *server_bin = std::getenv("CARTESI_JSONRPC_TEST_REMOTE");
+        if (server_bin == nullptr || server_bin[0] == '\0') {
+            return;
+        }
+        // cm_jsonrpc_spawn_server() locates the binary via CARTESI_JSONRPC_MACHINE.
+        // NOLINTNEXTLINE(cert-env33-c)
+        setenv("CARTESI_JSONRPC_MACHINE", server_bin, 1);
+        const char *bound = nullptr;
+        if (cm_jsonrpc_spawn_server("127.0.0.1:0", 15000, &g_server, &bound, nullptr) != CM_ERROR_OK) {
+            std::cerr << "WARNING: cm_jsonrpc_spawn_server: " << cm_get_last_error_message() << "\n";
+            g_server = nullptr;
+        }
+    }
+    ~remote_server_global_fixture() {
+        if (g_server == nullptr) {
+            return;
+        }
+        cm_jsonrpc_set_cleanup_call(g_server, CM_JSONRPC_SHUTDOWN);
+        cm_delete(g_server);
+        g_server = nullptr;
+    }
+    remote_server_global_fixture(const remote_server_global_fixture &) = delete;
+    remote_server_global_fixture(remote_server_global_fixture &&) = delete;
+    remote_server_global_fixture &operator=(const remote_server_global_fixture &) = delete;
+    remote_server_global_fixture &operator=(remote_server_global_fixture &&) = delete;
+};
+BOOST_GLOBAL_FIXTURE(remote_server_global_fixture);
+
+namespace {
+
+// Creates a machine: remotely on g_server when active, locally otherwise.
+// Any existing machine on the server is destroyed first (the server holds at most one).
+// Falls back to cm_create_new when out is null (local-only null-output tests).
+cm_error test_create_new(const char *config, const char *runtime, const char *dir, cm_machine **out) {
+    if (g_server != nullptr && out != nullptr) {
+        cm_destroy(g_server); // defensive: evict any leftover machine
+        *out = g_server;
+        return cm_create(g_server, config, runtime, dir);
+    }
+    return cm_create_new(config, runtime, dir, out);
+}
+
+// Loads a machine from disk: remotely on g_server when active, locally otherwise.
+// Falls back to cm_load_new when out is null (local-only null-output tests).
+cm_error test_load_new(const char *dir, const char *runtime, cm_sharing_mode sharing, cm_machine **out) {
+    if (g_server != nullptr && out != nullptr) {
+        cm_destroy(g_server);
+        *out = g_server;
+        return cm_load(g_server, dir, runtime, sharing);
+    }
+    return cm_load_new(dir, runtime, sharing, out);
+}
+
+// Deletes a machine handle: for the shared server handle, destroys the machine
+// but keeps the server alive; for a local handle, calls cm_delete as usual.
+void test_delete(cm_machine **m) {
+    if (*m == nullptr) {
+        return;
+    }
+    if (*m == g_server) {
+        cm_destroy(*m); // wipe machine state on server, keep handle alive
+    } else {
+        cm_delete(*m); // local handle: free it
+    }
+    *m = nullptr;
+}
+
+} // namespace
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete(nullptr));
@@ -77,7 +156,9 @@ public:
         _default_machine_config = config;
     }
 
-    ~default_machine_fixture() = default;
+    ~default_machine_fixture() {
+        test_delete(&_machine);
+    }
 
     default_machine_fixture(const default_machine_fixture &other) = delete;
     default_machine_fixture(default_machine_fixture &&other) noexcept = delete;
@@ -90,15 +171,15 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
-    cm_error error_code = cm_load_new("/unknown_dir", nullptr, CM_SHARING_NONE, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_SYSTEM_ERROR);
+    cm_error error_code = test_load_new("/unknown_dir", nullptr, CM_SHARING_NONE, &_machine);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = cm_get_last_error_message();
     BOOST_REQUIRE(result.find("unable to read file '/unknown_dir/config.json'") == 0);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture) {
-    cm_error error_code = cm_load_new(nullptr, nullptr, CM_SHARING_NONE, &_machine);
+    cm_error error_code = test_load_new(nullptr, nullptr, CM_SHARING_NONE, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -106,7 +187,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture) {
-    cm_error error_code = cm_create_new(nullptr, nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(nullptr, nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("invalid machine configuration");
@@ -114,7 +195,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_machine_fixture) {
-    cm_error error_code = cm_create_new(_default_machine_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(_default_machine_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
 }
@@ -141,7 +222,7 @@ protected:
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, nullptr);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -155,7 +236,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
             {{"label", "flash1"}, {"start", 0x7ffffffffff000}, {"length", 0x2000}}};
     const auto dumped_config = _machine_config.dump();
 
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -184,7 +265,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     _machine_config["flash_drive"][0]["start"] = 0x80000000000000 - 1;
     const auto dumped_config = _machine_config.dump();
 
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -198,7 +279,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     _machine_config["flash_drive"][0]["length"] = 0x3c00000;
     const auto dumped_config = _machine_config.dump();
 
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -209,17 +290,16 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_empty_label_success_test, incomplete_machine_fixture) {
     _machine_config["flash_drive"] = {{{"label", ""}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_underscore_label_test, incomplete_machine_fixture) {
     _machine_config["flash_drive"] = {{{"label", "_reserved"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("flash drive 0 label must not start with underscore (reserved for internal use)");
@@ -229,7 +309,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_underscore_label_test, incomplete_mac
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_invalid_char_label_test, incomplete_machine_fixture) {
     _machine_config["flash_drive"] = {{{"label", "foo@bar"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("flash drive 0 label contains invalid character '@'");
@@ -240,7 +320,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_long_label_test, incomplete_machi
     _machine_config["flash_drive"] = {
         {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX + 1, 'a')}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin(
@@ -252,7 +332,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_duplicate_label_test, incomplete_mach
     _machine_config["flash_drive"] = {{{"label", "same"}, {"start", 0x80000000000000}, {"length", 0x1000}},
         {{"label", "same"}, {"start", 0x90000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("flash drive 1 has duplicate label \"same\"");
@@ -263,21 +343,19 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_label_at_max_length_test, incomplete_
     _machine_config["flash_drive"] = {
         {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX, 'a')}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_valid_label_chars_test, incomplete_machine_fixture) {
     _machine_config["flash_drive"] = {{{"label", "My-Drive0"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_many_test, incomplete_machine_fixture) {
@@ -287,7 +365,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_many_test, incomplete_machine_fix
             {"start", 0x80000000000000 + static_cast<uint64_t>(i) * 0x1000}, {"length", 0x1000}});
     }
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     BOOST_CHECK_EQUAL(std::string("too many flash drives"), result);
@@ -308,7 +386,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_length_auto_detect_from_file_test, in
     _machine_config["flash_drive"] = {
         {{"start", 0x80000000000000}, {"backing_store", {{"data_filename", flash_file}}}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     std::array<uint8_t, 4> read_data{};
@@ -317,8 +395,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_length_auto_detect_from_file_test, in
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(std::string(4, 'F'), read_string);
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
     std::filesystem::remove(flash_file);
 }
 
@@ -339,7 +416,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machin
     const auto dumped_config = _machine_config.dump();
     const auto dir = (std::filesystem::temp_directory_path() / "flash_on_disk_share").string();
     std::filesystem::remove_all(dir);
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     std::array<uint8_t, 4> read_data{};
@@ -348,8 +425,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machin
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(std::string(4, 'D'), read_string);
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
     std::filesystem::remove_all(dir);
     std::filesystem::remove(flash_file);
 }
@@ -357,7 +433,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machin
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 has no start address");
@@ -367,7 +443,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_length_no_file_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"start", 0x70000000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 has no length");
@@ -380,7 +456,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_too_many_test, incomplete_machine_fixture) 
         _machine_config["nvram"].push_back({{"start", 0x70000000 + i * 0x1000}, {"length", 0x1000}});
     }
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("too many NVRAMs");
@@ -390,7 +466,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_too_many_test, incomplete_machine_fixture) 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_underscore_label_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"label", "_reserved"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 label must not start with underscore (reserved for internal use)");
@@ -400,7 +476,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_underscore_label_test, incomplete_machine_f
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_invalid_char_label_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"label", "nv@ram"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 label contains invalid character '@'");
@@ -411,7 +487,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_too_long_label_test, incomplete_machine_fix
     _machine_config["nvram"] = {
         {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX + 1, 'x')}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 label is too long (max " + std::to_string(CM_MEMORY_RANGE_LABEL_MAX) + " characters)");
@@ -422,7 +498,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_duplicate_label_test, incomplete_machine_fi
     _machine_config["nvram"] = {{{"label", "samenvram"}, {"start", 0x70000000}, {"length", 0x1000}},
         {{"label", "samenvram"}, {"start", 0x71000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 1 has duplicate label \"samenvram\"");
@@ -433,7 +509,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_duplicate_label_with_flash_drive_test, inco
     _machine_config["flash_drive"] = {{{"label", "shared-label"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     _machine_config["nvram"] = {{{"label", "shared-label"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("nvram 0 has duplicate label \"shared-label\"");
@@ -443,42 +519,38 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_duplicate_label_with_flash_drive_test, inco
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_create_success_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"label", "myram"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_label_at_max_length_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {
         {{"label", std::string(CM_MEMORY_RANGE_LABEL_MAX, 'a')}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_valid_label_chars_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"label", "My-Ram0"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_read_only_test, incomplete_machine_fixture) {
     _machine_config["nvram"] = {{{"label", "roram"}, {"start", 0x70000000}, {"length", 0x1000}, {"read_only", true}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 // Exercises the nvram length auto-detect branch in
@@ -495,7 +567,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomple
     }
     _machine_config["nvram"] = {{{"start", 0x70000000}, {"backing_store", {{"data_filename", nvram_file}}}}};
     const auto dumped_config = _machine_config.dump();
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     std::array<uint8_t, 4> read_data{};
@@ -504,8 +576,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomple
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(std::string(4, 'A'), read_string);
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
     std::filesystem::remove(nvram_file);
 }
 
@@ -518,7 +589,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(on_disk_unreproducible_rejected_test, incomplete_
     const auto dumped_config = _machine_config.dump();
     const auto dir = (std::filesystem::temp_directory_path() / "on_disk_unrep").string();
     std::filesystem::remove_all(dir);
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     BOOST_CHECK_EQUAL(std::string("fully on-disk machines must not be unreproducible"), result);
@@ -542,7 +613,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixt
     const auto dumped_config = _machine_config.dump();
     const auto dir = (std::filesystem::temp_directory_path() / "nvram_on_disk_share").string();
     std::filesystem::remove_all(dir);
-    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
+    cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     std::array<uint8_t, 4> read_data{};
@@ -551,8 +622,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixt
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     std::string read_string{reinterpret_cast<char *>(read_data.data()), read_data.size()};
     BOOST_CHECK_EQUAL(std::string(4, 'S'), read_string);
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
     std::filesystem::remove_all(dir);
     std::filesystem::remove(nvram_file);
 }
@@ -562,11 +632,11 @@ public:
     ordinary_machine_fixture() {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
         const auto dumped_config = _machine_config.dump();
-        cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+        test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     }
     ~ordinary_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
-        cm_delete(_machine);
+        test_delete(&_machine);
     }
 
     ordinary_machine_fixture(const ordinary_machine_fixture &other) = delete;
@@ -630,11 +700,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     expected_err << "expected \"archive_version\" " << v << " (got " << v + 1 << ")";
 
     cm_machine *restored_machine{};
-    cm_error error_code = cm_load_new(_machine_config_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
+    cm_error error_code = test_load_new(_machine_config_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), expected_err.str());
 
-    cm_delete(restored_machine);
+    test_delete(&restored_machine);
 }
 
 class store_file_fixture : public ordinary_machine_fixture {
@@ -696,7 +766,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_empty_dir_path_test, ordinary_machine_fixtu
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_current_dir_path_test, ordinary_machine_fixture) {
     cm_error error_code = cm_store(_machine, ".", CM_SHARING_ALL);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_SYSTEM_ERROR);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = cm_get_last_error_message();
     BOOST_REQUIRE(result.find("unable to create directory") == 0);
 }
@@ -705,7 +775,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str(), CM_SHARING_ALL);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, nullptr);
+    error_code = test_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
@@ -715,7 +785,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_machine *restored_machine{};
-    error_code = cm_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
+    error_code = test_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -729,7 +799,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_CHECK_EQUAL(0, memcmp(origin_hash, restored_hash, sizeof(cm_hash)));
 
-    cm_delete(restored_machine);
+    test_delete(&restored_machine);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
@@ -1226,7 +1296,7 @@ public:
         _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
         const auto dumped_config = _machine_config.dump();
-        cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+        cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
         BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1237,7 +1307,7 @@ public:
     }
 
     ~flash_drive_machine_fixture() {
-        cm_delete(_machine);
+        test_delete(&_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove(_flash_file);
     }
@@ -1367,7 +1437,7 @@ public:
                     {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
                         {"dht_filename", ""}, {"dpt_filename", ""}}}}};
         const auto dumped_config = _machine_config.dump();
-        cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+        cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
         BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1377,7 +1447,7 @@ public:
     }
 
     ~nvram_machine_fixture() {
-        cm_delete(_machine);
+        test_delete(&_machine);
         std::filesystem::remove(_nvram_file);
     }
 
@@ -1486,7 +1556,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_nvram_test, serde_nvram_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     cm_machine *restored_machine{};
-    error_code = cm_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
+    error_code = test_load_new(_machine_dir_path.c_str(), nullptr, CM_SHARING_NONE, &restored_machine);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     const char *cfg{};
@@ -1501,7 +1571,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_nvram_test, serde_nvram_fixture) {
     BOOST_CHECK_EQUAL(nvram0["start"].get<uint64_t>(), UINT64_C(0x70000000));
     BOOST_CHECK_EQUAL(nvram0["length"].get<uint64_t>(), UINT64_C(0x1000));
 
-    cm_delete(restored_machine);
+    test_delete(&restored_machine);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_machine_test) {
@@ -1509,8 +1579,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_null_machine_test) {
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(delete_basic_test, ordinary_machine_fixture) {
-    cm_delete(_machine);
-    _machine = nullptr;
+    test_delete(&_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture) {
@@ -1643,10 +1712,10 @@ public:
         _machine_config["uarch"]["ram"] = {{"backing_store", {{"data_filename", _uarch_ram_path}}}};
         const auto dumped_config = _machine_config.dump();
 
-        cm_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
+        test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     }
     ~access_log_machine_fixture() {
-        cm_delete(_machine);
+        test_delete(&_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove_all(_uarch_ram_path);
     }
