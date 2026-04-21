@@ -66,6 +66,7 @@ if [ "$SKIP_TESTS" = false ]; then
         test-lua \
         test-jsonrpc \
         test-c-api \
+        test-c-jsonrpc-api \
         test-coverage-machine \
         test-uarch-rv64ui \
         test-uarch-interpreter \

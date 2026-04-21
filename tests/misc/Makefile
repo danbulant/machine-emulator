@@ -104,13 +104,16 @@ ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
 endif
 
-all: $(BUILDDIR)/test-machine-c-api
+all: $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
 
 ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a:
 	$(info libcartesi.a and/or libcartesi_hash_tree.a were not found! Build them first.)
 	@exit 1
 
 $(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
+
+$(BUILDDIR)/test-machine-c-jsonrpc-api: test-machine-c-jsonrpc-api.o ../../src/libcartesi_jsonrpc.a ../../src/libcartesi.a ../../src/libcartesi_hash_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.cpp
@@ -142,6 +145,6 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean: clean-tidy clean-objs
-	@rm -f $(BUILDDIR)/test-machine-c-api
+	@rm -f $(BUILDDIR)/test-machine-c-api $(BUILDDIR)/test-machine-c-jsonrpc-api
 
 .SUFFIXES:
