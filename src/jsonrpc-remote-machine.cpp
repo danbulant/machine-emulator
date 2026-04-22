@@ -121,6 +121,15 @@ static std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
 using namespace std::string_literals;
 using json = nlohmann::json;
 
+/// \brief Formats a beast::error_code for log messages.
+/// At trace/debug level includes Boost's source_location suffix; otherwise returns just the message.
+static std::string format_ec(const beast::error_code &ec) {
+    if (slog::log_level(slog::level_operation::get) <= slog::severity_level::debug) {
+        return ec.what();
+    }
+    return ec.message();
+}
+
 /// \brief Checks if uint64_t value can be converted to integer
 static int check_int(uint64_t val, const char *what) {
     if (val > INT_MAX) {
@@ -206,7 +215,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
             return;
         }
         if (ec) { // Unexpected error
-            SLOG(error) << "read request error:" << ec.what();
+            SLOG(error) << "read request error: " << format_ec(ec);
             return;
         }
 
@@ -241,7 +250,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
             return;
         }
         if (ec) { // Unexpected error
-            SLOG(error) << "send response error:" << ec.what();
+            SLOG(error) << "send response error: " << format_ec(ec);
             shutdown();
             return;
         }
@@ -368,7 +377,7 @@ private:
             return;
         }
         if (ec) {
-            SLOG(error) << local_endpoint << " accept error: " << ec.what();
+            SLOG(error) << local_endpoint << " accept error: " << format_ec(ec);
             // If we can't accept, the listening socket is probably in a broken state,
             // close the acceptor so the client abort new connection attempts.
             // This may happen when amount of open files is reached.
