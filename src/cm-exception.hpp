@@ -35,7 +35,10 @@ namespace cartesi {
 /// \brief Reconstructed exception for CM_ERROR_EXCEPTION (any std::exception subclass not otherwise mapped).
 struct cm_reconstructed_exception : std::exception {
     explicit cm_reconstructed_exception(std::string msg) : m_what(std::move(msg)) {}
-    const char *what() const noexcept override { return m_what.c_str(); }
+    const char *what() const noexcept override {
+        return m_what.c_str();
+    }
+
 private:
     std::string m_what;
 };

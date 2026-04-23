@@ -1516,6 +1516,27 @@ std::string machine::get_address_name(uint64_t paddr) {
     if (paddr >= AR_SHADOW_UARCH_STATE_START && paddr - AR_SHADOW_UARCH_STATE_START < AR_SHADOW_UARCH_STATE_LENGTH) {
         return shadow_uarch_state_get_what_name(shadow_uarch_state_get_what(paddr));
     }
+    if (paddr >= AR_DTB_START && paddr - AR_DTB_START < AR_DTB_LENGTH) {
+        return "dtb";
+    }
+    if (paddr >= AR_CLINT_START && paddr - AR_CLINT_START < AR_CLINT_LENGTH) {
+        return "clint";
+    }
+    if (paddr >= AR_HTIF_START && paddr - AR_HTIF_START < AR_HTIF_LENGTH) {
+        return "htif";
+    }
+    if (paddr >= AR_PLIC_START && paddr - AR_PLIC_START < AR_PLIC_LENGTH) {
+        return "plic";
+    }
+    if (paddr >= AR_CMIO_RX_BUFFER_START && paddr - AR_CMIO_RX_BUFFER_START < AR_CMIO_RX_BUFFER_LENGTH) {
+        return "cmio.rx_buffer";
+    }
+    if (paddr >= AR_CMIO_TX_BUFFER_START && paddr - AR_CMIO_TX_BUFFER_START < AR_CMIO_TX_BUFFER_LENGTH) {
+        return "cmio.tx_buffer";
+    }
+    if (paddr >= AR_FIRST_VIRTIO_START && paddr < AR_LAST_VIRTIO_END) {
+        return "virtio";
+    }
     return "memory";
 }
 

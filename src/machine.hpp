@@ -663,6 +663,11 @@ public:
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest
     /// \returns Description of what is at that address
+    /// \note The function will return the reg name if the address is that of a register.
+    /// It can also resolve TLB registers, uarch registers, and PMA registers, and other
+    /// static ranges in the address space, such as "uarch.ram", "htif", "plic",
+    /// "virtio", "cmio.tx_buffer" etc. It will but not identify "ram", any flash drives
+    /// or nvram , since these are not statically defined. It will report them as "memory".
     static std::string get_address_name(uint64_t paddr);
 
     /// \brief Increments a counter

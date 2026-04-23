@@ -68,6 +68,18 @@ typedef enum cm_pmas_constant {
     CM_AR_SHADOW_TLB_LENGTH = 0x6000,
     CM_AR_PMAS_START = 0x10000,
     CM_AR_PMAS_LENGTH = 0x1000,
+    CM_AR_CLINT_START = 0x2000000,
+    CM_AR_CLINT_LENGTH = 0xC0000,
+    CM_AR_HTIF_START = 0x40008000,
+    CM_AR_HTIF_LENGTH = 0x1000,
+    CM_AR_FIRST_VIRTIO_START = 0x40010000,
+    CM_AR_LAST_VIRTIO_END = 0x40020000,
+    CM_AR_PLIC_START = 0x40100000,
+    CM_AR_PLIC_LENGTH = 0x00400000,
+    CM_AR_CMIO_RX_BUFFER_LENGTH = 0x200000,
+    CM_AR_CMIO_TX_BUFFER_LENGTH = 0x200000,
+    CM_AR_DTB_START = 0x7ff00000,
+    CM_AR_DTB_LENGTH = 0x100000,
 } cm_pmas_constant;
 
 /// \brief Error codes returned from the C API.
@@ -367,6 +379,11 @@ CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *va
 /// \param name Receives the name in a string, guaranteed to remain valid only until
 /// the next CM_API function is called from the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
+/// \note The function will return the reg name if the address is that of a register.
+/// It can also resolve TLB registers, uarch registers, and PMA registers, and other
+/// static ranges in the address space, such as "uarch.ram", "htif", "plic",
+/// "virtio", "cmio.tx_buffer" etc. It will but not identify "ram", any flash drives
+/// or nvram , since these are not statically defined. It will report them as "memory".
 CM_API cm_error cm_get_address_name(const cm_machine *m, uint64_t paddr, const char **name);
 
 // -----------------------------------------------------------------------------

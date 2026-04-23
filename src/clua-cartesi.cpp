@@ -259,6 +259,16 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_DTB_START, "AR_DTB_START", -1);
+    clua_setintegerfield(L, CM_AR_DTB_LENGTH, "AR_DTB_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_CLINT_START, "AR_CLINT_START", -1);
+    clua_setintegerfield(L, CM_AR_CLINT_LENGTH, "AR_CLINT_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_HTIF_START, "AR_HTIF_START", -1);
+    clua_setintegerfield(L, CM_AR_HTIF_LENGTH, "AR_HTIF_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_PLIC_START, "AR_PLIC_START", -1);
+    clua_setintegerfield(L, CM_AR_PLIC_LENGTH, "AR_PLIC_LENGTH", -1);
+    clua_setintegerfield(L, CM_AR_FIRST_VIRTIO_START, "AR_FIRST_VIRTIO_START", -1);
+    clua_setintegerfield(L, CM_AR_LAST_VIRTIO_END, "AR_LAST_VIRTIO_END", -1);
     // HTIF masks
     clua_setintegerfield(L, HTIF_HALT_CMD_HALT_MASK, "HTIF_HALT_CMD_HALT_MASK", -1);
     clua_setintegerfield(L, HTIF_CONSOLE_CMD_GETCHAR_MASK, "HTIF_CONSOLE_CMD_GETCHAR_MASK", -1);
