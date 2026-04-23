@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `help()` internally calling `os.exit()`
 
 ## Changed
+- Renamed `--dump-memory-ranges` to `--dump-address-ranges` for consistency with `get_address_ranges()`
 - Renamed all C++ headers from `.h` to `.hpp`, and renamed `machine-c-api.{h,cpp}` to `cm.{h,cpp}`
 - Bumped machine configuration archive version from 6 to 7 (for the new `nvram_configs` and `label` fields)
 - Moved the `/run/cartesi/memoryranges/` sysfs setup from the DTB init script into `cartesi-init`

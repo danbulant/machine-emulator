@@ -686,8 +686,8 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
-  --dump-memory-ranges[=<dir>]
-    dump all memory ranges to files under <dir>.
+  --dump-address-ranges[=<dir>]
+    dump all address ranges to files under <dir>.
     If <dir> is omitted, files are written to the current directory.
 
   --assert-rolling-template
@@ -882,7 +882,7 @@ local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
 local dense_uarch_hashes_start
 local dense_uarch_hashes_end
-local dump_memory_ranges = false
+local dump_address_ranges_dir = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
 local log_step_uarch = false
@@ -1648,16 +1648,16 @@ local options = {
         end,
     },
     {
-        "^%-%-dump%-memory%-ranges(%=?)(%g*)$",
+        "^%-%-dump%-address%-ranges(%=?)(%g*)$",
         function(opts, v)
             if not opts then return false end
             if opts == "=" then
                 if not v or #v < 1 then return false end
-                dump_memory_ranges = v
+                dump_address_ranges_dir = v
             elseif #v ~= 0 then
                 return false
             else
-                dump_memory_ranges = true
+                dump_address_ranges_dir = true
             end
             return true
         end,
@@ -2442,8 +2442,9 @@ local function store_machine(machine, config, dir, sharing)
     machine:store(name, sharing)
 end
 
-local function dump_pmas(machine, dir)
+local function dump_address_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
+    if prefix ~= "" then assert(os.execute("mkdir " .. dir), "could not create directory " .. dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
         local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
@@ -2717,7 +2718,7 @@ if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
     util.dump_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if dump_memory_ranges then dump_pmas(machine, dump_memory_ranges) end
+if dump_address_ranges_dir then dump_address_ranges(machine, dump_address_ranges_dir) end
 if final_hash then
     assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)

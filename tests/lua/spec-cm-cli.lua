@@ -29,6 +29,13 @@ local scratch = os.tmpname() .. ".d"
 assert(os.execute("mkdir -p " .. scratch), "failed to create scratch directory")
 local scratch_serial = 0
 
+-- Refuse rm -rf on anything outside the system temp roots.
+local function safer_rm_rf(dir)
+    assert(not dir:match("%.%."), "refusing rm -rf on path with ..: " .. dir)
+    assert(dir:match("^/tmp/") or dir:match("^/var/folders/"), "refusing rm -rf on path outside temp: " .. dir)
+    os.execute("rm -rf '" .. dir:gsub("'", "'\\''") .. "'")
+end
+
 describe("cartesi-machine CLI", function()
     local cartesi = require("cartesi")
     local evmu = require("cartesi.evmu")
@@ -730,7 +737,7 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --initial-hash, --final-hash, --periodic-hashes (two-arg and
     --       single-arg forms), --initial-proof, --final-proof,
-    --       --dense-uarch-hashes, and --dump-memory-ranges.
+    --       --dense-uarch-hashes, and --dump-address-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
     --       non-empty.
@@ -794,17 +801,16 @@ describe("cartesi-machine CLI", function()
         -- --dense-uarch-hashes=N single-argument form
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per PMA under <dir>.
+        -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per address range under <dir>.
         -- Use the scratch area because the installed tests cwd may be read-only.
         local dump_dir = scratch_path(".dump")
-        assert(os.execute("mkdir -p " .. shquote(dump_dir)))
-        run_ok({ "--dump-memory-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({ "--dump-address-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
         for _, v in ipairs(m:get_address_ranges()) do
             local filename = dump_dir .. "/" .. string.format("%016x--%016x.bin", v.start, v.length)
             local f = io.open(filename, "r")
-            assert(f, "--dump-memory-ranges: expected file not created: " .. filename)
+            assert(f, "--dump-address-ranges: expected file not created: " .. filename)
             f:close()
             assert(os.remove(filename))
         end
@@ -1589,4 +1595,4 @@ describe("cartesi-machine CLI", function()
 end)
 
 -- Cleanup scratch directory (runs once when the module is loaded)
-os.execute("rm -rf " .. scratch)
+safer_rm_rf(scratch)
