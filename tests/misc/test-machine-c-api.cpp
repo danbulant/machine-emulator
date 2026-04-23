@@ -248,7 +248,7 @@ class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
         _machine_config["flash_drive"] = {
-            {{"label", "flashdrive0"}, {"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
+            {{"label", "mydrive"}, {"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
                 {"backing_store",
                     {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
                         {"dht_filename", ""}, {"dpt_filename", ""}}}}};
@@ -302,7 +302,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_underscore_label_test, incomplete_mac
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("flash drive 0 label must not start with underscore (reserved for internal use)");
+    std::string origin("flash drive 0 label must start with a lowercase letter");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -350,7 +350,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_label_at_max_length_test, incomplete_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_valid_label_chars_test, incomplete_machine_fixture) {
-    _machine_config["flash_drive"] = {{{"label", "My-Drive0"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
+    _machine_config["flash_drive"] = {{{"label", "my-drive0"}, {"start", 0x80000000000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -469,7 +469,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_underscore_label_test, incomplete_machine_f
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("nvram 0 label must not start with underscore (reserved for internal use)");
+    std::string origin("nvram 0 label must start with a lowercase letter");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -536,7 +536,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_label_at_max_length_test, incomplete_machin
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_valid_label_chars_test, incomplete_machine_fixture) {
-    _machine_config["nvram"] = {{{"label", "My-Ram0"}, {"start", 0x70000000}, {"length", 0x1000}}};
+    _machine_config["nvram"] = {{{"label", "my-ram0"}, {"start", 0x70000000}, {"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

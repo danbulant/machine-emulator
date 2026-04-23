@@ -51,7 +51,7 @@ typedef enum cm_constant {
     CM_HASH_TREE_LOG2_ROOT_SIZE = 64,
     CM_FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
     CM_NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
-    CM_MEMORY_RANGE_LABEL_MAX = 64, ///< Maximum length of a memory range user label
+    CM_MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).

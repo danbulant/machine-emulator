@@ -38,6 +38,9 @@ using namespace std::string_literals;
 
 namespace cartesi {
 
+// Amount or RAM to reserve for firmware (OpenSBI)
+static constexpr uint64_t FW_RESV = 0x80000;
+
 static std::string misa_to_isa_string(uint64_t misa) {
     std::ostringstream ss;
     ss << "rv64";
@@ -171,9 +174,9 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_u32("#address-cells", 2);
             fdt.prop_u32("#size-cells", 2);
             fdt.prop_empty("ranges");
-            { // reserve 512KB for firmware M-mode code (such as OpenSBI)
+            { // reserve firmware M-mode code (such as OpenSBI)
                 fdt.begin_node_num("fw_resv", AR_RAM_START);
-                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x80000});
+                fdt.prop_u64_list<2>("reg", {AR_RAM_START, FW_RESV});
                 fdt.prop_empty("no-map");
                 fdt.end_node();
             }
@@ -181,41 +184,46 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         }
 
         // drives
-        {
-            int i = 0; // NOLINT(misc-const-correctness)
-            for (const auto &f : c.flash_drive) {
-                fdt.begin_node_num("pmem", f.start);
-                fdt.prop_string("compatible", "pmem-region");
-                fdt.prop_u64_list<2>("reg", {f.start, f.length});
-                fdt.prop_empty("volatile");
-                // ctsi,label always starts with the deterministic "_flashdrive<i>"
-                // (leading underscore is reserved for these internal names);
-                // the optional user label (if any) is appended after a comma.
-                std::string dt_label = "_flashdrive"s + std::to_string(i);
-                if (!f.label.empty()) {
-                    dt_label.append(",").append(f.label);
-                }
-                fdt.prop_string("ctsi,label", dt_label);
-                fdt.end_node();
-                i++;
-            }
+        for (const auto &f : c.flash_drive) {
+            fdt.begin_node_num("pmem", f.start);
+            fdt.prop_string("compatible", "pmem-region");
+            fdt.prop_u64_list<2>("reg", {f.start, f.length});
+            fdt.prop_empty("volatile");
+            fdt.end_node();
         }
 
         // nvrams
-        {
+        for (const auto &n : c.nvram) {
+            fdt.begin_node_num("uio", n.start);
+            fdt.prop_string("compatible", "generic-uio");
+            fdt.prop_u64_list<2>("reg", {n.start, n.length});
+            fdt.end_node();
+        }
+
+        // aliases: one entry per auto-generated label and per user label, pointing to the driver node
+        if (!c.flash_drive.empty() || !c.nvram.empty()) {
+            fdt.begin_node("aliases");
             int i = 0; // NOLINT(misc-const-correctness)
-            for (const auto &n : c.nvram) {
-                fdt.begin_node_num("uio", n.start);
-                fdt.prop_string("compatible", "generic-uio");
-                fdt.prop_u64_list<2>("reg", {n.start, n.length});
-                std::string dt_label = "_nvram"s + std::to_string(i);
-                if (!n.label.empty()) {
-                    dt_label.append(",").append(n.label);
+            for (const auto &f : c.flash_drive) {
+                std::ostringstream target;
+                target << "/pmem@" << std::hex << f.start;
+                fdt.prop_string("flashdrive"s + std::to_string(i), target.str());
+                if (!f.label.empty()) {
+                    fdt.prop_string(f.label, target.str());
                 }
-                fdt.prop_string("ctsi,label", dt_label);
-                fdt.end_node();
                 i++;
             }
+            i = 0;
+            for (const auto &n : c.nvram) {
+                std::ostringstream target;
+                target << "/uio@" << std::hex << n.start;
+                fdt.prop_string("nvram"s + std::to_string(i), target.str());
+                if (!n.label.empty()) {
+                    fdt.prop_string(n.label, target.str());
+                }
+                i++;
+            }
+            fdt.end_node();
         }
 
         // cmio

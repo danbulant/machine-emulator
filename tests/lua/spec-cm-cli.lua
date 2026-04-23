@@ -487,7 +487,7 @@ describe("cartesi-machine CLI", function()
                 .. ",create,shared,user:dapp",
             "--max-mcycle=2000000000",
             "--no-init-splash",
-            "--quiet",
+            --"--quiet",
             "--",
             "writebe64 0xcafebabe | writemmap ramtest 0 8 && yield manual rx-accepted 0",
         })

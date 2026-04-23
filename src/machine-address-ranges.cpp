@@ -416,15 +416,25 @@ static void validate_memory_range_label(const std::string &description, const st
                 .append(std::to_string(MEMORY_RANGE_LABEL_MAX))
                 .append(" characters)")};
     }
+    if (label.front() < 'a' || label.front() > 'z') {
+        throw std::invalid_argument{std::string(description).append(" label must start with a lowercase letter")};
+    }
     for (const auto c : label) {
-        if ((c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_') {
+        if ((c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-') {
             throw std::invalid_argument{
                 std::string(description).append(" label contains invalid character '").append(1, c).append("'")};
         }
     }
-    if (label.front() == '_') {
-        throw std::invalid_argument{
-            std::string(description).append(" label must not start with underscore (reserved for internal use)")};
+    for (const auto &prefix : {"flashdrive"s, "nvram"s}) {
+        if (label.starts_with(prefix)) {
+            const auto suffix = std::string_view{label}.substr(prefix.size());
+            if (!suffix.empty() && std::ranges::all_of(suffix, [](unsigned char c) { return std::isdigit(c); })) {
+                throw std::invalid_argument{std::string(description)
+                        .append(" label \"")
+                        .append(label)
+                        .append("\" is reserved for auto-generated labels")};
+            }
+        }
     }
     for (const auto &seen : seen_labels) {
         if (seen == label) {

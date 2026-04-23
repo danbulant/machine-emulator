@@ -120,13 +120,13 @@ where options are:
 
         label (optional)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
-        the machine always assigns the internal label "_flashdriveN" (where N
-        is the zero-based index). the user label is an optional additional name
+        the machine always assigns the auto label "flashdriveN" (where N is
+        the zero-based index). the user label is an optional additional alias
         that can be used to refer to the flash drive in --replace-memory-range.
-        user labels must contain only alphanumeric characters, hyphens, and
-        underscores, must not start with an underscore (reserved for internal
-        use), must be unique across all flash drives and NVRAMs, and must be
-        at most 64 characters long.
+        user labels must contain only lowercase letters, digits, and hyphens,
+        must start with a lowercase letter, must not match flashdriveN or
+        nvramN (reserved for auto-generated labels), must be unique across all
+        flash drives and NVRAMs, and must be at most 31 characters long.
         if omitted, no user label is set.
 
         start (optional)
@@ -209,13 +209,13 @@ where options are:
         user:<string>
 
         label (optional)
-        the machine always assigns the internal label "_nvramN" (where N is
-        the zero-based index). the user label is an optional additional name
-        that can be used to refer to the NVRAM in --replace-memory-range.
-        user labels must contain only alphanumeric characters, hyphens, and
-        underscores, must not start with an underscore (reserved for internal
-        use), must be unique across all flash drives and NVRAMs, and must be
-        at most 64 characters long.
+        the machine always assigns the auto label "nvramN" (where N is the
+        zero-based index). the user label is an optional additional alias that
+        can be used to refer to the NVRAM in --replace-memory-range.
+        user labels must contain only lowercase letters, digits, and hyphens,
+        must start with a lowercase letter, must not match flashdriveN or
+        nvramN (reserved for auto-generated labels), must be unique across all
+        flash drives and NVRAMs, and must be at most 31 characters long.
         if omitted, no user label is set.
 
         start (required)
@@ -2199,8 +2199,7 @@ echo "
     for idx = 1, flash_drive_count do
         local entry = flash_drives[idx]
         if entry then -- skip removed drives (e.g. --no-root-flash-drive)
-            -- dt_label is the deterministic name emitted in ctsi,label by dtb.cpp.
-            local dt_label = "_flashdrive" .. #config.flash_drive
+            local dt_label = "flashdrive" .. #config.flash_drive
             if not entry.length then entry.length = -1 end
             config.flash_drive[#config.flash_drive + 1] = entry
             if entry.label ~= "root" and (entry.mke2fs or entry.mount or entry.user) then
@@ -2232,14 +2231,14 @@ echo "
     for idx = 1, nvram_count do
         local entry = nvrams[idx]
         if entry then
-            local dt_label = "_nvram" .. #config.nvram
+            local dt_label = "nvram" .. #config.nvram
             if not entry.length then entry.length = -1 end
             config.nvram[#config.nvram + 1] = entry
             config.dtb.init = config.dtb.init .. string.format("dev=$(nvram %s)\n", dt_label)
             if entry.read_only then
-                config.dtb.init = config.dtb.init .. 'chmod 0444 "$dev"\n'
+                config.dtb.init = config.dtb.init .. 'busybox chmod 0444 "$dev"\n'
             else
-                config.dtb.init = config.dtb.init .. 'chmod 0666 "$dev"\n'
+                config.dtb.init = config.dtb.init .. 'busybox chmod 0666 "$dev"\n'
             end
             if entry.user then
                 config.dtb.init = config.dtb.init .. string.format('busybox chown %s: "$dev"\n', entry.user)

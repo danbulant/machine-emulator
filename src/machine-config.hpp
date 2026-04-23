@@ -41,7 +41,7 @@ enum machine_config_constants {
     NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
     VIRTIO_DEVICE_MAX = 16,      ///< Maximum number of virtio devices
     VIRTIO_HOSTFWD_MAX = 16,     ///< Maximum number of virtio net user host forward ports
-    MEMORY_RANGE_LABEL_MAX = 64, ///< Maximum length of a memory range user label
+    MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
 };
 
 /// \brief Backing store config
