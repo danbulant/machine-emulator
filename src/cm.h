@@ -70,7 +70,31 @@ typedef enum cm_pmas_constant {
     CM_AR_PMAS_LENGTH = 0x1000,
 } cm_pmas_constant;
 
-#include "cm-error.h"
+/// \brief Error codes returned from the C API.
+typedef enum cm_error {
+    CM_ERROR_OK = 0,
+    CM_ERROR_INVALID_ARGUMENT = -1,
+    CM_ERROR_DOMAIN_ERROR = -2,
+    CM_ERROR_LENGTH_ERROR = -3,
+    CM_ERROR_OUT_OF_RANGE = -4,
+    CM_ERROR_LOGIC_ERROR = -5,
+    CM_ERROR_RUNTIME_ERROR = -6,
+    CM_ERROR_RANGE_ERROR = -7,
+    CM_ERROR_OVERFLOW_ERROR = -8,
+    CM_ERROR_UNDERFLOW_ERROR = -9,
+    CM_ERROR_BAD_TYPEID = -10,
+    CM_ERROR_BAD_CAST = -11,
+    CM_ERROR_BAD_ANY_CAST = -12,
+    CM_ERROR_BAD_OPTIONAL_ACCESS = -13,
+    CM_ERROR_BAD_WEAK_PTR = -14,
+    CM_ERROR_BAD_FUNCTION_CALL = -15,
+    CM_ERROR_BAD_ALLOC = -16,
+    CM_ERROR_BAD_ARRAY_NEW_LENGTH = -17,
+    CM_ERROR_BAD_EXCEPTION = -18,
+    CM_ERROR_BAD_VARIANT_ACCESS = -19,
+    CM_ERROR_EXCEPTION = -20,
+    CM_ERROR_UNKNOWN = -21,
+} cm_error;
 
 /// \brief Reasons for the machine to break from call to cm_run.
 typedef enum cm_break_reason {

@@ -23,14 +23,25 @@
 #include <memory>
 #include <new>
 #include <optional>
-#include <regex>
 #include <stdexcept>
+#include <string>
 #include <typeinfo>
 #include <variant>
 
-#include "cm-error.h"
+#include "cm.h"
 
 namespace cartesi {
+
+/// \brief Reconstructed exception for CM_ERROR_EXCEPTION (any std::exception subclass not otherwise mapped).
+struct cm_reconstructed_exception : std::exception {
+    explicit cm_reconstructed_exception(std::string msg) : m_what(std::move(msg)) {}
+    const char *what() const noexcept override { return m_what.c_str(); }
+private:
+    std::string m_what;
+};
+
+/// \brief Reconstructed exception for CM_ERROR_UNKNOWN (non-std::exception throw).
+struct cm_reconstructed_unknown {};
 
 /// \brief Returns the cm_error code for the exception currently being handled,
 /// and writes its message into \p message.
@@ -76,8 +87,6 @@ inline cm_error cm_exception_to_error_code(std::string &message) noexcept {
         return CM_ERROR_OVERFLOW_ERROR;
     } catch (const std::underflow_error &) {
         return CM_ERROR_UNDERFLOW_ERROR;
-    } catch (const std::regex_error &) {
-        return CM_ERROR_REGEX_ERROR;
     } catch (const std::runtime_error &) {
         return CM_ERROR_RUNTIME_ERROR;
     } catch (const std::bad_typeid &) {
@@ -106,9 +115,8 @@ inline cm_error cm_exception_to_error_code(std::string &message) noexcept {
 }
 
 /// \brief Throws the exception corresponding to the given cm_error code.
-/// \details Falls back to std::runtime_error for codes that cannot be
-/// faithfully reconstructed from a message string alone (system_error,
-/// regex_error, and the generic exception/unknown codes).
+/// \details Uses cm_reconstructed_exception/cm_reconstructed_unknown for codes
+/// that cannot be faithfully reconstructed from a message string alone.
 [[noreturn]] inline void cm_error_code_to_exception(cm_error code, const std::string &message) {
     switch (code) {
         case CM_ERROR_INVALID_ARGUMENT:
@@ -150,11 +158,12 @@ inline cm_error cm_exception_to_error_code(std::string &message) noexcept {
         case CM_ERROR_OK:
             throw std::logic_error("cm_error_code_to_exception called with CM_ERROR_OK");
         case CM_ERROR_RUNTIME_ERROR:
-        case CM_ERROR_REGEX_ERROR:
+            throw std::runtime_error(message);
         case CM_ERROR_EXCEPTION:
+            throw cm_reconstructed_exception(message);
         case CM_ERROR_UNKNOWN:
         default:
-            throw std::runtime_error(message);
+            throw cm_reconstructed_unknown{}; // NOLINT(hicpp-exception-baseclass)
     }
 }
 
