@@ -39,6 +39,11 @@ extern "C" {
 #define CM_MCYCLE_MAX UINT64_MAX
 #define CM_UARCH_CYCLE_MAX UINT64_C(1048576)
 
+#define CM_DTB_BOOTARGS_CONSOLE "quiet earlycon=sbi console=hvc0 "
+#define CM_DTB_BOOTARGS_UIO "uio_pdrv_genirq.of_id=generic-uio "
+#define CM_DTB_BOOTARGS_ROOT "root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
+#define CM_DTB_BOOTARGS_INIT (CM_DTB_BOOTARGS_CONSOLE CM_DTB_BOOTARGS_UIO CM_DTB_BOOTARGS_ROOT)
+
 // -----------------------------------------------------------------------------
 // API enums and structures
 // -----------------------------------------------------------------------------

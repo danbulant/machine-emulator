@@ -328,11 +328,13 @@ describe("cartesi-machine CLI", function()
     -- Flash drive options
     --
     -- What: --flash-drive variants (label, start, length, read_only, mount:true,
-    --       mount:false, mke2fs, user), --no-root-flash-drive, and --hash-tree.
+    --       mount:false, mke2fs, user), --no-root-flash-drive, --hash-tree,
+    --       override_bool explicit-false fix (read_only and shared toggle),
+    --       and filename preservation through partial re-invocation.
     -- How:  config_for() each combination; assertions on cfg.flash_drive[i]
     --       fields verify the machine config, while assertions on
-    --       cfg.dtb.init substrings verify the guest init script (mount
-    --       commands, chown, mke2fs) generated for each variant.
+    --       cfg.dtb.init and cfg.dtb.bootargs substrings verify the guest
+    --       init script and bootargs generated for each variant.
     -- -------------------------------------------------------------------------
     it("flash drive options", function()
         -- Default root flash drive present
@@ -368,6 +370,9 @@ describe("cartesi-machine CLI", function()
         for _, fd in ipairs(cfg.flash_drive) do
             expect.truthy(fd.label ~= "root")
         end
+        -- DTB_BOOTARGS_ROOT (including init=) must be absent after removal
+        expect.truthy(not cfg.dtb.bootargs:find("pmem0", 1, true))
+        expect.truthy(not cfg.dtb.bootargs:find("init=", 1, true))
 
         -- mount:true with label: dtb.init gets a mount command for /mnt/<label> and chown for user
         local ft = scratch_path(".ext2")
@@ -403,6 +408,57 @@ describe("cartesi-machine CLI", function()
             end
         end
         expect.truthy(not cfg.dtb.bootargs:find("pmem0 rw"))
+
+        -- override_bool fix: explicit read_only:false after read_only:true must clear the flag.
+        -- If override_bool were broken (the "a and b or c" form), false wouldn't stick,
+        -- and bootargs would be rewritten to "ro".
+        cfg = config_for({
+            "--flash-drive=label:root,read_only",
+            "--flash-drive=label:root,read_only:false",
+        })
+        expect.truthy(cfg.dtb.bootargs:find("pmem0 rw"))
+        for _, fd in ipairs(cfg.flash_drive) do
+            if fd.label == "root" then
+                expect.truthy(not fd.read_only)
+            end
+        end
+
+        -- backing_store.shared explicit false via override_bool.
+        local fs_tmp = scratch_path(".ext2")
+        os.execute("truncate -s 65536 " .. fs_tmp)
+        cfg = config_for({
+            "--flash-drive=label:stest,start:0x80000090000000,length:0x10000,data_filename:"
+                .. fs_tmp
+                .. ",shared:true",
+            "--flash-drive=label:stest,shared:false",
+        })
+        local stest_fd
+        for _, fd in ipairs(cfg.flash_drive) do
+            if fd.label == "stest" then
+                stest_fd = fd
+                break
+            end
+        end
+        expect.truthy(stest_fd and stest_fd.backing_store.shared == false)
+
+        -- Filename preserved: a partial re-invocation (no data_filename) must not stomp
+        -- the backing_store.data_filename set in the first invocation.
+        -- set_empty_omitted_filenames runs at assembly time, so the nil from the second
+        -- invocation must not overwrite the value from the first.
+        local fk_tmp = scratch_path(".ext2")
+        os.execute("truncate -s 65536 " .. fk_tmp)
+        cfg = config_for({
+            "--flash-drive=label:keep,start:0x800000a0000000,length:0x10000,data_filename:" .. fk_tmp,
+            "--flash-drive=label:keep,read_only",
+        })
+        local keep_fd
+        for _, fd in ipairs(cfg.flash_drive) do
+            if fd.label == "keep" then
+                keep_fd = fd
+                break
+            end
+        end
+        expect.truthy(keep_fd and keep_fd.backing_store.data_filename ~= "")
 
         -- Unlabeled flash-drive with data_filename: exercises the "no label" branch
         -- of the default-mount logic (mount defaults to false).
@@ -471,6 +527,26 @@ describe("cartesi-machine CLI", function()
             end
         end
         expect.equal(shared_count, 1)
+
+        -- Accept-list: --nvram rejects keys that belong only to --flash-drive.
+        run_fail({
+            "--nvram=label:x,start:0x70003000,length:0x1000,mount:true",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, nil)
+        run_fail(
+            { "--nvram=label:x,start:0x70004000,length:0x1000,mke2fs", "--max-mcycle=0", "--no-init-splash", "--quiet" },
+            nil
+        )
+
+        -- override_bool fix: read_only:false after read_only must clear the flag;
+        -- chmod 0444 must not appear for that NVRAM.
+        cfg = config_for({
+            "--nvram=label:toggle,start:0x70005000,length:0x1000,read_only",
+            "--nvram=label:toggle,read_only:false",
+        })
+        expect.truthy(not cfg.dtb.init:find("chmod 0444"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -1193,6 +1269,96 @@ describe("cartesi-machine CLI", function()
             "--no-init-splash",
             "--quiet",
         })
+
+        -- Accept-list: --replace-memory-range rejects keys that belong only to --flash-drive
+        -- or --nvram, plus create/truncate (which machine_address_ranges::replace does not wire
+        -- to prepare_ar_backing_store, so they would be silently ignored during replace).
+        for _, bad in ipairs({ "user:nobody", "create", "truncate" }) do
+            run_fail({
+                "--replace-memory-range=start:0x80000060000000,length:0x10000," .. bad,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            }, nil)
+        end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- replace_memory_range honors the shared flag at runtime
+    --
+    -- What: verify that --replace-memory-range's `shared` flag actually
+    --       controls whether guest writes propagate to the host backing
+    --       file, not just that the flag is accepted by the CLI.
+    -- How:  Build a template with a labeled NVRAM and an entrypoint that
+    --       does writemmap + manual yield (twice, though only the first
+    --       executes because manual yield breaks the run loop).  Store
+    --       the template at mcycle=0 so each load starts from the same
+    --       point.  Load + --replace-memory-range with `shared`: writes
+    --       must reach the host file.  Load + --replace-memory-range
+    --       without `shared`: writes go to a private COW mapping and must
+    --       NOT reach the host file.
+    -- -------------------------------------------------------------------------
+    it("replace_memory_range shared flag controls write propagation", function()
+        local template_dir = scratch_path("-tmpl")
+        run_ok({
+            "--nvram=start:0x90000000000000,length:0x1000,label:ramtest,user:dapp",
+            "--store=" .. template_dir,
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--",
+            "writebe64 0xdeadbeef | writemmap ramtest 0 8 && "
+                .. "yield manual rx-accepted 0 && "
+                .. "writebe64 0xcafebabe | writemmap ramtest 0 8 && "
+                .. "yield manual rx-accepted 0",
+        })
+
+        -- Shared replace: the write before the first yield reaches the host file.
+        local shared_file = scratch_path("-shared.bin")
+        os.execute("truncate -s 4096 " .. shared_file)
+        run_ok({
+            "--load=" .. template_dir,
+            "--replace-memory-range=label:ramtest,data_filename:" .. shared_file .. ",shared",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+        })
+        do
+            local f <close> = assert(io.open(shared_file, "rb"))
+            expect.equal(string.unpack(">I8", f:read(8)), 0xdeadbeef)
+        end
+
+        -- Non-shared replace: the write lands in a private COW mapping and does
+        -- not reach the host file, which stays zero-initialized.
+        local private_file = scratch_path("-private.bin")
+        os.execute("truncate -s 4096 " .. private_file)
+        run_ok({
+            "--load=" .. template_dir,
+            "--replace-memory-range=label:ramtest,data_filename:" .. private_file,
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+        })
+        do
+            local f <close> = assert(io.open(private_file, "rb"))
+            expect.equal(string.unpack(">I8", f:read(8)), 0)
+        end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Cross-kind label collision
+    --
+    -- What: flash drives and NVRAMs share a single label namespace enforced by
+    --       the machine constructor; using the same label for both must fail.
+    -- How:  run_fail() with a --flash-drive and --nvram that share a label.
+    -- -------------------------------------------------------------------------
+    it("flash drive and nvram share label namespace", function()
+        local flash_tmp = scratch_path(".ext2")
+        os.execute("truncate -s 65536 " .. flash_tmp)
+        run_fail({
+            "--flash-drive=label:collide,start:0x80000020000000,length:0x10000,data_filename:" .. flash_tmp,
+            "--nvram=label:collide,start:0x70000000,length:0x1000",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, nil)
     end)
 
     -- -------------------------------------------------------------------------

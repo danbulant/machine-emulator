@@ -42,6 +42,7 @@ enum machine_config_constants {
     VIRTIO_DEVICE_MAX = 16,      ///< Maximum number of virtio devices
     VIRTIO_HOSTFWD_MAX = 16,     ///< Maximum number of virtio net user host forward ports
     MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
+    PHTC_SIZE = 4096             ///< Default size of the page hash-tree cache
 };
 
 /// \brief Backing store config
@@ -77,22 +78,30 @@ struct ram_config final {
     backing_store_config backing_store; ///< Backing store
 };
 
+/// \brief Build default DTB bootargs from its parts
+#define DTB_BOOTARGS_CONSOLE "quiet earlycon=sbi console=hvc0 "
+#define DTB_BOOTARGS_UIO "uio_pdrv_genirq.of_id=generic-uio "
+#define DTB_BOOTARGS_ROOT "root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
+#define DTB_BOOTARGS_INIT (DTB_BOOTARGS_CONSOLE DTB_BOOTARGS_UIO DTB_BOOTARGS_ROOT)
+
 /// \brief DTB state config
 struct dtb_config final {
-    std::string bootargs{"quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init "
-                         "uio_pdrv_genirq.of_id=generic-uio"}; ///< Bootargs to pass to kernel
-    std::string init;                   ///< Initialization commands to be executed as root on boot
-    std::string entrypoint;             ///< Commands to execute the main application
-    backing_store_config backing_store; ///< Backing store
+    std::string bootargs{DTB_BOOTARGS_INIT}; ///< Bootargs to pass to kernel
+    std::string init;                        ///< Initialization commands to be executed as root on boot
+    std::string entrypoint;                  ///< Commands to execute the main application
+    backing_store_config backing_store;      ///< Backing store
 };
+
+/// \brief Automatic detection of start or length
+constexpr auto MEMORY_RANGE_AUTO = 0xffffffffffffffffUL;
 
 /// \brief Memory range config
 struct memory_range_config final {
-    std::string label;                     ///< Label for identification
-    uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
-    uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
-    bool read_only{false};                 ///< Make memory range read-only to host
-    backing_store_config backing_store;    ///< Backing store
+    std::string label;                  ///< Label for identification
+    uint64_t start{MEMORY_RANGE_AUTO};  ///< Memory range start position, default is to auto detect
+    uint64_t length{MEMORY_RANGE_AUTO}; ///< Memory range length, default is to auto detect
+    bool read_only{false};              ///< Make memory range read-only to host
+    backing_store_config backing_store; ///< Backing store
 };
 
 /// \brief List of memory ranges
@@ -175,7 +184,7 @@ struct hash_tree_config final {
     bool create{false};                                              ///< Should backing store be created?
     std::string sht_filename;                                        ///< Backing storage for sparse hash-tree
     std::string phtc_filename;                                       ///< Backing storage for page hash-tree cache
-    uint64_t phtc_size{4096};                                        ///< Max number of pages in page hash-tree cache
+    uint64_t phtc_size{PHTC_SIZE};                                   ///< Max number of pages in page hash-tree cache
     hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function type to use in the hash-tree
 };
 

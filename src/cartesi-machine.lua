@@ -780,23 +780,6 @@ local remote_destroy = true
 local perform_rollbacks = true
 local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
--- Merge parsed options into a memory range entry (shared between flash drives and NVRAMs).
--- The entry uses the same format as machine config (label, backing_store, read_only, start, length).
--- Extra keys (mount, mke2fs, user) are stored alongside and ignored by the machine config.
-local function merge_memory_range_opts(entry, opts)
-    entry.label = opts.label or entry.label
-    entry.read_only = opts.read_only == nil and entry.read_only or opts.read_only
-    entry.start = opts.start or entry.start
-    entry.length = opts.length or entry.length
-    entry.user = opts.user or entry.user
-    if not entry.backing_store then entry.backing_store = {} end
-    entry.backing_store.data_filename = opts.data_filename or entry.backing_store.data_filename
-    entry.backing_store.dht_filename = opts.dht_filename or entry.backing_store.dht_filename
-    entry.backing_store.dpt_filename = opts.dpt_filename or entry.backing_store.dpt_filename
-    entry.backing_store.shared = opts.shared == nil and entry.backing_store.shared or opts.shared
-    entry.backing_store.create = opts.create == nil and entry.backing_store.create or opts.create
-    entry.backing_store.truncate = opts.truncate == nil and entry.backing_store.truncate or opts.truncate
-end
 
 local flash_label_to_index = { root = 1 }
 local flash_drives = {
@@ -905,22 +888,20 @@ local assert_rolling_template = false
 local log_step_mcycle_count
 local log_step_filename
 
-local function parse_memory_range(opts, all)
-    local f = util.parse_options(opts, all, {
-        label = "string",
-        data_filename = "string",
-        dht_filename = "string",
-        dpt_filename = "string",
-        shared = "boolean",
-        create = "boolean",
-        truncate = "boolean",
-        length = "number",
-        start = "number",
-    })
+-- Default omitted backing-store filenames to ""
+local function set_empty_omitted_filenames(f)
+    local bs = f.backing_store
+    bs.data_filename = bs.data_filename or ""
+    bs.dht_filename = bs.dht_filename or ""
+    bs.dpt_filename = bs.dpt_filename or ""
+end
+
+local function parse_memory_range(opts, all, accepted)
+    local f = util.parse_options(opts, all, accepted)
     f.backing_store = {
-        data_filename = f.data_filename or "",
-        dht_filename = f.dht_filename or "",
-        dpt_filename = f.dpt_filename or "",
+        data_filename = f.data_filename,
+        dht_filename = f.dht_filename,
+        dpt_filename = f.dpt_filename,
         shared = f.shared,
         create = f.create,
         truncate = f.truncate,
@@ -932,6 +913,31 @@ local function parse_memory_range(opts, all)
     f.create = nil
     f.truncate = nil
     return f
+end
+
+-- Override existing boolean with a new one
+local function override_bool(prev, b)
+    if b == nil then return prev end
+    return b
+end
+
+-- Override existing memory range entry with new options (shared between flash drives and NVRAMs).
+-- The entry uses the same format as machine config (label, backing_store, read_only, start, length).
+-- Extra keys (mount, mke2fs, user) are stored alongside and ignored by the machine config.
+local function override_memory_range(entry, opts)
+    entry.label = opts.label or entry.label
+    entry.start = opts.start or entry.start
+    entry.length = opts.length or entry.length
+    entry.user = opts.user or entry.user
+    entry.read_only = override_bool(entry.read_only, opts.read_only)
+    local entry_bs = entry.backing_store
+    local opts_bs = opts.backing_store
+    entry_bs.data_filename = opts_bs.data_filename or entry_bs.data_filename
+    entry_bs.dht_filename = opts_bs.dht_filename or entry_bs.dht_filename
+    entry_bs.dpt_filename = opts_bs.dpt_filename or entry_bs.dpt_filename
+    entry_bs.shared = override_bool(entry_bs.shared, opts_bs.shared)
+    entry_bs.create = override_bool(entry_bs.create, opts_bs.create)
+    entry_bs.truncate = override_bool(entry_bs.truncate, opts_bs.truncate)
 end
 
 local function parse_backing_store(opts, all, def)
@@ -1436,7 +1442,7 @@ local options = {
     {
         "^(%-%-flash%-drive%=(.+))$",
         function(all, opts)
-            local f = util.parse_options(opts, all, {
+            local f = parse_memory_range(opts, all, {
                 label = "string",
                 data_filename = "string",
                 dht_filename = "string",
@@ -1444,51 +1450,22 @@ local options = {
                 shared = "boolean",
                 create = "boolean",
                 truncate = "boolean",
+                length = "number",
+                start = "number",
                 read_only = "boolean",
                 mount = "string",
                 mke2fs = "boolean",
                 user = "string",
-                length = "number",
-                start = "number",
             })
-            f.data_filename = f.data_filename or ""
-            f.dht_filename = f.dht_filename or ""
-            f.dpt_filename = f.dpt_filename or ""
-            if f.mke2fs == nil then f.mke2fs = f.data_filename == "" end
-            if f.mount == nil then
-                -- mount only if there is a file backing
-                if f.data_filename ~= "" or f.mke2fs then
-                    if f.label then
-                        f.mount = "/mnt/" .. f.label
-                    else
-                        f.mount = false
-                    end
-                else
-                    f.mount = false
-                end
-            elseif f.mount == "true" then
-                if f.label then
-                    f.mount = "/mnt/" .. f.label
-                else
-                    f.mount = false
-                end
-            elseif f.mount == "false" then
-                f.mount = false
-            end
-            local idx
             if f.label and flash_label_to_index[f.label] then
-                idx = flash_label_to_index[f.label]
+                local prev_f = flash_drives[flash_label_to_index[f.label]]
+                override_memory_range(prev_f, f)
+                prev_f.mount = override_bool(prev_f.mount, f.mount)
+                prev_f.mke2fs = override_bool(prev_f.mke2fs, f.mke2fs)
             else
                 flash_drive_count = flash_drive_count + 1
-                idx = flash_drive_count
-                if f.label then flash_label_to_index[f.label] = idx end
-            end
-            if not flash_drives[idx] then flash_drives[idx] = {} end
-            merge_memory_range_opts(flash_drives[idx], f)
-            flash_drives[idx].mount = f.mount or flash_drives[idx].mount
-            flash_drives[idx].mke2fs = f.mke2fs or flash_drives[idx].mke2fs
-            if f.label == "root" and f.read_only then -- Mount root filesystem as read-only
-                dtb.bootargs = dtb.bootargs:gsub("rw", "ro")
+                flash_drives[flash_drive_count] = f
+                if f.label then flash_label_to_index[f.label] = flash_drive_count end
             end
             return true
         end,
@@ -1496,7 +1473,7 @@ local options = {
     {
         "^(%-%-nvram%=(.+))$",
         function(all, opts)
-            local f = util.parse_options(opts, all, {
+            local f = parse_memory_range(opts, all, {
                 label = "string",
                 data_filename = "string",
                 dht_filename = "string",
@@ -1504,31 +1481,36 @@ local options = {
                 shared = "boolean",
                 create = "boolean",
                 truncate = "boolean",
-                read_only = "boolean",
-                user = "string",
                 length = "number",
                 start = "number",
+                read_only = "boolean",
+                user = "string",
             })
-            f.data_filename = f.data_filename or ""
-            f.dht_filename = f.dht_filename or ""
-            f.dpt_filename = f.dpt_filename or ""
-            local idx
             if f.label and nvram_label_to_index[f.label] then
-                idx = nvram_label_to_index[f.label]
+                local prev_f = nvrams[nvram_label_to_index[f.label]]
+                override_memory_range(prev_f, f)
             else
                 nvram_count = nvram_count + 1
-                idx = nvram_count
-                if f.label then nvram_label_to_index[f.label] = idx end
+                nvrams[nvram_count] = f
+                if f.label then nvram_label_to_index[f.label] = nvram_count end
             end
-            if not nvrams[idx] then nvrams[idx] = {} end
-            merge_memory_range_opts(nvrams[idx], f)
             return true
         end,
     },
     {
         "^(%-%-replace%-memory%-range%=(.+))$",
         function(all, opts)
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
+            local f = parse_memory_range(opts, all, {
+                label = "string",
+                data_filename = "string",
+                dht_filename = "string",
+                dpt_filename = "string",
+                shared = "boolean",
+                length = "number",
+                start = "number",
+                read_only = "boolean",
+            })
+            memory_range_replace[#memory_range_replace + 1] = f
             return true
         end,
     },
@@ -1643,7 +1625,7 @@ local options = {
             assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
             flash_drives[1] = nil
             flash_label_to_index.root = nil
-            dtb.bootargs = dtb.bootargs:gsub("^root=[^%s]+%s*", ""):gsub("%s+root=[^%s]+", "", 1)
+            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT:gsub("[^%w]", "%%%1"), "")
             return true
         end,
     },
@@ -2199,8 +2181,33 @@ echo "
     for idx = 1, flash_drive_count do
         local entry = flash_drives[idx]
         if entry then -- skip removed drives (e.g. --no-root-flash-drive)
+            set_empty_omitted_filenames(entry)
             local dt_label = "flashdrive" .. #config.flash_drive
             if not entry.length then entry.length = -1 end
+            if entry.mke2fs == nil then entry.mke2fs = entry.backing_store.data_filename == "" end
+            if entry.mount == nil then
+                -- mount only if there is a file backing
+                if entry.backing_store.data_filename ~= "" or entry.mke2fs then
+                    if entry.label then
+                        entry.mount = "/mnt/" .. entry.label
+                    else
+                        entry.mount = false
+                    end
+                else
+                    entry.mount = false
+                end
+            elseif entry.mount == "true" then
+                if entry.label then
+                    entry.mount = "/mnt/" .. entry.label
+                else
+                    entry.mount = false
+                end
+            elseif entry.mount == "false" then
+                entry.mount = false
+            end
+            if entry.label == "root" and entry.read_only then -- Mount root filesystem as read-only
+                dtb.bootargs = dtb.bootargs:gsub("%f[^%s%z]rw%f[%s%z]", "ro")
+            end
             config.flash_drive[#config.flash_drive + 1] = entry
             if entry.label ~= "root" and (entry.mke2fs or entry.mount or entry.user) then
                 config.dtb.init = config.dtb.init .. string.format("dev=$(flashdrive %s)\n", dt_label)
@@ -2231,6 +2238,7 @@ echo "
     for idx = 1, nvram_count do
         local entry = nvrams[idx]
         if entry then
+            set_empty_omitted_filenames(entry)
             local dt_label = "nvram" .. #config.nvram
             if not entry.length then entry.length = -1 end
             config.nvram[#config.nvram + 1] = entry
@@ -2316,6 +2324,7 @@ end
 local main_config = main_machine:get_initial_config()
 
 for _, r in ipairs(memory_range_replace) do
+    set_empty_omitted_filenames(r)
     main_machine:replace_memory_range(r)
 end
 
