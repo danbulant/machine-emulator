@@ -10,12 +10,12 @@ ifneq ($(BUILD_PLATFORM),)
 DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
-.PHONY: images build-playground
+DEV_ENV_HAS_DOCGEN ?= no
 
-images:
+.PHONY: build-playground _README.md.local
 
 check-playground:
-	@if docker images $(DOCKER_PLATFORM) -q cartesi/machine-emulator-playground:$(TAG) 2>/dev/null | grep -q .; then \
+	@if docker images $(DOCKER_PLATFORM) -q $(PLAYGROUND_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
 		echo "Docker image $(PLAYGROUND_IMAGE):$(TAG) exists"; \
 	else \
 		echo "Docker image $(PLAYGROUND_IMAGE):$(TAG) does not exist. Creating:"; \
@@ -23,17 +23,24 @@ check-playground:
 	fi
 
 playground-exec: check-playground
-	@docker run --hostname linux-env --rm \
+	docker run --hostname playground --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
-		-v `pwd`:/opt/cartesi/machine-emulator \
-		-w /opt/cartesi/machine-emulator \
-		cartesi/machine-emulator:linux-env /bin/bash -c "$(CONTAINER_COMMAND)"
+		-v $(CURDIR):/work \
+		-w /work \
+		$(PLAYGROUND_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
-build-playground: images
+build-playground:
 	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(PLAYGROUND_IMAGE):$(TAG) -f Dockerfile .
 
 README.md: README.md.template docgen.lua $(wildcard host-replacements/*.sh) $(wildcard target-replacements/*.sh)
+	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
+		$(MAKE) _README.md.local; \
+	else \
+		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md"; \
+	fi
+
+_README.md.local: README.md.template docgen.lua $(wildcard host-replacements/*.sh) $(wildcard target-replacements/*.sh)
 	pandoc -f gfm+attributes -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md
