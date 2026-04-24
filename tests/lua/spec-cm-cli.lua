@@ -21,24 +21,32 @@
 -- CLI -> machine builder -> get_initial_config() pipeline.
 
 local lester = require("cartesi.third-party.lester")
+local filesystem = require("cartesi.filesystem")
+local utils = require("cartesi.utils")
 local describe, it, expect = lester.describe, lester.it, lester.expect
-
--- Scratch directory for temp files created by CLI invocations (stores, configs, etc.)
--- Declared at module level so the post-describe cleanup can reference it.
-local scratch = os.tmpname() .. ".d"
-assert(os.execute("mkdir -p " .. scratch), "failed to create scratch directory")
-local scratch_serial = 0
-
--- Refuse rm -rf on anything outside the system temp roots.
-local function safer_rm_rf(dir)
-    assert(not dir:match("%.%."), "refusing rm -rf on path with ..: " .. dir)
-    assert(dir:match("^/tmp/") or dir:match("^/var/folders/"), "refusing rm -rf on path outside temp: " .. dir)
-    os.execute("rm -rf '" .. dir:gsub("'", "'\\''") .. "'")
-end
 
 describe("cartesi-machine CLI", function()
     local cartesi = require("cartesi")
     local evmu = require("cartesi.evmu")
+
+    local function zeros(n)
+        return string.rep("\0", n)
+    end
+
+    local function scope_temp_pathname()
+        local path = filesystem.temp_pathname()
+        return utils.scope_exit(function()
+            os.remove(path)
+        end), path
+    end
+
+    local function scope_stored_dirname()
+        local dir = filesystem.temp_pathname()
+        return utils.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, dir)
+        end),
+            dir
+    end
 
     -- EVM ABI function signature for EvmAdvance (must match libcmt's EVM_ADVANCE)
     local ADVANCE_SIG = [[
@@ -67,11 +75,6 @@ describe("cartesi-machine CLI", function()
         })
     end
 
-    local function write_bin(path, bytes)
-        local f <close> = assert(io.open(path, "wb"))
-        f:write(bytes)
-    end
-
     local function read_bin(path)
         local f <close> = assert(io.open(path, "rb"))
         return f:read("*a")
@@ -88,44 +91,30 @@ describe("cartesi-machine CLI", function()
         images_path = images_path .. "/"
     end
 
-    local function scratch_path(suffix)
-        scratch_serial = scratch_serial + 1
-        return scratch .. "/" .. scratch_serial .. (suffix or "")
-    end
-
     -- Shell-quote a single argument
     local function shquote(s)
         return "'" .. s:gsub("'", "'\\''") .. "'"
     end
 
     -- Run cartesi-machine.lua with the given flags (array of strings).
-    -- stdin_text is fed to the process stdin (default: /dev/null).
+    -- stdin_text is fed to the process stdin (default: empty).
     -- Returns rc (integer), stdout (string), stderr (string).
     local function run(flags, stdin_text)
         local args = {}
         for _, f in ipairs(flags) do
             args[#args + 1] = shquote(f)
         end
-        local tmp_out = os.tmpname()
-        local tmp_err = os.tmpname()
-        local tmp_rc = os.tmpname()
-        local stdin_redir = "</dev/null"
-        local tmp_in
-        if stdin_text then
-            tmp_in = os.tmpname()
-            local f = io.open(tmp_in, "w")
-            assert(f, "cannot open stdin tmp")
-            f:write(stdin_text)
-            f:close()
-            stdin_redir = "<" .. tmp_in
-        end
+        local _ <close>, tmp_in = filesystem.write_scope_temp_file(stdin_text or "")
+        local _ <close>, tmp_out = scope_temp_pathname()
+        local _ <close>, tmp_err = scope_temp_pathname()
+        local _ <close>, tmp_rc = scope_temp_pathname()
         local cmd = string.format(
-            "(CARTESI_IMAGES_PATH=%s %s %s %s) %s >%s 2>%s; printf '%%d' $? >%s",
+            "(CARTESI_IMAGES_PATH=%s %s %s %s) <%s >%s 2>%s; printf '%%d' $? >%s",
             shquote(images_path),
             CLI_LUA,
             CLI,
             table.concat(args, " "),
-            stdin_redir,
+            tmp_in,
             tmp_out,
             tmp_err,
             tmp_rc
@@ -138,15 +127,11 @@ describe("cartesi-machine CLI", function()
             end
             local s = f:read("*a")
             f:close()
-            os.remove(p)
             return s
         end
         local rc = tonumber(readfile(tmp_rc)) or 1
         local stdout = readfile(tmp_out)
         local stderr = readfile(tmp_err)
-        if tmp_in then
-            os.remove(tmp_in)
-        end
         return rc, stdout, stderr
     end
 
@@ -177,7 +162,7 @@ describe("cartesi-machine CLI", function()
     -- --store-config, then any positional args (so option processing is not
     -- terminated early before --store-config is seen).
     local function config_for(flags, stdin_text)
-        local tmp = scratch_path(".lua")
+        local _ <close>, tmp = scope_temp_pathname()
         local opts = {}
         local positional = {}
         local past_dashdash = false
@@ -206,9 +191,7 @@ describe("cartesi-machine CLI", function()
             end
         end
         run_ok(all_flags, stdin_text)
-        local cfg = dofile(tmp)
-        os.remove(tmp)
-        return cfg
+        return dofile(tmp)
     end
 
     -- -------------------------------------------------------------------------
@@ -286,10 +269,9 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg.dtb.bootargs:find("quiet"))
 
         -- --dtb-image: use a small temp file (DTB region is 1 MiB)
-        local dtb_tmp = scratch_path(".dtb")
-        os.execute("truncate -s 4096 " .. dtb_tmp)
+        local _ <close>, dtb_tmp = filesystem.write_scope_temp_file(zeros(4096))
         cfg = config_for({ "--dtb-image=" .. dtb_tmp })
-        expect.truthy(cfg.dtb.backing_store.data_filename:find("%d+%.dtb"))
+        expect.equal(cfg.dtb.backing_store.data_filename, dtb_tmp)
 
         -- --uarch-processor=data_filename:: only data_filename supplied, other fields merged from backing_store def
         cfg = config_for({ "--uarch-processor=data_filename:" })
@@ -302,7 +284,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg.ram.backing_store.data_filename:find("linux%.bin"))
 
         cfg = config_for({ "--dtb=data_filename:" .. dtb_tmp })
-        expect.truthy(cfg.dtb.backing_store.data_filename:find("%d+%.dtb"))
+        expect.equal(cfg.dtb.backing_store.data_filename, dtb_tmp)
 
         cfg = config_for({ "--processor=data_filename:" })
         expect.equal(cfg.processor.backing_store.data_filename, "")
@@ -343,8 +325,7 @@ describe("cartesi-machine CLI", function()
         expect.equal(cfg.flash_drive[1].label, "root")
 
         -- --flash-drive: verify label, start, length, read_only fields
-        local flash_tmp = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. flash_tmp)
+        local _ <close>, flash_tmp = filesystem.write_scope_temp_file(zeros(65536))
         cfg = config_for({
             "--flash-drive=label:data,start:0x80000020000000,length:0x10000,data_filename:"
                 .. flash_tmp
@@ -375,8 +356,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(not cfg.dtb.bootargs:find("init=", 1, true))
 
         -- mount:true with label: dtb.init gets a mount command for /mnt/<label> and chown for user
-        local ft = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. ft)
+        local _ <close>, ft = filesystem.write_scope_temp_file(zeros(65536))
         cfg = config_for({
             "--flash-drive=label:mt,start:0x80000030000000,length:0x10000,data_filename:"
                 .. ft
@@ -424,8 +404,7 @@ describe("cartesi-machine CLI", function()
         end
 
         -- backing_store.shared explicit false via override_bool.
-        local fs_tmp = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. fs_tmp)
+        local _ <close>, fs_tmp = filesystem.write_scope_temp_file(zeros(65536))
         cfg = config_for({
             "--flash-drive=label:stest,start:0x80000090000000,length:0x10000,data_filename:"
                 .. fs_tmp
@@ -445,8 +424,7 @@ describe("cartesi-machine CLI", function()
         -- the backing_store.data_filename set in the first invocation.
         -- set_empty_omitted_filenames runs at assembly time, so the nil from the second
         -- invocation must not overwrite the value from the first.
-        local fk_tmp = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. fk_tmp)
+        local _ <close>, fk_tmp = filesystem.write_scope_temp_file(zeros(65536))
         cfg = config_for({
             "--flash-drive=label:keep,start:0x800000a0000000,length:0x10000,data_filename:" .. fk_tmp,
             "--flash-drive=label:keep,read_only",
@@ -574,7 +552,7 @@ describe("cartesi-machine CLI", function()
     --       the backing file in-process and unpack big-endian u64.
     -- -------------------------------------------------------------------------
     it("nvram end-to-end write and readback", function()
-        local ram_bin = scratch_path(".bin")
+        local _ <close>, ram_bin = scope_temp_pathname()
         run_ok({
             "--nvram=start:0x90000000000000,length:0x1000,label:ramtest,"
                 .. "data_filename:"
@@ -767,8 +745,9 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--console-io=output_fd:2", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
         -- output_filename: routes console output to a named file
+        local _ <close>, out_path = scope_temp_pathname()
         run_ok({
-            "--console-io=output_filename:" .. scratch_path(".out"),
+            "--console-io=output_filename:" .. out_path,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -852,32 +831,24 @@ describe("cartesi-machine CLI", function()
         expect.truthy(hash_count >= 1)
 
         -- --initial-proof / --final-proof written to files
-        local proof_file = scratch_path(".json")
+        local _ <close>, proof_file = scope_temp_pathname()
         run_ok({
             "--initial-proof=address:0x80000000,log2_size:12,filename:" .. proof_file,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
-        local pf = io.open(proof_file, "r")
-        assert(pf, "--initial-proof: output file not created")
-        local proof_data = pf:read("*a")
-        pf:close()
-        expect.truthy(#proof_data > 10)
+        expect.truthy(#filesystem.read_file(proof_file) > 10)
 
         -- --final-proof written to a file
-        local final_proof_file = scratch_path(".json")
+        local _ <close>, final_proof_file = scope_temp_pathname()
         run_ok({
             "--final-proof=address:0x80000000,log2_size:12,filename:" .. final_proof_file,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
-        local fpf = io.open(final_proof_file, "r")
-        assert(fpf, "--final-proof: output file not created")
-        local fpdata = fpf:read("*a")
-        fpf:close()
-        expect.truthy(#fpdata > 10)
+        expect.truthy(#filesystem.read_file(final_proof_file) > 10)
 
         -- --periodic-hashes=N single-argument form (no start offset, implies start=N)
         run_ok({ "--periodic-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -890,8 +861,11 @@ describe("cartesi-machine CLI", function()
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
         -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per address range under <dir>.
-        -- Use the scratch area because the installed tests cwd may be read-only.
-        local dump_dir = scratch_path(".dump")
+        -- The CLI creates the directory; we only own the cleanup.
+        local dump_dir = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            os.remove(dump_dir)
+        end)
         run_ok({ "--dump-address-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
@@ -917,7 +891,7 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("persistence: --store, --load, --create", function()
         -- --store-config to file and --load-config round-trip
-        local cfg_file = scratch_path(".lua")
+        local _ <close>, cfg_file = scope_temp_pathname()
         run_ok({
             "--hash-tree=hash_function:sha256",
             "--ram-length=64Mi",
@@ -936,7 +910,7 @@ describe("cartesi-machine CLI", function()
         expect.equal(cfg2.ram.length, (64 * 1024 * 1024))
 
         -- --store-json-config to file and --load-json-config round-trip
-        local json_file = scratch_path(".json")
+        local _ <close>, json_file = scope_temp_pathname()
         run_ok({
             "--hash-tree=hash_function:sha256",
             "--max-mcycle=0",
@@ -944,11 +918,7 @@ describe("cartesi-machine CLI", function()
             "--quiet",
             "--store-json-config=" .. json_file,
         })
-        local jf = io.open(json_file, "r")
-        assert(jf, "--store-json-config: file not created")
-        local json_data = jf:read("*a")
-        jf:close()
-        expect.truthy(json_data:find('"sha256"'))
+        expect.truthy(filesystem.read_file(json_file):find('"sha256"'))
 
         local cfg3 = config_for({ "--load-json-config=" .. json_file })
         expect.equal(cfg3.hash_tree.hash_function, "sha256")
@@ -962,7 +932,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(stdout:find('"ram"'))
 
         -- --store=<dir>: machine stored at that path
-        local store_dir = scratch_path(".store")
+        local _ <close>, store_dir = scope_stored_dirname()
         run_ok({ "--store=" .. store_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         assert(os.execute("test -d " .. store_dir), "--store: directory not created")
 
@@ -971,8 +941,15 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg4.ram ~= nil)
 
         -- --store=<dir>/%h: hash-substituted path
-        local hash_store_base = scratch_path(".hashstore")
-        os.execute("mkdir -p " .. hash_store_base)
+        local hash_store_base = filesystem.temp_pathname()
+        assert(os.execute("mkdir " .. shquote(hash_store_base)))
+        local hash_subdir
+        local _ <close> = utils.scope_exit(function()
+            if hash_subdir then
+                pcall(cartesi.machine.remove_stored, cartesi.machine, hash_store_base .. "/" .. hash_subdir)
+            end
+            os.remove(hash_store_base)
+        end)
         run_ok({
             "--store=" .. hash_store_base .. "/%h",
             "--max-mcycle=0",
@@ -980,20 +957,19 @@ describe("cartesi-machine CLI", function()
             "--quiet",
         })
         -- At least one subdirectory should exist inside hash_store_base
-        local entries = io.popen("ls -1 " .. hash_store_base .. " 2>/dev/null")
-        local first = entries and entries:read("*l")
-        if entries then
-            entries:close()
+        do
+            local entries <close> = assert(io.popen("ls -1 " .. shquote(hash_store_base) .. " 2>/dev/null"))
+            hash_subdir = entries:read("*l")
         end
-        expect.truthy(first and #first == 64)
+        expect.truthy(hash_subdir and #hash_subdir == 64)
 
         -- --create=<dir>: create machine store
-        local create_dir = scratch_path(".create")
+        local _ <close>, create_dir = scope_stored_dirname()
         run_ok({ "--create=" .. create_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         assert(os.execute("test -d " .. create_dir), "--create: directory not created")
 
         -- --store=<dir>,sharing:all: store with memory sharing enabled
-        local shared_store = scratch_path(".shared")
+        local _ <close>, shared_store = scope_stored_dirname()
         run_ok({
             "--store=" .. shared_store .. ",sharing:all",
             "--max-mcycle=0",
@@ -1007,7 +983,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg_sh.ram ~= nil)
 
         -- --load=<dir>,clone:<src>,sharing:all: clone from src to dir, then load from dir
-        local clone_dst = scratch_path(".clone")
+        local _ <close>, clone_dst = scope_stored_dirname()
         local cfg_cl = config_for({
             "--load=" .. clone_dst .. ",clone:" .. shared_store .. ",sharing:all",
         })
@@ -1024,7 +1000,7 @@ describe("cartesi-machine CLI", function()
     --       contains "CARTESI".
     -- -------------------------------------------------------------------------
     it("splash and init options", function()
-        local tmp = scratch_path(".lua")
+        local _ <close>, tmp = scope_temp_pathname()
         run_ok({
             "--store-config=" .. tmp,
             "--max-mcycle=0",
@@ -1079,10 +1055,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg.dtb.init:find("echo hello"))
 
         -- --append-init-file
-        local init_file = scratch_path(".sh")
-        local f = assert(io.open(init_file, "w"))
-        f:write("echo world\n")
-        f:close()
+        local _ <close>, init_file = filesystem.write_scope_temp_file("echo world\n")
         cfg = config_for({ "--append-init-file=" .. init_file })
         expect.truthy(cfg.dtb.init:find("echo world"))
 
@@ -1091,10 +1064,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(cfg.dtb.entrypoint:find("/bin/echo hi"))
 
         -- --append-entrypoint-file
-        local ep_file = scratch_path(".sh")
-        f = assert(io.open(ep_file, "w"))
-        f:write("/bin/true\n")
-        f:close()
+        local _ <close>, ep_file = filesystem.write_scope_temp_file("/bin/true\n")
         cfg = config_for({ "--append-entrypoint-file=" .. ep_file })
         expect.truthy(cfg.dtb.entrypoint:find("/bin/true"))
     end)
@@ -1127,14 +1097,12 @@ describe("cartesi-machine CLI", function()
     --       true.
     -- -------------------------------------------------------------------------
     it("cmio options", function()
-        local rx_tmp = scratch_path(".rx")
-        os.execute("truncate -s 2097152 " .. rx_tmp)
+        local _ <close>, rx_tmp = filesystem.write_scope_temp_file(zeros(2097152))
         local cfg = config_for({ "--cmio-rx-buffer=shared,data_filename:" .. rx_tmp })
         expect.truthy(cfg.cmio and cfg.cmio.rx_buffer)
         expect.equal(cfg.cmio.rx_buffer.backing_store.shared, true)
 
-        local tx_tmp = scratch_path(".tx")
-        os.execute("truncate -s 2097152 " .. tx_tmp)
+        local _ <close>, tx_tmp = filesystem.write_scope_temp_file(zeros(2097152))
         cfg = config_for({ "--cmio-tx-buffer=shared,data_filename:" .. tx_tmp })
         expect.truthy(cfg.cmio and cfg.cmio.tx_buffer)
         expect.equal(cfg.cmio.tx_buffer.backing_store.shared, true)
@@ -1270,10 +1238,8 @@ describe("cartesi-machine CLI", function()
     --       the same address range.
     -- -------------------------------------------------------------------------
     it("replace memory range options", function()
-        local flash_file = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. flash_file)
-        local repl_file = scratch_path(".bin")
-        os.execute("truncate -s 65536 " .. repl_file)
+        local _ <close>, flash_file = filesystem.write_scope_temp_file(zeros(65536))
+        local _ <close>, repl_file = filesystem.write_scope_temp_file(zeros(65536))
         run_ok({
             "--flash-drive=label:rep,start:0x80000060000000,length:0x10000,data_filename:" .. flash_file,
             "--replace-memory-range=start:0x80000060000000,length:0x10000,data_filename:" .. repl_file,
@@ -1311,7 +1277,7 @@ describe("cartesi-machine CLI", function()
     --       NOT reach the host file.
     -- -------------------------------------------------------------------------
     it("replace_memory_range shared flag controls write propagation", function()
-        local template_dir = scratch_path("-tmpl")
+        local _ <close>, template_dir = scope_stored_dirname()
         run_ok({
             "--nvram=start:0x90000000000000,length:0x1000,label:ramtest,user:dapp",
             "--store=" .. template_dir,
@@ -1325,8 +1291,7 @@ describe("cartesi-machine CLI", function()
         })
 
         -- Shared replace: the write before the first yield reaches the host file.
-        local shared_file = scratch_path("-shared.bin")
-        os.execute("truncate -s 4096 " .. shared_file)
+        local _ <close>, shared_file = filesystem.write_scope_temp_file(zeros(4096))
         run_ok({
             "--load=" .. template_dir,
             "--replace-memory-range=label:ramtest,data_filename:" .. shared_file .. ",shared",
@@ -1340,8 +1305,7 @@ describe("cartesi-machine CLI", function()
 
         -- Non-shared replace: the write lands in a private COW mapping and does
         -- not reach the host file, which stays zero-initialized.
-        local private_file = scratch_path("-private.bin")
-        os.execute("truncate -s 4096 " .. private_file)
+        local _ <close>, private_file = filesystem.write_scope_temp_file(zeros(4096))
         run_ok({
             "--load=" .. template_dir,
             "--replace-memory-range=label:ramtest,data_filename:" .. private_file,
@@ -1362,8 +1326,7 @@ describe("cartesi-machine CLI", function()
     -- How:  run_fail() with a --flash-drive and --nvram that share a label.
     -- -------------------------------------------------------------------------
     it("flash drive and nvram share label namespace", function()
-        local flash_tmp = scratch_path(".ext2")
-        os.execute("truncate -s 65536 " .. flash_tmp)
+        local _ <close>, flash_tmp = filesystem.write_scope_temp_file(zeros(65536))
         run_fail({
             "--flash-drive=label:collide,start:0x80000020000000,length:0x10000,data_filename:" .. flash_tmp,
             "--nvram=label:collide,start:0x70000000,length:0x1000",
@@ -1447,17 +1410,11 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     it("load config error paths", function()
         -- Syntax error in config file
-        local bad = scratch_path(".lua")
-        local f = assert(io.open(bad, "w"))
-        f:write("return {{{\n")
-        f:close()
+        local _ <close>, bad = filesystem.write_scope_temp_file("return {{{\n")
         run_fail({ "--load-config=" .. bad, "--max-mcycle=0", "--no-init-splash" }, "Failed to load machine config")
 
         -- Runtime error in config file
-        local rt = scratch_path(".lua")
-        f = assert(io.open(rt, "w"))
-        f:write("error('boom')\n")
-        f:close()
+        local _ <close>, rt = filesystem.write_scope_temp_file("error('boom')\n")
         run_fail({ "--load-config=" .. rt, "--max-mcycle=0", "--no-init-splash" }, "Failed to load machine config")
     end)
 
@@ -1470,7 +1427,7 @@ describe("cartesi-machine CLI", function()
     --       assert it is non-empty to confirm the log was written.
     -- -------------------------------------------------------------------------
     it("log step options", function()
-        local log_file = scratch_path(".bin")
+        local _ <close>, log_file = scope_temp_pathname()
 
         -- --log-step=N,<file>
         run_ok({
@@ -1479,25 +1436,23 @@ describe("cartesi-machine CLI", function()
             "--no-init-splash",
             "--quiet",
         })
-        local f = io.open(log_file, "r")
-        assert(f, "--log-step: output file not created")
-        local data = f:read("*a")
-        f:close()
-        expect.truthy(#data > 0)
+        expect.truthy(#filesystem.read_file(log_file) > 0)
 
         -- --log-step-uarch
+        local _ <close>, su_cfg = scope_temp_pathname()
         run_ok({
             "--log-step-uarch",
-            "--store-config=" .. scratch_path(".lua"),
+            "--store-config=" .. su_cfg,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
         })
 
         -- --log-reset-uarch
+        local _ <close>, ru_cfg = scope_temp_pathname()
         run_ok({
             "--log-reset-uarch",
-            "--store-config=" .. scratch_path(".lua"),
+            "--store-config=" .. ru_cfg,
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1559,26 +1514,42 @@ describe("cartesi-machine CLI", function()
     --       success path.
     -- -------------------------------------------------------------------------
     it("rollup advance and inspect", function()
-        local dir = scratch
-        write_bin(dir .. "/input-0.bin", encode_advance(0, "hello"))
-        write_bin(dir .. "/input-1.bin", encode_advance(1, "world"))
-        write_bin(dir .. "/query.bin", "inspect-me")
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-input-0.bin",
+                prefix .. "-input-1.bin",
+                prefix .. "-query.bin",
+                prefix .. "-out-0-0.bin",
+                prefix .. "-out-1-0.bin",
+                prefix .. "-outh-0.bin",
+                prefix .. "-outh-1.bin",
+                prefix .. "-rep-0-0.bin",
+                prefix .. "-rep-1-0.bin",
+                prefix .. "-qrep-0.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
+        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "world"))
+        filesystem.write_file(prefix .. "-query.bin", "inspect-me")
 
         run_ok({
             "--cmio-advance-state=input:"
-                .. dir
-                .. "/input-%i.bin,"
+                .. prefix
+                .. "-input-%i.bin,"
                 .. "input_index_begin:0,input_index_end:2,"
                 .. "output:"
-                .. dir
-                .. "/out-%i-%o.bin,"
+                .. prefix
+                .. "-out-%i-%o.bin,"
                 .. "report:"
-                .. dir
-                .. "/rep-%i-%o.bin,"
+                .. prefix
+                .. "-rep-%i-%o.bin,"
                 .. "output_hashes_root_hash:"
-                .. dir
-                .. "/outh-%i.bin",
-            "--cmio-inspect-state=query:" .. dir .. "/query.bin," .. "report:" .. dir .. "/qrep-%o.bin",
+                .. prefix
+                .. "-outh-%i.bin",
+            "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
             "--no-rollback",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
@@ -1589,13 +1560,13 @@ describe("cartesi-machine CLI", function()
         })
 
         local voucher_sig = "Voucher(address destination, uint256 value, bytes payload)"
-        local out00 = evmu.decode_calldata(voucher_sig, read_bin(dir .. "/out-0-0.bin"), "raw")
+        local out00 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-0-0.bin"), "raw")
         expect.equal(out00.payload, "hello")
-        local out10 = evmu.decode_calldata(voucher_sig, read_bin(dir .. "/out-1-0.bin"), "raw")
+        local out10 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-1-0.bin"), "raw")
         expect.equal(out10.payload, "world")
-        assert(io.open(dir .. "/outh-0.bin", "r"), "no output-hash for input 0")
-        assert(io.open(dir .. "/outh-1.bin", "r"), "no output-hash for input 1")
-        expect.equal(read_bin(dir .. "/qrep-0.bin"), "inspect-me")
+        assert(io.open(prefix .. "-outh-0.bin", "r"), "no output-hash for input 0")
+        assert(io.open(prefix .. "-outh-1.bin", "r"), "no output-hash for input 1")
+        expect.equal(read_bin(prefix .. "-qrep-0.bin"), "inspect-me")
     end)
 
     -- -------------------------------------------------------------------------
@@ -1611,28 +1582,43 @@ describe("cartesi-machine CLI", function()
         local jsonrpc = require("cartesi.jsonrpc")
         local server <close>, address = jsonrpc.spawn_server()
         server:set_cleanup_call(jsonrpc.NOTHING)
-        local dir = scratch
-        write_bin(dir .. "/inpr-0.bin", encode_advance(0, "ok"))
-        write_bin(dir .. "/inpr-1.bin", encode_advance(1, "reject-me"))
-        write_bin(dir .. "/inpr-2.bin", encode_advance(2, "also-ok"))
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-inpr-0.bin",
+                prefix .. "-inpr-1.bin",
+                prefix .. "-inpr-2.bin",
+                prefix .. "-rbo-0-0.bin",
+                prefix .. "-rbo-2-0.bin",
+                prefix .. "-rbr-0-0.bin",
+                prefix .. "-rbr-2-0.bin",
+                prefix .. "-rboh-0.bin",
+                prefix .. "-rboh-2.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-inpr-0.bin", encode_advance(0, "ok"))
+        filesystem.write_file(prefix .. "-inpr-1.bin", encode_advance(1, "reject-me"))
+        filesystem.write_file(prefix .. "-inpr-2.bin", encode_advance(2, "also-ok"))
 
         -- ioctl-echo-loop --reject=1 rejects the second input, exercising do_rollback;
         -- inputs 0 and 2 exercise do_snapshot + do_commit
         run_ok({
             "--remote-address=" .. address,
             "--cmio-advance-state=input:"
-                .. dir
-                .. "/inpr-%i.bin,"
+                .. prefix
+                .. "-inpr-%i.bin,"
                 .. "input_index_begin:0,input_index_end:3,"
                 .. "output:"
-                .. dir
-                .. "/rbo-%i-%o.bin,"
+                .. prefix
+                .. "-rbo-%i-%o.bin,"
                 .. "report:"
-                .. dir
-                .. "/rbr-%i-%o.bin,"
+                .. prefix
+                .. "-rbr-%i-%o.bin,"
                 .. "output_hashes_root_hash:"
-                .. dir
-                .. "/rboh-%i.bin",
+                .. prefix
+                .. "-rboh-%i.bin",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -1650,25 +1636,36 @@ describe("cartesi-machine CLI", function()
     --       advance is rejected; assert run() returns rc == 2.
     -- -------------------------------------------------------------------------
     it("rollup rolling template failure", function()
-        local dir = scratch
-        write_bin(dir .. "/inrt-0.bin", encode_advance(0, "rej"))
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-inrt-0.bin",
+                prefix .. "-rt-0-0.bin",
+                prefix .. "-rt-0-1.bin",
+                prefix .. "-rtrp-0-0.bin",
+                prefix .. "-rth-0.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-inrt-0.bin", encode_advance(0, "rej"))
 
         -- ioctl-echo-loop --reject=0 rejects the first (and only) input, so
         -- the machine ends in RX_REJECTED; --assert-rolling-template then sets exit_code=2
         local rc = run({
             "--cmio-advance-state=input:"
-                .. dir
-                .. "/inrt-%i.bin,"
+                .. prefix
+                .. "-inrt-%i.bin,"
                 .. "input_index_begin:0,input_index_end:1,"
                 .. "output:"
-                .. dir
-                .. "/rt-%i-%o.bin,"
+                .. prefix
+                .. "-rt-%i-%o.bin,"
                 .. "report:"
-                .. dir
-                .. "/rtrp-%i-%o.bin,"
+                .. prefix
+                .. "-rtrp-%i-%o.bin,"
                 .. "output_hashes_root_hash:"
-                .. dir
-                .. "/rth-%i.bin",
+                .. prefix
+                .. "-rth-%i.bin",
             "--no-rollback",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
@@ -1735,12 +1732,10 @@ describe("cartesi-machine CLI", function()
     it("GDB stub", function()
         local port = 53210
         local gdb_addr = "127.0.0.1:" .. port
-        local log = scratch_path(".log")
+        local _ <close>, log = scope_temp_pathname()
 
         -- Launch CLI with --gdb in background
-        local runner = scratch_path(".sh")
-        local f = assert(io.open(runner, "w"))
-        f:write(
+        local _ <close>, runner = filesystem.write_scope_temp_file(
             string.format(
                 "#!/bin/sh\n%s %s --gdb=%s --max-mcycle=1000000 --no-init-splash --quiet >%s 2>&1 &\necho $!\n",
                 CLI_LUA,
@@ -1749,7 +1744,6 @@ describe("cartesi-machine CLI", function()
                 log
             )
         )
-        f:close()
         os.execute("chmod +x " .. runner)
         local pipe = io.popen(runner)
         local pid = pipe and pipe:read("*l")
@@ -1771,6 +1765,3 @@ describe("cartesi-machine CLI", function()
         end
     end)
 end)
-
--- Cleanup scratch directory (runs once when the module is loaded)
-safer_rm_rf(scratch)
