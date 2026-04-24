@@ -36,8 +36,11 @@ extern "C" {
 #define CM_API __attribute__((visibility("default")))
 #endif
 
-#define CM_MCYCLE_MAX UINT64_MAX
-#define CM_UARCH_CYCLE_MAX UINT64_C(1048576)
+static const uint64_t CM_MCYCLE_MAX = -1ULL;
+static const uint64_t CM_UARCH_CYCLE_MAX = 1ULL << 20;
+
+static const uint64_t CM_AR_DRIVE_START = 0x80000000000000ULL;  ///< Start PMA for flash drives and NVRAMs
+static const uint64_t CM_AR_DRIVE_OFFSET = 0x10000000000000ULL; ///< PMA slot stride for flash drives and NVRAMs
 
 #define CM_DTB_BOOTARGS_CONSOLE "quiet earlycon=sbi console=hvc0 "
 #define CM_DTB_BOOTARGS_UIO "uio_pdrv_genirq.of_id=generic-uio "

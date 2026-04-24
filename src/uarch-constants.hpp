@@ -42,8 +42,8 @@ enum uarch_state_constants : uint64_t {
     UARCH_STATE_MASK = ~UARCH_STATE_ALIGN_MASK,                              ///< Mask for uarch state address space
     UARCH_STATE_CHILD_ALIGN_MASK =
         (UINT64_C(1) << UARCH_STATE_CHILD_LOG2_SIZE) - 1, ///< Mask for uarch state child alignment
-    UARCH_LOG2_CYCLE_MAX = EXPAND_UINT64_C(UARCH_LOG2_CYCLE_MAX_DEF),
-    UARCH_CYCLE_MAX = (UINT64_C(1) << UARCH_LOG2_CYCLE_MAX),
+    UARCH_LOG2_CYCLE_MAX = UARCH_LOG2_CYCLE_MAX_DEF,
+    UARCH_CYCLE_MAX = UARCH_CYCLE_MAX_DEF
 };
 
 static_assert((UARCH_STATE_START_ADDRESS & UARCH_STATE_ALIGN_MASK) == 0,

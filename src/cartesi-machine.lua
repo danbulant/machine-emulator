@@ -218,8 +218,10 @@ where options are:
         flash drives and NVRAMs, and must be at most 31 characters long.
         if omitted, no user label is set.
 
-        start (required)
+        start (optional)
         sets the starting physical memory offset for the NVRAM in bytes.
+        when omitted, NVRAMs are placed in the same 1 << 55 / 1 << 52-stride
+        pool as flash drives, using the next free slot after all flash drives.
 
         length (optional)
         gives the length of the NVRAM in bytes (must be multiple of 4Ki).

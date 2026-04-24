@@ -188,13 +188,15 @@ machine_config &machine_config::adjust_defaults() {
     if (processor.registers.mimpid == UINT64_C(-1)) {
         processor.registers.mimpid = MIMPID_INIT;
     }
-    // Auto detect flash drives start address and length
+    // Auto detect flash drives and nvram start address and length
     int i = 0; // NOLINT(misc-const-correctness)
+    int j = 0; // NOLINT(misc-const-correctness)
     for (auto &f : flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
-            f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * i);
+            f.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * j);
+            ++j;
         }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
@@ -204,14 +206,14 @@ machine_config &machine_config::adjust_defaults() {
             }
             f.length = os::file_size(f.backing_store.data_filename);
         }
-        i += 1;
+        ++i;
     }
-    // Validate NVRAM entries (no auto-detection of start)
     i = 0;
     for (auto &n : nvram) {
         const std::string nvram_description = "nvram "s + std::to_string(i);
         if (n.start == UINT64_C(-1)) {
-            throw std::runtime_error{nvram_description + " has no start address"s};
+            n.start = AR_DRIVE_START + (AR_DRIVE_OFFSET * j);
+            ++j;
         }
         if (n.length == UINT64_C(-1)) {
             if (n.backing_store.data_filename.empty()) {
@@ -219,7 +221,7 @@ machine_config &machine_config::adjust_defaults() {
             }
             n.length = os::file_size(n.backing_store.data_filename);
         }
-        i += 1;
+        ++i;
     }
     return *this;
 }

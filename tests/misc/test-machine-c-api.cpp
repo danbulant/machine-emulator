@@ -434,10 +434,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_start_test, incomplete_machine_fixture) 
     _machine_config["nvram"] = {{{"length", 0x1000}}};
     const auto dumped_config = _machine_config.dump();
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-    std::string result = cm_get_last_error_message();
-    std::string origin("nvram 0 has no start address");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    std::array<uint8_t, 4> read_data{};
+    error_code = cm_read_memory(_machine, CM_AR_DRIVE_START, read_data.data(), read_data.size());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_no_length_no_file_test, incomplete_machine_fixture) {

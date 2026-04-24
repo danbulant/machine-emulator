@@ -111,7 +111,7 @@ describe("backing stores", function()
         local stored_dirname = filesystem.temp_pathname()
         local cloned_dirname = filesystem.temp_pathname()
         local root_drive = {
-            start = 0x0080000000000000,
+            start = 0x00c0000000000000,
             length = #a_data,
             backing_store = {
                 data_filename = shared_data_filename,

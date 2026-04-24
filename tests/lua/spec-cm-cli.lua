@@ -535,10 +535,12 @@ describe("cartesi-machine CLI", function()
             "--no-init-splash",
             "--quiet",
         }, nil)
-        run_fail(
-            { "--nvram=label:x,start:0x70004000,length:0x1000,mke2fs", "--max-mcycle=0", "--no-init-splash", "--quiet" },
-            nil
-        )
+        run_fail({
+            "--nvram=label:xxxxx,start:0x70004000,length:0x1000,mke2fs",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        }, nil)
 
         -- override_bool fix: read_only:false after read_only must clear the flag;
         -- chmod 0444 must not appear for that NVRAM.
@@ -547,6 +549,16 @@ describe("cartesi-machine CLI", function()
             "--nvram=label:toggle,read_only:false",
         })
         expect.truthy(not cfg.dtb.init:find("chmod 0444"))
+
+        -- Auto-assigned start: NVRAMs share the drive pool with flash drives.
+        -- The default root flash drive consumes slot 0, so the first --nvram
+        -- without start lands at slot 1 and the second at slot 2.
+        cfg = config_for({
+            "--nvram=label:auto1,length:0x1000",
+            "--nvram=label:auto2,length:0x1000",
+        })
+        expect.equal(cfg.nvram[1].start, cartesi.AR_DRIVE_START + cartesi.AR_DRIVE_OFFSET)
+        expect.equal(cfg.nvram[2].start, cartesi.AR_DRIVE_START + 2 * cartesi.AR_DRIVE_OFFSET)
     end)
 
     -- -------------------------------------------------------------------------
