@@ -19,6 +19,7 @@ src/cartesi-hash-tree-hash
 src/tests/test-machine-c-api
 
 doc/doxygen/html
+doc/recipes/cache
 
 .clangd
 .venv
