@@ -2,8 +2,10 @@ TEMPLATE  := ../README.md.template
 CACHE_DIR ?= $(CURDIR)/cache
 export CACHE_DIR
 
-NEEDED_KEYS := $(shell grep -oE '\$$CACHE_DIR/[A-Za-z0-9._-]+\.out' $(TEMPLATE) \
-                       | sed 's|.*CACHE_DIR/||;s|\.out$$||' | sort -u)
+NEEDED_KEYS := $(shell { \
+    grep -oE '\$$CACHE_DIR/[A-Za-z0-9._-]+\.out' $(TEMPLATE); \
+    grep -oE 'cache=[A-Za-z0-9._-]+\.out' $(TEMPLATE); \
+  } | sed 's|.*CACHE_DIR/||;s|cache=||;s|\.out$$||' | sort -u)
 CACHE_FILES := $(addprefix $(CACHE_DIR)/,$(addsuffix .out,$(NEEDED_KEYS)))
 
 .PHONY: all
