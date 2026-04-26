@@ -7,6 +7,8 @@ SCRIPTS := $(wildcard cache.*.sh)
 DEPS    := $(SCRIPTS:%=%.d)
 
 .PHONY: all clean
+.DELETE_ON_ERROR:
+.NOTPARALLEL:
 all:
 
 clean:
@@ -24,7 +26,7 @@ template.d: $(TEMPLATE) ../docgen.lua
 # Each script emits its own .d via --emit-deps (mirrors gcc -MMD).
 # The .d is a standard make rule the Makefile imports verbatim.
 %.sh.d: %.sh lib.sh
-	bash $< --emit-deps > $@.tmp && mv $@.tmp $@
+	bash $< --emit-deps > $@
 
 # Recipe for single-output cache files. Their .d is a pure prereq
 # declaration (gcc-style, no recipe); this pattern rule supplies the

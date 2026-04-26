@@ -22,6 +22,10 @@ local function record(filename)
     needed[filename] = true
 end
 
+local function strip_ansi(txt)
+    return (txt:gsub("\27%[[%d;]*[mGK]", ""):gsub("\r", ""))
+end
+
 local function read_cache(filename)
     record(filename)
     if DEPS_FILE then return "" end
@@ -30,7 +34,7 @@ local function read_cache(filename)
     local f = assert(io.open(path, "r"), "cache=" .. filename .. ": cannot open " .. path)
     local txt = f:read("a")
     f:close()
-    return (txt:gsub("\n$", ""))
+    return (strip_ansi(txt):gsub("\n$", ""))
 end
 
 local function run_sh(cmd)

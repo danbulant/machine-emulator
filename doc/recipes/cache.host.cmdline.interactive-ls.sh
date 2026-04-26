@@ -5,4 +5,4 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
 ls /bin
 exit
 MACHINE
-} | bash "$HERE/strip-ansi.sh" > "$out"
+} > "$out" 2>&1

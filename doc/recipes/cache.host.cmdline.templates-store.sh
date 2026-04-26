@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template' EXIT
 cartesi-machine \
     --append-rom-bootargs="single=yes" \
@@ -10,4 +9,4 @@ cartesi-machine \
     --final-hash \
     --store="calculator-template" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1

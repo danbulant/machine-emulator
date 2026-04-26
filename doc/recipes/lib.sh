@@ -34,3 +34,5 @@ for _a in "$@"; do
     exit 0
 done
 unset _a _key
+
+cd "$HERE"

@@ -8,4 +8,4 @@ cd /usr/bin
 ls
 exit
 MACHINE
-} | bash "$HERE/strip-ansi.sh" > "$out"
+} > "$out" 2>&1

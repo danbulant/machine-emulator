@@ -4,7 +4,6 @@ outs=(
     "$CACHE_DIR/host.lua.remote-client.out"
 )
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 out_server="${outs[0]}"
 out_client="${outs[1]}"
 srv_tmp=$(mktemp)
@@ -15,6 +14,6 @@ while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 lua5.3 run-remote-config.lua \
     localhost:8080 \
     localhost:8081 \
-    config.nothing-to-do 2>&1 | bash "$HERE/strip-ansi.sh" > "$out_client"
+    config.nothing-to-do > "$out_client" 2>&1
 wait "$srv_pid"
-bash "$HERE/strip-ansi.sh" < "$srv_tmp" > "$out_server"
+mv "$srv_tmp" "$out_server"

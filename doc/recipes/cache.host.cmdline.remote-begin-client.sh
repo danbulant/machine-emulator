@@ -7,4 +7,4 @@ cartesi-machine \
     --checkin-address=localhost:8081 \
     --remote-shutdown \
     --max-mcycle=1Mi \
-    -- echo "Still here!" 2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    -- echo "Still here!" > "$out" 2>&1

@@ -1,7 +1,6 @@
 #!/bin/bash
 reads=("$CACHE_DIR/host.cmdline.rarely-periodic-initial-cycle.out")
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template input.raw' EXIT
 initial_cycle=$(cat "$CACHE_DIR/host.cmdline.rarely-periodic-initial-cycle.out")
 cartesi-machine \
@@ -19,4 +18,4 @@ cartesi-machine \
     --load="calculator-template" \
     --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
     --periodic-hashes=1,"$initial_cycle" \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1

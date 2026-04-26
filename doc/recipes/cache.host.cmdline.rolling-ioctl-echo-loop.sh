@@ -4,7 +4,6 @@ outs=(
     "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-client.out"
 )
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 out_server="${outs[0]}"
 out_client="${outs[1]}"
 srv_tmp=$(mktemp)
@@ -50,6 +49,6 @@ cartesi-machine \
     --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
     --rollup-inspect-state \
     -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out_client"
+    > "$out_client" 2>&1
 wait "$srv_pid"
-bash "$HERE/strip-ansi.sh" < "$srv_tmp" > "$out_server"
+mv "$srv_tmp" "$out_server"

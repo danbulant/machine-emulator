@@ -13,7 +13,6 @@ while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 cartesi-machine \
     --remote-address=localhost:8080 \
     --checkin-address=localhost:8081 \
-    --remote-shutdown 2>&1 | bash "$HERE/strip-ansi.sh" > "$out_client"
+    --remote-shutdown > "$out_client" 2>&1
 wait "$srv_pid"
-bash "$HERE/strip-ansi.sh" < "$srv_tmp" > "$out_server"
-rm -f "$srv_tmp"
+mv "$srv_tmp" "$out_server"

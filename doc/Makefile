@@ -14,7 +14,7 @@ DEV_ENV_HAS_DOCGEN ?= no
 CACHE_DIR ?= $(CURDIR)/recipes/cache
 export CACHE_DIR
 
-.PHONY: build-playground _README.md.local
+.PHONY: build-playground clean
 
 check-playground:
 	@if docker images $(DOCKER_PLATFORM) -q $(PLAYGROUND_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
@@ -39,11 +39,12 @@ build-playground:
 
 README.md: README.md.template docgen.lua
 	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
-		$(MAKE) _README.md.local; \
+		$(MAKE) -C recipes/ && \
+		CACHE_DIR=$(CACHE_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md; \
 	else \
-		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md"; \
+		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
 	fi
 
-_README.md.local: README.md.template docgen.lua
-	$(MAKE) -C recipes/
-	CACHE_DIR=$(CACHE_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md
+clean:
+	rm -f README.md
+	$(MAKE) -C recipes clean

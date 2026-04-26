@@ -5,7 +5,6 @@ outs=(
     "$CACHE_DIR/host.cmdline.rolling-calc-template.client.out"
 )
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 out_template="${outs[0]}"
 out_server="${outs[1]}"
 out_client="${outs[2]}"
@@ -39,7 +38,7 @@ cartesi-machine \
     --rollup \
     --flash-drive=label:calc,filename:calc.ext2 \
     --store="calc-template" \
-    -- /mnt/calc/calc.sh 2>&1 | bash "$HERE/strip-ansi.sh" > "$out_template"
+    -- /mnt/calc/calc.sh > "$out_template" 2>&1
 remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
 while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
@@ -50,6 +49,6 @@ cartesi-machine \
     --rollup \
     --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
     --load="calc-template" \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out_client"
+    > "$out_client" 2>&1
 wait "$srv_pid"
-bash "$HERE/strip-ansi.sh" < "$srv_tmp" > "$out_server"
+mv "$srv_tmp" "$out_server"

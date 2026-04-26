@@ -8,4 +8,4 @@ cartesi-machine \
     --max-mcycle=0 \
     --store-config \
     -- "ls /bin" \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1

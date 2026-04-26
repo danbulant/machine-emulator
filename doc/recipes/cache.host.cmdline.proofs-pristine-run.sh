@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template pristine-input-proof' EXIT
 cartesi-machine \
     --flash-drive="label:input,length:1<<12" \
@@ -15,4 +14,4 @@ cartesi-machine \
     --max-mcycle=0 \
     --initial-hash \
     --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof" \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1

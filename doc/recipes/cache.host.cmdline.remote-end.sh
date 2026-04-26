@@ -20,7 +20,6 @@ cartesi-machine \
     --remote-address=localhost:8080 \
     --checkin-address=localhost:8081 \
     --remote-shutdown \
-    --no-remote-create 2>&1 | bash "$HERE/strip-ansi.sh" > "$out_client"
+    --no-remote-create > "$out_client" 2>&1
 wait "$srv_pid"
-bash "$HERE/strip-ansi.sh" < "$srv_tmp" > "$out_server"
-rm -f "$srv_tmp"
+mv "$srv_tmp" "$out_server"

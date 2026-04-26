@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template' EXIT
 cartesi-machine \
     --flash-drive="label:input,length:1<<12" \

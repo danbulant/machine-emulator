@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template input-proof input.raw' EXIT
 rm -rf calculator-template input-proof input.raw
 cartesi-machine \

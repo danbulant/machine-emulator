@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-cd "$HERE"
 trap 'rm -rf calculator-template output-proof input.raw output.raw' EXIT
 cartesi-machine \
     --append-rom-bootargs="single=yes" \
@@ -20,4 +19,4 @@ cartesi-machine \
     --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
     --final-hash \
     --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof" \
-    2>&1 | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1

@@ -4,4 +4,4 @@ cartesi-machine \
     --append-rom-bootargs="single=yes" \
     --rollup \
     -- "dtc -I dtb -O dts /sys/firmware/fdt" 2>&1 \
-    | bash "$HERE/strip-ansi.sh" > "$out"
+    > "$out" 2>&1
