@@ -1,7 +1,8 @@
-SHELL     := /bin/bash
-TEMPLATE  := ../README.md.template
-CACHE_DIR ?= $(CURDIR)/cache
-export CACHE_DIR
+SHELL       := /bin/bash
+TEMPLATE    := ../README.md.template
+RECIPES_DIR ?= $(CURDIR)
+CACHE_DIR   := $(RECIPES_DIR)/cache
+export RECIPES_DIR CACHE_DIR
 
 SCRIPTS := $(wildcard cache.*.sh)
 DEPS    := $(SCRIPTS:%=%.d)
@@ -20,7 +21,7 @@ $(CACHE_DIR):
 # docgen.lua emits a standard make rule "all: <cache files>", augmenting
 # the prereq list of the .PHONY all target above (Half 1).
 template.d: $(TEMPLATE) ../docgen.lua
-	DEPS_FILE=$@ CACHE_DIR=$(CACHE_DIR) pandoc -f markdown -t plain \
+	DEPS_FILE=$@ CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -t plain \
 	    --lua-filter ../docgen.lua $< -o /dev/null
 
 # Each script emits its own .d via --emit-deps (mirrors gcc -MMD).

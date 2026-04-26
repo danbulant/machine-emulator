@@ -9,9 +9,11 @@ cartesi-machine \
     --store="calculator-template" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
     > /dev/null 2>&1
+# docs:begin
 cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
     --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof" \
     > "$out" 2>&1
+# docs:end

@@ -11,8 +11,9 @@ DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
 DEV_ENV_HAS_DOCGEN ?= no
-CACHE_DIR ?= $(CURDIR)/recipes/cache
-export CACHE_DIR
+RECIPES_DIR ?= $(CURDIR)/recipes
+CACHE_DIR := $(RECIPES_DIR)/cache
+export RECIPES_DIR CACHE_DIR
 
 .PHONY: build-playground clean
 
@@ -40,7 +41,7 @@ build-playground:
 README.md: README.md.template docgen.lua
 	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
 		$(MAKE) -C recipes/ && \
-		CACHE_DIR=$(CACHE_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md; \
+		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md; \
 	else \
 		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
 	fi
