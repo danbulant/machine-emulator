@@ -1,6 +1,4 @@
 #!/bin/bash
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-key="${0##*/}"; key="${key#cache.}"; key="${key%.sh}"
-out="$CACHE_DIR/$key.out"
+reads=("$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-client.out")
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
 cat "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-client.out"     | bash "$HERE/all-cycles.sh"     | sed -n '9p' > "$out"

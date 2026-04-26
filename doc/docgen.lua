@@ -9,8 +9,22 @@
 -- For inline Code `body`{pipe=sh|cache=FILE}, the Code wrapper is preserved.
 -- After substitution the matching attribute is removed; other attributes are
 -- kept. Any non-zero exit (pipe=sh) aborts the build with a visible error.
+--
+-- Deps mode: when DEPS_FILE is set, the filter instead discovers which cache
+-- files the template references and writes a makefile fragment:
+--   all: /abs/path/foo.out /abs/path/bar.out ...
+-- In deps mode no cache files are read and no pipe=sh commands are executed.
+
+local DEPS_FILE = os.getenv("DEPS_FILE")
+local needed = {}
+
+local function record(filename)
+    needed[filename] = true
+end
 
 local function read_cache(filename)
+    record(filename)
+    if DEPS_FILE then return "" end
     local cache_dir = os.getenv("CACHE_DIR") or error("CACHE_DIR not set")
     local path = cache_dir .. "/" .. filename
     local f = assert(io.open(path, "r"), "cache=" .. filename .. ": cannot open " .. path)
@@ -20,6 +34,10 @@ local function read_cache(filename)
 end
 
 local function run_sh(cmd)
+    for filename in cmd:gmatch("%$CACHE_DIR/([%w._%-]+%.out)") do
+        record(filename)
+    end
+    if DEPS_FILE then return "" end
     local script = os.tmpname()
     local out    = os.tmpname()
     local f = assert(io.open(script, "w"))
@@ -81,4 +99,23 @@ function Span(el)
         local suffix = pandoc.utils.stringify(el.content)
         return pandoc.Code(read_cache(cache) .. suffix)
     end
+end
+
+function Pandoc(doc)
+    if DEPS_FILE then
+        local cache_dir = os.getenv("CACHE_DIR") or error("CACHE_DIR not set")
+        local files = {}
+        for name in pairs(needed) do
+            files[#files + 1] = cache_dir .. "/" .. name
+        end
+        table.sort(files)
+        local f = assert(io.open(DEPS_FILE, "w"))
+        f:write("all:")
+        for _, p in ipairs(files) do
+            f:write(" " .. p)
+        end
+        f:write("\n")
+        f:close()
+    end
+    return doc
 end

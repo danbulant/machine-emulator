@@ -1,6 +1,4 @@
 #!/bin/bash
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-key="${0##*/}"; key="${key#cache.}"; key="${key%.sh}"
-out="$CACHE_DIR/$key.out"
+reads=("$CACHE_DIR/host.lua.config-dump-nothing.out")
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
 cat "$CACHE_DIR/host.lua.config-dump-nothing.out" | bash "$HERE/find-lua-val.sh" mimpid > "$out"

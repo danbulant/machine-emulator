@@ -1,52 +1,37 @@
+SHELL     := /bin/bash
 TEMPLATE  := ../README.md.template
 CACHE_DIR ?= $(CURDIR)/cache
 export CACHE_DIR
 
-NEEDED_KEYS := $(shell { \
-    grep -oE '\$$CACHE_DIR/[A-Za-z0-9._-]+\.out' $(TEMPLATE); \
-    grep -oE 'cache=[A-Za-z0-9._-]+\.out' $(TEMPLATE); \
-  } | sed 's|.*CACHE_DIR/||;s|cache=||;s|\.out$$||' | sort -u)
-CACHE_FILES := $(addprefix $(CACHE_DIR)/,$(addsuffix .out,$(NEEDED_KEYS)))
+SCRIPTS := $(wildcard cache.*.sh)
+DEPS    := $(SCRIPTS:%=%.d)
 
-.PHONY: all
-all: $(CACHE_FILES)
+.PHONY: all clean
+all:
+
+clean:
+	rm -rf $(CACHE_DIR) $(DEPS) template.d
 
 $(CACHE_DIR):
 	mkdir -p $@
 
-$(CACHE_DIR)/%.out: cache.%.sh | $(CACHE_DIR)
+# docgen.lua emits a standard make rule "all: <cache files>", augmenting
+# the prereq list of the .PHONY all target above (Half 1).
+template.d: $(TEMPLATE) ../docgen.lua
+	DEPS_FILE=$@ CACHE_DIR=$(CACHE_DIR) pandoc -f markdown -t plain \
+	    --lua-filter ../docgen.lua $< -o /dev/null
+
+# Each script emits its own .d via --emit-deps (mirrors gcc -MMD).
+# The .d is a standard make rule the Makefile imports verbatim.
+%.sh.d: %.sh lib.sh
+	bash $< --emit-deps > $@.tmp && mv $@.tmp $@
+
+# Recipe for single-output cache files. Their .d is a pure prereq
+# declaration (gcc-style, no recipe); this pattern rule supplies the
+# command. Multi-output scripts embed their own recipe in the .d (required
+# by &: syntax in GNU make), so the explicit rule there wins over this pattern.
+$(CACHE_DIR)/%.out: | $(CACHE_DIR)
 	bash $<
 
-define ADD_DEPS
-$(CACHE_DIR)/$(patsubst cache.%.sh,%,$(1)).out: \
-  $(addprefix $(CACHE_DIR)/,$(addsuffix .out,\
-    $(shell grep -oE '\$$CACHE_DIR/[A-Za-z0-9._-]+\.out' $(1) \
-            | sed 's|.*CACHE_DIR/||;s|\.out$$||' | sort -u)))
-endef
-$(foreach s,$(wildcard cache.*.sh),$(eval $(call ADD_DEPS,$(s))))
-
-$(CACHE_DIR)/host.cmdline.rolling-ioctl-echo-loop-server.out \
-$(CACHE_DIR)/host.cmdline.rolling-ioctl-echo-loop-client.out &: \
-        cache.host.cmdline.rolling-ioctl-echo-loop.sh | $(CACHE_DIR)
-	bash $<
-
-$(CACHE_DIR)/host.cmdline.rolling-calc-template.template.out \
-$(CACHE_DIR)/host.cmdline.rolling-calc-template.server.out \
-$(CACHE_DIR)/host.cmdline.rolling-calc-template.client.out &: \
-        cache.host.cmdline.rolling-calc-template.sh | $(CACHE_DIR)
-	bash $<
-
-$(CACHE_DIR)/host.cmdline.remote-client.out \
-$(CACHE_DIR)/host.cmdline.remote-server.out &: \
-        cache.host.cmdline.remote.sh | $(CACHE_DIR)
-	bash $<
-
-$(CACHE_DIR)/host.cmdline.remote-end-client.out \
-$(CACHE_DIR)/host.cmdline.remote-begin-end-server.out &: \
-        cache.host.cmdline.remote-end.sh | $(CACHE_DIR)
-	bash $<
-
-$(CACHE_DIR)/host.lua.remote-client.out \
-$(CACHE_DIR)/host.lua.remote-server.out &: \
-        cache.host.lua.remote.sh | $(CACHE_DIR)
-	bash $<
+-include template.d
+-include $(DEPS)

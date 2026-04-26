@@ -1,8 +1,11 @@
 #!/bin/bash
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-out_server="$CACHE_DIR/host.cmdline.remote-begin-end-server.out"
-out_client="$CACHE_DIR/host.cmdline.remote-end-client.out"
+outs=(
+    "$CACHE_DIR/host.cmdline.remote-begin-end-server.out"
+    "$CACHE_DIR/host.cmdline.remote-end-client.out"
+)
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
+out_server="${outs[0]}"
+out_client="${outs[1]}"
 srv_tmp=$(mktemp)
 remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
