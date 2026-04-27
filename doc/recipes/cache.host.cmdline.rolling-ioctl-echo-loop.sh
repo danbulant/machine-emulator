@@ -16,27 +16,29 @@ _cleanup() {
         epoch-0-input-metadata-1.bin epoch-0-input-metadata-2.bin query.bin query-report-0.bin
 }
 trap _cleanup EXIT
+# docs:begin encode
 for i in 1 2; do
-    rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOFENC
+    rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOF
     {
-        "msg_sender": $(printf '"0x%040d"' $i)
+        "msg_sender": $(printf '"0x%040d"' $i),
         "block_number": 0,
         "time_stamp": 0,
         "epoch_index": 0,
         "input_index": $i
     }
-EOFENC
-    rollup-memory-range encode input > epoch-0-input-$i.bin <<-EOFENC
+EOF
+    rollup-memory-range encode input > epoch-0-input-$i.bin <<-EOF
     {
-        "payload": "hello from input $i"
+        "payload": "hello from input $i!"
     }
-EOFENC
+EOF
 done
-rollup-memory-range encode input > query.bin <<'EOFQ'
+rollup-memory-range encode input > query.bin <<-EOF
 {
-    "payload": "hello from query"
+    "payload": "hello from query!"
 }
-EOFQ
+EOF
+# docs:end encode
 echo "Done creating bins"
 remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!

@@ -11,6 +11,8 @@ cartesi-machine \
     --store="calculator-template" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
     > /dev/null 2>&1
+{
+# docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
@@ -18,6 +20,7 @@ cartesi-machine \
     --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
     --initial-hash \
     --initial-proof="address:0x9000000000000000,log2_size:12,filename:input-proof" \
-    --max-mcycle=0 \
-    > /dev/null 2>&1
+    --max-mcycle=0
+# docs:end
+} > /dev/null 2>&1
 cat input-proof > "$out"

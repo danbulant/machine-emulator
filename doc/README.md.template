@@ -632,8 +632,7 @@ The result is as follows
 ```
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
-```bash
-cartesi-machine-stored-hash calculator-template/
+```{.bash script=host.cmdline.templates-hash}
 ```
 we can see from the output
 ```{output=host.cmdline.templates-hash}
@@ -737,15 +736,7 @@ to obtain
 
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash `2c92c997...` of the desired `input.raw` image rather than hash `d8b96e5b...` of the template's pristine drive.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
-```bash
-echo "6*2^1024 + 3*2^512" > input.raw
-truncate -s 4K input.raw
-cartesi-machine \
-    --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
-    --initial-hash \
-    --initial-proof="address:0x9000000000000000,log2_size:12,filename:input-proof" \
-	--max-mcycle=0
+```{.bash script=host.cmdline.proofs-input-json}
 ```
 
 The contents of the `input-proof` are
@@ -837,23 +828,13 @@ remote-cartesi-machine \
     --server-address=localhost:8080
 ```
 use the `cartesi-machine` command-line utility to instantiate and run a Cartesi Machine for 2^2O cycles:
-```bash
-cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
-    --no-remote-destroy \
-    --max-mcycle=1Mi \
-    -- echo "Still here!"
+```{.bash script=host.cmdline.remote-end name=begin-client}
 ```
 The client shell shows:
 ```{output=host.cmdline.remote-begin-client}
 ```
 To continue execution of the same Cartesi Machine until it ends, rather than instantiating a new one, use the `cartesi-machine` command-line utility with the option `--no-remote-create`:
-```
-cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
-    --no-remote-create
+```{.bash script=host.cmdline.remote-end name=end-client}
 ```
 The client shell now shows:
 ```{output=host.cmdline.remote-end-client}
@@ -902,28 +883,7 @@ The `rollup-memory-range` command-line utility can encode input metadata, inputs
 For example, the following commands create the input metadata and input files for two distinct advance-state requests
 (saved as `epoch-0-input-metadata-0.bin`, `epoch-0-input-0.bin`, `epoch-0-input-metadata-1.bin`, and `epoch-0-input-1.bin`), and one query for an inspect state request (saved as `query.bin`):
 
-```bash
-for i in 1 2; do
-rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOF
-    {
-        "msg_sender": $(printf '"0x%040d"' $i)
-        "block_number": 0,
-        "time_stamp": 0,
-        "epoch_index": 0,
-        "input_index": $i
-    }
-EOF
-rollup-memory-range encode input > epoch-0-input-$i.bin <<-EOF
-    {
-        "payload": "hello from input $i!"
-    }
-EOF
-done
-rollup-memory-range encode input > query.bin <<-EOF
-{
-    "payload": "hello from query!"
-}
-EOF
+```{.bash script=host.cmdline.rolling-ioctl-echo-loop name=encode}
 ```
 Listing the files created
 ```bash
@@ -1191,13 +1151,7 @@ genext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```bash
-cartesi-machine \
-    --rollup \
-    --flash-drive=label:calc,filename:calc.ext2 \
-    --store="rolling-calculator-template" \
-    --assert-rolling-template \
-    -- /mnt/calc/calc.sh
+```{.bash script=host.cmdline.rolling-calc-template name=template}
 ```
 
 The result is as follows
@@ -1256,14 +1210,7 @@ remote-cartesi-machine \
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```bash
-cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
-    --remote-shutdown \
-    --rollup \
-    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
-    --load="rolling-calculator-template"
+```{.bash script=host.cmdline.rolling-calc-template name=client}
 ```
 
 The client shell shows

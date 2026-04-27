@@ -9,4 +9,6 @@ cartesi-machine \
     --store="calculator-template" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
     > /dev/null 2>&1
+# docs:begin
 cartesi-machine-stored-hash calculator-template > "$out" 2>&1
+# docs:end

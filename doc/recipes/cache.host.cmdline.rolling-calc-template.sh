@@ -17,7 +17,7 @@ _cleanup() {
         epoch-0-input-2-notice-0.bin epoch-0-input-2-notice-hashes.bin \
         epoch-0-input-2-voucher-hashes.bin \
         calc.tar calc.ext2
-    rm -rf calc calc-template
+    rm -rf calc rolling-calculator-template
 }
 trap _cleanup EXIT
 rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin \
@@ -33,22 +33,26 @@ tar --sort=name --mtime="2022-01-01" --owner=1000 --group=1000 --numeric-owner \
     -cf calc.tar --directory=calc .
 rm -rf calc
 genext2fs -f -b 1024 -a calc.tar calc.ext2
-rm -rf calc-template
+rm -rf rolling-calculator-template
+# docs:begin template
 cartesi-machine \
     --rollup \
     --flash-drive=label:calc,filename:calc.ext2 \
-    --store="calc-template" \
+    --store="rolling-calculator-template" \
     -- /mnt/calc/calc.sh > "$out_template" 2>&1
+# docs:end template
 remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
 while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+# docs:begin client
 cartesi-machine \
     --remote-address=localhost:8080 \
     --checkin-address=localhost:8081 \
     --remote-shutdown \
     --rollup \
     --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
-    --load="calc-template" \
+    --load="rolling-calculator-template" \
     > "$out_client" 2>&1
+# docs:end client
 wait "$srv_pid"
 mv "$srv_tmp" "$out_server"
