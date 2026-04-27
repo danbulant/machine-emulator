@@ -2,10 +2,12 @@
 outs=(
     "$CACHE_DIR/host.cmdline.remote-begin-end-server.out"
     "$CACHE_DIR/host.cmdline.remote-end-client.out"
+    "$CACHE_DIR/host.cmdline.remote-begin-client.out"
 )
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
 out_server="${outs[0]}"
 out_client="${outs[1]}"
+out_begin_client="${outs[2]}"
 srv_tmp=$(mktemp)
 remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
@@ -15,7 +17,7 @@ cartesi-machine \
     --checkin-address=localhost:8081 \
     --no-remote-destroy \
     --max-mcycle=1Mi \
-    -- echo "Still here!" > /dev/null 2>&1
+    -- echo "Still here!" > "$out_begin_client" 2>&1
 cartesi-machine \
     --remote-address=localhost:8080 \
     --checkin-address=localhost:8081 \

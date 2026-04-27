@@ -1,6 +1,7 @@
 #!/bin/bash
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh" "$@"
-trap 'rm -f input.raw output.raw' EXIT
+trap 'rm -f input.raw' EXIT
+# docs:begin
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -10,3 +11,4 @@ cartesi-machine \
     --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z",  io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
     > "$out" 2>&1
+# docs:end

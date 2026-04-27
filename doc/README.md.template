@@ -259,8 +259,7 @@ To remove these default settings, use the command-line options `--no-ram-image` 
 (The machine needs a ROM image, and, if needed, you can simply specify a different one.)
 
 The simplified command-line is
-```bash
-cartesi-machine -- "ls /bin"
+```{.bash script=host.cmdline.ls}
 ```
 The output is
 ```{output=host.cmdline.ls}
@@ -338,25 +337,9 @@ Support for `ext4` is also enabled by default in the kernel.
 (Support for additional file-systems can be enabled by modifying the configuration the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) uses to produce `linux.bin` in the `kernel/` subdirectory.)
 
 For example,
-```bash
-mkdir foo
-echo "Hello world!" > foo/bar.txt
-tar \
-    --sort=name \
-    --mtime="2022-01-01" \
-    --owner=1000 \
-    --group=1000 \
-    --numeric-owner \
-    -cf foo.tar \
-    --directory=foo .
-genext2fs \
-    -f \
-    -b 1024 \
-    -a foo.tar \
-    foo.ext2
-cartesi-machine \
-    --flash-drive="label:foo,filename:foo.ext2" \
-    -- "cat /mnt/foo/bar.txt"
+```{.bash script=host.cmdline.flash name=setup}
+```
+```{.bash script=host.cmdline.flash name=run}
 ```
 Here, a flash drive with label `foo` is initialized with the contents of an `ext2` file-system in the image file `foo.ext2`.
 
@@ -619,17 +602,7 @@ To simplify the examples in the documentation, we will simply run them as `root`
 The `bc` command-line utility is the perfect tool to evaluate the arithmetic expressions.
 The command passed to `cartesi-machine` below reads the contents of the raw input flash drive using the `dd` command-line utility, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result to `bc`, and finally uses `dd` again to write its results to the raw output flash drive.
 Here is the sample playground session
-```bash
-rm -f output.raw
-truncate -s 4K output.raw
-echo "6*2^1024 + 3*2^512" > input.raw
-truncate -s 4K input.raw
-cartesi-machine \
-    --append-rom-bootargs="single=yes" \
-    --flash-drive="label:input,length:1<<12,filename:input.raw" \
-    --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
-    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z",  io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
-lua5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
+```{.bash script=host.cmdline.templates-run}
 ```
 
 Using the `truncate` command-line utility, the session creates a 4KiB file `output.raw` containing only zeros to serve as the output drive image.
@@ -639,13 +612,11 @@ The session then invokes the `cartesi-machine` command-line utility to evaluate 
 The output of the `cartesi-machine` command is
 ```{output=host.cmdline.templates-run}
 ```
-Once the emulator returns, the session uses a tiny Lua script, run by the playground's `lua5.3` Lua interpreter, to print the contents of the output drive, which reads
+Once the emulator returns, a tiny Lua script, run by the playground's `lua5.3` Lua interpreter, prints the contents of the output drive
+```{.bash script=host.cmdline.templates-run-result}
 ```
-10786158809173895446375831144734148401707861873653839436405804869463\
-96054833005778796250863934445216126720683279228360145952738612886499\
-73495708458383684478649003115037698421037988831222501494715481595948\
-96901677837132352593468675094844090688678579236903861342030923488978\
-36036892526733668721977278692363075584
+which reads
+```{output=host.cmdline.templates-run-result}
 ```
 This is indeed the result of 6&times;2<sup>1024</sup>+3&times;2<sup>512</sup>.
 
@@ -786,17 +757,7 @@ Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in th
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
-```bash
-rm -f output.raw
-truncate -s 4K output.raw
-echo "6*2^1024 + 3*2^512" > input.raw
-truncate -s 4K input.raw
-cartesi-machine \
-    --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
-    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
-    --final-hash \
-    --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof"
+```{.bash script=host.cmdline.proofs-output-run}
 ```
 
 This produces the output
@@ -1253,7 +1214,7 @@ To test the template, create a couple advance-state requests (input and input me
 ```bash
 rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin <<-EOF
 {
-    "msg_sender": $(printf '"0x%040d"' 1)
+    "msg_sender": $(printf '"0x%040d"' 1),
     "block_number": 0,
     "time_stamp": 0,
     "epoch_index": 0,
@@ -1267,7 +1228,7 @@ rollup-memory-range encode input > epoch-0-input-1.bin <<-EOF
 EOF
 rollup-memory-range encode input-metadata > epoch-0-input-metadata-2.bin <<-EOF
 {
-    "msg_sender": $(printf '"0x%040d"' 2)
+    "msg_sender": $(printf '"0x%040d"' 2),
     "block_number": 0,
     "time_stamp": 0,
     "epoch_index": 0,

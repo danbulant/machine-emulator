@@ -10,6 +10,7 @@ cartesi-machine \
     --store="calculator-template" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
     > /dev/null 2>&1
+# docs:begin
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -20,3 +21,4 @@ cartesi-machine \
     --final-hash \
     --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof" \
     > "$out" 2>&1
+# docs:end

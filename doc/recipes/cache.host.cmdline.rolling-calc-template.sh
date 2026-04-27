@@ -21,11 +21,11 @@ _cleanup() {
 }
 trap _cleanup EXIT
 rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin \
-    < <(printf '{\n    "msg_sender": "0x%040d"\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 1\n}\n' 1)
+    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 1\n}\n' 1)
 rollup-memory-range encode input > epoch-0-input-1.bin \
     < <(printf '{\n    "payload": "invalid input"\n}\n')
 rollup-memory-range encode input-metadata > epoch-0-input-metadata-2.bin \
-    < <(printf '{\n    "msg_sender": "0x%040d"\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 2\n}\n' 2)
+    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 2\n}\n' 2)
 rollup-memory-range encode input > epoch-0-input-2.bin \
     < <(printf '{\n    "payload": "6*2^1024 + 3*2^512"\n}\n')
 rm -rf calc && mkdir calc && cp -f calc.sh calc && chmod +x calc/calc.sh
