@@ -4,6 +4,434 @@ include-before: |
     # Table of contents
 ---
 
+
+```{.bash key=host.lua.config-dump-nothing outputs=out,config-nothing-to-do.lua replace=null}
+cartesi-machine --max-mcycle=0 --store-config \
+    > "$out" 2>&1
+sed 's/machine_config = {/return {/' "$out" \
+    | grep -v '^Cycles: 0$' \
+    > "$HERE/config-nothing-to-do.lua"
+```
+
+```{.bash key=host.cmdline.cycles-limit-exec depends=host.lua.config-dump-nothing replace=null}
+LUA_PATH="$host.lua.config-dump-nothing/?.lua;$LUA_PATH" \
+    lua $RECIPES_DIR/find-htif-putchar.lua >/dev/null 2> "$out"
+```
+
+```{.bash key=host.cmdline.max-mcycle-arg depends=host.cmdline.cycles-limit-exec replace=null}
+printf -- '--max-mcycle=%s' "$(cat $host.cmdline.cycles-limit-exec/out)" > "$out"
+```
+
+```{.bash key=host.cmdline.default-rom-bootargs replace=null}
+cartesi-machine --store-config 2>&1 \
+    | grep bootargs \
+    | sed 's/.* = //' \
+    | sed 's/,$//' \
+    > "$out"
+```
+
+```{.bash key=host.cmdline.interactive-ls replace=null}
+# No # docs:begin/end markers: this recipe wraps "cartesi-machine -i -- sh"
+# in a heredoc to make the interactive session capturable, but the README
+# prose teaches the user to run "cartesi-machine -i -- sh" *interactively*
+# and type ls/exit at the prompt. Showing the heredoc would mislead readers
+# about how to use interactive mode, so the displayed command stays
+# hand-typed in README.md.template.
+{
+    cartesi-machine -i -- sh 2>&1 <<'MACHINE'
+ls /bin
+exit
+MACHINE
+} > "$out" 2>&1
+```
+
+```{.bash key=host.cmdline.proofs-input-json replace=null}
+trap 'rm -rf calculator-template input-proof input.raw' EXIT
+rm -rf calculator-template input-proof input.raw
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+{
+# docs:begin
+echo "6*2^1024 + 3*2^512" > input.raw
+truncate -s 4K input.raw
+cartesi-machine \
+    --load="calculator-template" \
+    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --initial-hash \
+    --initial-proof="address:0x9000000000000000,log2_size:12,filename:input-proof" \
+    --max-mcycle=0
+# docs:end
+} > /dev/null 2>&1
+cat input-proof > "$out"
+```
+
+```{.bash key=host.cmdline.proofs-input-roothash depends=host.cmdline.proofs-input-json replace=null}
+cat $host.cmdline.proofs-input-json/out \
+    | bash "$RECIPES_DIR/find-hash.sh" root_hash \
+    | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.proofs-output-json replace=null}
+trap 'rm -rf calculator-template output-proof input.raw output.raw' EXIT
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+truncate -s 4K output.raw
+echo "6*2^1024 + 3*2^512" > input.raw
+truncate -s 4K input.raw
+cartesi-machine \
+    --load="calculator-template" \
+    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
+    --final-hash \
+    --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof" \
+    > /dev/null 2>&1
+cat output-proof > "$out"
+```
+
+```{.bash key=host.cmdline.proofs-output-roothash depends=host.cmdline.proofs-output-json replace=null}
+cat $host.cmdline.proofs-output-json/out \
+    | bash "$RECIPES_DIR/find-hash.sh" root_hash \
+    | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.proofs-pristine-json replace=null}
+trap 'rm -rf calculator-template pristine-input-proof' EXIT
+cartesi-machine \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+cartesi-machine \
+    --load="calculator-template" \
+    --max-mcycle=0 \
+    --initial-hash \
+    --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof" \
+    > /dev/null 2>&1
+cat pristine-input-proof > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-calc-sh replace=null}
+cat "$RECIPES_DIR/calc.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop outputs=server,client replace=null}
+srv_tmp=$(mktemp)
+_cleanup() {
+    rm -f "$srv_tmp" \
+        epoch-0-input-1.bin epoch-0-input-1-notice-0.bin epoch-0-input-1-notice-hashes.bin \
+        epoch-0-input-1-report-0.bin epoch-0-input-1-voucher-0.bin epoch-0-input-1-voucher-hashes.bin \
+        epoch-0-input-2.bin epoch-0-input-2-notice-0.bin epoch-0-input-2-notice-hashes.bin \
+        epoch-0-input-2-report-0.bin epoch-0-input-2-voucher-0.bin epoch-0-input-2-voucher-hashes.bin \
+        epoch-0-input-metadata-1.bin epoch-0-input-metadata-2.bin query.bin query-report-0.bin
+}
+trap _cleanup EXIT
+# docs:begin encode
+for i in 1 2; do
+    rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOF
+    {
+        "msg_sender": $(printf '"0x%040d"' $i),
+        "block_number": 0,
+        "time_stamp": 0,
+        "epoch_index": 0,
+        "input_index": $i
+    }
+EOF
+    rollup-memory-range encode input > epoch-0-input-$i.bin <<-EOF
+    {
+        "payload": "hello from input $i!"
+    }
+EOF
+done
+rollup-memory-range encode input > query.bin <<-EOF
+{
+    "payload": "hello from query!"
+}
+EOF
+# docs:end encode
+echo "Done creating bins"
+remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+# docs:begin client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --remote-shutdown \
+    --rollup \
+    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
+    --rollup-inspect-state \
+    -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1 \
+    > "$out_client" 2>&1
+# docs:end client
+wait "$srv_pid"
+mv "$srv_tmp" "$out_server"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles0 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '1p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles1 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '2p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles10 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '11p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles2 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '3p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles3 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '4p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles4 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '5p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles8 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '9p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-cycles9 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-cycles.sh"     | sed -n '10p' > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-hashes0 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-hashes.sh"     | sed -n '1p'     | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-hashes1 depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+cat $host.cmdline.rolling-ioctl-echo-loop/client     | bash "$RECIPES_DIR/all-hashes.sh"     | sed -n '2p'     | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.state-hashes-no-limit replace=null}
+# docs:begin
+cartesi-machine \
+    --initial-hash \
+    --final-hash \
+    > "$out" 2>&1
+# docs:end
+```
+
+```{.bash key=host.cmdline.state-hashes-cycles-no-limit depends=host.cmdline.state-hashes-no-limit replace=null}
+cat $host.cmdline.state-hashes-no-limit/out | bash "$RECIPES_DIR/last-cycles.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.state-hashes-limit-exec depends=host.cmdline.cycles-limit-exec replace=null}
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+# docs:begin
+cartesi-machine \
+    --max-mcycle=$cycles \
+    --initial-hash \
+    --final-hash \
+    > "$out" 2>&1
+# docs:end
+```
+
+```{.bash key=host.cmdline.state-hashes-final-limit-exec depends=host.cmdline.cycles-limit-exec,host.cmdline.state-hashes-limit-exec replace=null}
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+cat $host.cmdline.state-hashes-limit-exec/out \
+    | bash "$RECIPES_DIR/find-hash.sh" "$cycles" \
+    | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.machine-dirname depends=host.cmdline.state-hashes-final-limit-exec replace=null}
+printf 'machine-%s/' "$(cat $host.cmdline.state-hashes-final-limit-exec/out)" > "$out"
+```
+
+```{.bash key=host.cmdline.state-hashes-final-no-limit depends=host.cmdline.state-hashes-cycles-no-limit,host.cmdline.state-hashes-no-limit replace=null}
+cycles=$(cat $host.cmdline.state-hashes-cycles-no-limit/out)
+cat $host.cmdline.state-hashes-no-limit/out \
+    | bash "$RECIPES_DIR/find-hash.sh" "$cycles" \
+    | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.state-hashes-initial depends=host.cmdline.state-hashes-limit-exec replace=null}
+cat $host.cmdline.state-hashes-limit-exec/out \
+    | bash "$RECIPES_DIR/find-hash.sh" 0 \
+    | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.cmdline.templates-hash replace=null}
+trap 'rm -rf calculator-template' EXIT
+cartesi-machine \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+# docs:begin
+cartesi-machine-stored-hash calculator-template/ > "$out" 2>&1
+# docs:end
+```
+
+```{.bash key=host.cmdline.templates-trunc-hash depends=host.cmdline.templates-hash replace=null}
+cat $host.cmdline.templates-hash/out | bash "$RECIPES_DIR/trunc8.sh" > "$out"
+```
+
+```{.bash key=host.lua.config-dump-ls-bin replace=null}
+cartesi-machine \
+    --rom-image="/opt/cartesi/share/images/rom.bin" \
+    --ram-length=64Mi \
+    --ram-image="/opt/cartesi/share/images/linux.bin" \
+    --flash-drive="label:root,filename:/opt/cartesi/share/images/rootfs.ext2" \
+    --max-mcycle=0 \
+    --store-config \
+    -- "ls /bin" \
+    > "$out" 2>&1
+```
+
+```{.bash key=host.lua.state-hashes-lua depends=host.lua.config-dump-nothing replace=null}
+LUA_PATH="$host.lua.config-dump-nothing/?.lua;$LUA_PATH" \
+    lua $RECIPES_DIR/run-config-with-hashes.lua config-nothing-to-do > "$out" 2>&1
+```
+
+```{.bash key=host.lua.state-hashes-utility replace=null}
+cartesi-machine --initial-hash --final-hash > "$out" 2>&1
+```
+
+```{.bash key=host.lua.state-transition-dump-step depends=host.cmdline.cycles-limit-exec,host.lua.config-dump-nothing replace=null}
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+LUA_PATH="$host.lua.config-dump-nothing/?.lua;$LUA_PATH" \
+    lua $RECIPES_DIR/dump-step.lua config-nothing-to-do "$cycles" > "$out" 2>&1
+```
+
+```{.bash key=target.architecture.dtc replace=null}
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --rollup \
+    -- "dtc -I dtb -O dts /sys/firmware/fdt" 2>&1 \
+    > "$out" 2>&1
+```
+
+```{.bash key=target.linux.hello-cpp replace=null}
+cartesi-machine \
+    --flash-drive=label:hello,filename:$RECIPES_DIR/hello.ext2 \
+    -- /mnt/hello/hello-cpp \
+    > "$out" 2>&1
+```
+
+```{.bash key=target.linux.interactive-ls replace=null}
+{
+    cartesi-machine -i -- sh 2>&1 <<'MACHINE'
+cd /bin
+ls
+cd /usr/bin
+ls
+exit
+MACHINE
+} > "$out" 2>&1
+```
+
+```{.bash key=host.cmdline.templates-run outputs=out,output.raw replace=null}
+trap 'rm -f input.raw' EXIT
+# docs:begin
+truncate -s 4K output.raw
+echo "6*2^1024 + 3*2^512" > input.raw
+truncate -s 4K input.raw
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12,filename:input.raw" \
+    --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z",  io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > "$out" 2>&1
+# docs:end
+```
+
+```{.bash key=host.cmdline.proofs-output-run replace=null}
+trap 'rm -rf calculator-template output-proof input.raw output.raw' EXIT
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+# docs:begin
+truncate -s 4K output.raw
+echo "6*2^1024 + 3*2^512" > input.raw
+truncate -s 4K input.raw
+cartesi-machine \
+    --load="calculator-template" \
+    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
+    --final-hash \
+    --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof" \
+    > "$out" 2>&1
+# docs:end
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-0client depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+{ sed -n '1,5p' $host.cmdline.rolling-ioctl-echo-loop/client; echo "..."; } > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-1client depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+{ echo "..."; sed -n '8,28p' $host.cmdline.rolling-ioctl-echo-loop/client; echo "..."; } > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-2client depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+{ echo "..."; sed -n '31,52p' $host.cmdline.rolling-ioctl-echo-loop/client; echo "..."; } > "$out"
+```
+
+```{.bash key=host.cmdline.rolling-ioctl-echo-loop-3client depends=host.cmdline.rolling-ioctl-echo-loop/client replace=null}
+{ echo "..."; sed -n '54,63p' $host.cmdline.rolling-ioctl-echo-loop/client; } > "$out"
+```
+
+```{.bash key=host.cmdline.rarely-periodic-initial-cycle depends=host.cmdline.proofs-output-run replace=null}
+cycles=$(cat $host.cmdline.proofs-output-run/out | bash "$RECIPES_DIR/last-cycles.sh")
+printf '%d\n' "$((cycles - 10))" > "$out"
+```
+
+```{.bash key=host.lua.config-mvendorid depends=host.lua.config-dump-nothing replace=null}
+cat $host.lua.config-dump-nothing/out | bash "$RECIPES_DIR/find-lua-val.sh" mvendorid > "$out"
+```
+
+```{.bash key=host.lua.config-mimpid depends=host.lua.config-dump-nothing replace=null}
+cat $host.lua.config-dump-nothing/out | bash "$RECIPES_DIR/find-lua-val.sh" mimpid > "$out"
+```
+
+```{.bash key=host.lua.config-marchid depends=host.lua.config-dump-nothing replace=null}
+cat $host.lua.config-dump-nothing/out | bash "$RECIPES_DIR/find-lua-val.sh" marchid > "$out"
+```
+
+```{.bash key=host.lua.remote outputs=server,client replace=null}
+srv_tmp=$(mktemp)
+trap 'rm -f "$srv_tmp"' EXIT
+remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+lua5.3 $RECIPES_DIR/run-remote-config.lua \
+    localhost:8080 \
+    localhost:8081 \
+    config.nothing-to-do > "$out_client" 2>&1
+wait "$srv_pid"
+mv "$srv_tmp" "$out_server"
+```
+
 # Introduction
 
 The Cartesi Machine is Cartesi's solution for verifiable computation.
@@ -202,8 +630,8 @@ cartesi-machine --help
 
 <!-- separate -->
 
-```{pipe="sh"}
-cartesi-machine --help 2>&1
+```{key=playground.help replace=output}
+cartesi-machine --help > "$out" 2>&1
 ```
 
 A final check can also be performed to verify if the contents inside the container are as expected:
@@ -214,8 +642,9 @@ shasum -a 256 linux.bin
 
 <!-- separate -->
 
-```{pipe="sh"}
-sha256sum linux.bin
+```{key=playground.linux-sha replace=output}
+cd "$RECIPES_DIR/.."
+sha256sum linux.bin > "$out" 2>&1
 ```
 
 <!-- separate -->
@@ -226,8 +655,9 @@ shasum -a 256 rootfs.ext2
 
 <!-- separate -->
 
-```{pipe="sh"}
-sha256sum rootfs.ext2
+```{key=playground.rootfs-sha replace=output}
+cd "$RECIPES_DIR/.."
+sha256sum rootfs.ext2 > "$out" 2>&1
 ```
 
 Note that, if the hashes of the files you are using do not match the ones above, then when you attempt to replicate the examples in the documentation, you will obtain different hashes.
@@ -259,10 +689,13 @@ To remove these default settings, use the command-line options `--no-ram-image` 
 (The machine needs a ROM image, and, if needed, you can simply specify a different one.)
 
 The simplified command-line is
-```{.bash script=host.cmdline.ls}
+```{.bash key=host.cmdline.ls replace=source}
+# docs:begin
+cartesi-machine -- "ls /bin" > "$out" 2>&1
+# docs:end
 ```
 The output is
-```{output=host.cmdline.ls}
+```{ref=host.cmdline.ls replace=output}
 ```
 
 It shows the Cartesi Machine splash screen, followed by the listing of directory `/bin/`.
@@ -294,7 +727,7 @@ it drops into the shell.
 Running the command `ls /bin` causes the listing of directory `/bin` to appear.
 The command `exit` causes the shell to exit.
 The output is
-```{output=host.cmdline.interactive-ls}
+```{ref=host.cmdline.interactive-ls replace=output}
 ```
 :::note
 When running in interactive mode, not even the final cycle count is reproducible.
@@ -337,9 +770,30 @@ Support for `ext4` is also enabled by default in the kernel.
 (Support for additional file-systems can be enabled by modifying the configuration the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) uses to produce `linux.bin` in the `kernel/` subdirectory.)
 
 For example,
-```{.bash script=host.cmdline.flash name=setup}
-```
-```{.bash script=host.cmdline.flash name=run}
+```{.bash key=host.cmdline.flash replace=source}
+trap 'rm -rf foo foo.tar foo.ext2' EXIT
+rm -rf foo
+# docs:begin
+mkdir foo
+echo "Hello world!" > foo/bar.txt
+tar \
+    --sort=name \
+    --mtime="2022-01-01" \
+    --owner=1000 \
+    --group=1000 \
+    --numeric-owner \
+    -cf foo.tar \
+    --directory=foo .
+genext2fs \
+    -f \
+    -b 1024 \
+    -a foo.tar \
+    foo.ext2
+cartesi-machine \
+    --flash-drive="label:foo,filename:foo.ext2" \
+    -- "cat /mnt/foo/bar.txt" \
+    > "$out" 2>&1
+# docs:end
 ```
 Here, a flash drive with label `foo` is initialized with the contents of an `ext2` file-system in the image file `foo.ext2`.
 
@@ -357,7 +811,7 @@ The `genext2fs` then takes the reproducible `tar` file and creates a reproducibl
 The Cartesi-provided `/sbin/init` mounts this as `/mnt/foo`.
 The command executed in the machine simply copies the contents of `/mnt/foo/bar` to the terminal.
 The output is
-```{output=host.cmdline.flash}
+```{ref=host.cmdline.flash replace=output}
 ```
 
 ### Persistent flash drives
@@ -375,10 +829,29 @@ These image files are mapped to host memory in a *copy-on-write* fashion.
 When code running in the target causes the emulator to write to a mapped image file, the operating system makes a copy of the page before modification and replaces the mapping to point to the fresh copy.
 The image files are never written to.
 For example, running the machine
-```{.bash script=host.cmdline.persistent-flash}
+```{.bash key=host.cmdline.persistent-flash replace=source}
+trap 'rm -rf foo foo.tar foo.ext2' EXIT
+rm -rf foo
+mkdir foo
+echo "Hello world!" > foo/bar.txt
+tar \
+    --sort=name \
+    --mtime="2022-01-01" \
+    --owner=1000 \
+    --group=1000 \
+    --numeric-owner \
+    -cf foo.tar \
+    --directory=foo .
+genext2fs -f -b 1024 -a foo.tar foo.ext2
+# docs:begin
+cartesi-machine \
+    --flash-drive="label:foo,filename:foo.ext2" \
+    -- "ls /mnt/foo/*.txt && cp /mnt/foo/bar.txt /mnt/foo/baz.txt && ls /mnt/foo/*.txt" \
+    > "$out" 2>&1
+# docs:end
 ```
 produces the output
-```{output=host.cmdline.persistent-flash}
+```{ref=host.cmdline.persistent-flash replace=output}
 ```
 indicating that the file-system was modified, at least from the perspective of the target.
 However, inspecting the `foo.ext2` image file from outside the emulator shows it is unchanged.
@@ -409,21 +882,28 @@ e2ls -al foo.ext2:*.txt
 ### Limiting execution
 
 Typically, the `cartesi-machine` utility only returns when the Cartesi Machine halts.  For example, running
-```{.bash script=host.cmdline.nothing}
+```{.bash key=host.cmdline.nothing replace=source}
+# docs:begin
+cartesi-machine > "$out" 2>&1
+# docs:end
 ```
 produces the output
-```{output=host.cmdline.nothing}
+```{ref=host.cmdline.nothing replace=output}
 ```
 Here, the Cartesi-provided `/sbin/init` simply reports there is nothing to do before halting gracefully.
 This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.
 
 The machine's processor includes a control and status register (CSR), named `mcycle`, that starts at 0 and is incremented after every instruction cycle.
 The maximum cycle can be specified with the command-line option `--max-mcycle=<number>`.
-For example, adding the `printf -- '--max-mcycle=%s' "$(cat "$CACHE_DIR/host.cmdline.cycles-limit-exec.out")"`{pipe=sh} command-line option
-```{.bash script=host.cmdline.limit-exec subst=cycles->host.cmdline.cycles-limit-exec}
+For example, adding the `placeholder`{ref=host.cmdline.max-mcycle-arg replace=output} command-line option
+```{.bash key=host.cmdline.limit-exec depends=host.cmdline.cycles-limit-exec replace=source subst=cycles->host.cmdline.cycles-limit-exec}
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+# docs:begin
+cartesi-machine --max-mcycle=$cycles > "$out" 2>&1
+# docs:end
 ```
 produces the output
-```{output=host.cmdline.limit-exec}
+```{ref=host.cmdline.limit-exec replace=output}
 ```
 Note the execution was interrupted before the splash screen was even completed.
 
@@ -477,14 +957,14 @@ State hashes therefore work as cryptographic signatures of the machine, and impl
 To obtain the state hash right before execution starts, use the command-line option `--initial-hash`.
 Conversely, to obtain the state hash right after execution is done, use the option `--final-hash`.
 For example,
-```{.bash script=host.cmdline.state-hashes-limit-exec subst=cycles->host.cmdline.cycles-limit-exec}
+```{.bash ref=host.cmdline.state-hashes-limit-exec replace=source subst=cycles->host.cmdline.cycles-limit-exec}
 ```
 produces the output
-```{output=host.cmdline.state-hashes-limit-exec}
+```{ref=host.cmdline.state-hashes-limit-exec replace=output}
 ```
-The initial state hash [...]{output=host.cmdline.state-hashes-initial} is the Merkle tree root hash for the initial Cartesi Machine state.
+The initial state hash [...]{ref=host.cmdline.state-hashes-initial replace=output} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
-In other words, the &ldquo;final state hash&rdquo; [...]{output=host.cmdline.state-hashes-final-limit-exec} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{output=host.cmdline.cycles-limit-exec}, given the result of the `--initial-hash` operation was [...]{output=host.cmdline.state-hashes-initial}.
+In other words, the &ldquo;final state hash&rdquo; [...]{ref=host.cmdline.state-hashes-final-limit-exec replace=output} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{ref=host.cmdline.cycles-limit-exec replace=output}, given the result of the `--initial-hash` operation was [...]{ref=host.cmdline.state-hashes-initial replace=output}.
 
 :::info
 The scare quotes around &ldquo;only&rdquo; are pedantic.
@@ -499,14 +979,14 @@ Cryptographic hash functions, such as Keccak-256, were designed *specifically* t
 :::
 
 Allowing the machine to run until it halts
-```{.bash script=host.cmdline.state-hashes-no-limit}
+```{.bash ref=host.cmdline.state-hashes-no-limit replace=source}
 ```
 produces instead the output
-```{output=host.cmdline.state-hashes-no-limit}
+```{ref=host.cmdline.state-hashes-no-limit replace=output}
 ```
 Naturally, the initial state hash is the same as before.
-However, the final state hash [...]{output=host.cmdline.state-hashes-final-no-limit} now pertains to cycle []{output=host.cmdline.state-hashes-cycles-no-limit}, where the machine is halted.
-This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{output=host.cmdline.state-hashes-initial}.
+However, the final state hash [...]{ref=host.cmdline.state-hashes-final-no-limit replace=output} now pertains to cycle []{ref=host.cmdline.state-hashes-cycles-no-limit replace=output}, where the machine is halted.
+This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{ref=host.cmdline.state-hashes-initial replace=output}.
 
 ### Persistent Cartesi Machines
 
@@ -515,17 +995,15 @@ A stored machine can later be loaded to continue its execution from where it lef
 To store a machine to a given `<directory>`, use the command-line option `--store=<directory>`.
 (In `<directory>`, the `%h` escape will be replaced by the state hash in hex.)
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
-For example, to store the machine corresponding to state hash [...]{output=host.cmdline.state-hashes-final-limit-exec}
-```{.bash pipe=sh}
-V_HOST_CMDLINE_CYCLES_LIMIT_EXEC=$(cat "$CACHE_DIR/host.cmdline.cycles-limit-exec.out")
-V_HOST_CMDLINE_STATE_HASHES_FINAL_LIMIT_EXEC=$(cat "$CACHE_DIR/host.cmdline.state-hashes-final-limit-exec.out")
-cat <<'_PIPESTATIC_'
-cartesi-machine \
-_PIPESTATIC_
-printf "    --max-mcycle=%s \\\n" "${V_HOST_CMDLINE_CYCLES_LIMIT_EXEC}"
-printf "    --store=\"machine-%s\"\n" "${V_HOST_CMDLINE_STATE_HASHES_FINAL_LIMIT_EXEC}"
+For example, to store the machine corresponding to state hash [...]{ref=host.cmdline.state-hashes-final-limit-exec replace=output}
+```{.bash key=host.cmdline.persistent-machine-cmd depends=host.cmdline.cycles-limit-exec,host.cmdline.state-hashes-final-limit-exec replace=output}
+{
+    echo "cartesi-machine \\"
+    printf "    --max-mcycle=%s \\\\\n" "$(cat $host.cmdline.cycles-limit-exec/out)"
+    printf "    --store=\"machine-%s\"\n" "$(cat $host.cmdline.state-hashes-final-limit-exec/out)"
+} > "$out"
 ```
-This command creates a directory `printf 'machine-%s/' "$(cat "$CACHE_DIR/host.cmdline.state-hashes-final-limit-exec.out")"`{pipe=sh}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
+This command creates a directory `placeholder`{ref=host.cmdline.machine-dirname replace=output}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
 Every image file is copied into the directory, so no external dependencies remain.
 
 :::note
@@ -538,41 +1016,70 @@ If the directory already exists, the operation will fail.
 Once created, the directory can be compressed and transferred to other hosts.
 To restore the corresponding Cartesi Machine, use the command-line option `--load=<directory>`.
 For example,
-```{.bash script=host.cmdline.persistent-machine subst=hash->host.cmdline.state-hashes-final-limit-exec}
+```{.bash key=host.cmdline.persistent-machine depends=host.cmdline.cycles-limit-exec,host.cmdline.state-hashes-final-limit-exec replace=source subst=hash->host.cmdline.state-hashes-final-limit-exec}
+hash=$(cat $host.cmdline.state-hashes-final-limit-exec/out)
+trap 'rm -rf "machine-$hash"' EXIT
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
+# docs:begin
+cartesi-machine \
+    --load="machine-$hash" \
+    --initial-hash \
+    --final-hash \
+    > "$out" 2>&1
+# docs:end
 ```
 produces the output
-```{output=host.cmdline.persistent-machine}
+```{ref=host.cmdline.persistent-machine replace=output}
 ```
 Note that, other than `--load`, no initialization command-line options were used.
 These initializations were used to define the machine before it was stored: their values are implicitly encoded in the stored state.
-The machine continues from where it left off, and reaches the same final state hash [...]{output=host.cmdline.state-hashes-final-no-limit}, as if it had never been interrupted.
+The machine continues from where it left off, and reaches the same final state hash [...]{ref=host.cmdline.state-hashes-final-no-limit replace=output}, as if it had never been interrupted.
 
-Note also that the initial state hash [...]{output=host.cmdline.state-hashes-final-limit-exec} after `--load` matches the final state hash before `--store`.
+Note also that the initial state hash [...]{ref=host.cmdline.state-hashes-final-limit-exec replace=output} after `--load` matches the final state hash before `--store`.
 After all, they are state hashes concerning the state of the same machine at the same cycle.
 In fact, `--store` writes this state hash inside the directory, and `--load` verifies that the state hash of the restored machine matches what it found in the directory.
 
 The `cartesi-machine-stored-hash` command-line utility can be used to extract the state hash from a stored Cartesi Machine.
 The command
-```{.bash script=host.cmdline.persistent-stored-hash subst=hash->host.cmdline.state-hashes-final-limit-exec}
+```{.bash key=host.cmdline.persistent-stored-hash depends=host.cmdline.cycles-limit-exec,host.cmdline.state-hashes-final-limit-exec replace=source subst=hash->host.cmdline.state-hashes-final-limit-exec}
+hash=$(cat $host.cmdline.state-hashes-final-limit-exec/out)
+trap 'rm -rf "machine-$hash"' EXIT
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
+# docs:begin
+cartesi-machine-stored-hash machine-$hash > "$out" 2>&1
+# docs:end
 ```
 produces the output
-```{output=host.cmdline.persistent-stored-hash}
+```{ref=host.cmdline.persistent-stored-hash replace=output}
 ```
 
 ### Running as root
 
 Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` script runs the target application (or any initial command) as user `uid=1000(dapp)` group `gid=1000(dapp)`.
 This can be seen by running the command:
-```{.bash script=host.cmdline.rarely-id}
+```{.bash key=host.cmdline.rarely-id replace=source}
+# docs:begin
+cartesi-machine \
+    -- id \
+    > "$out" 2>&1
+# docs:end
 ```
 It shows the user and group are indeed `dapp`.
-```{output=host.cmdline.rarely-id}
+```{ref=host.cmdline.rarely-id replace=output}
 ```
 To instead run your target application as `uid=0(root) gid=0(root)`, pass the parameter `single=yes`:
-```{.bash script=host.cmdline.rarely-append-bootargs-single-id}
+```{.bash key=host.cmdline.rarely-append-bootargs-single-id replace=source}
+# docs:begin
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    -- id \
+    > "$out" 2>&1
+# docs:end
 ```
 This produces the output:
-```{output=host.cmdline.rarely-append-bootargs-single-id}
+```{ref=host.cmdline.rarely-append-bootargs-single-id replace=output}
 ```
 It shows the user and group are now `root`.
 
@@ -602,7 +1109,7 @@ To simplify the examples in the documentation, we will simply run them as `root`
 The `bc` command-line utility is the perfect tool to evaluate the arithmetic expressions.
 The command passed to `cartesi-machine` below reads the contents of the raw input flash drive using the `dd` command-line utility, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result to `bc`, and finally uses `dd` again to write its results to the raw output flash drive.
 Here is the sample playground session
-```{.bash script=host.cmdline.templates-run}
+```{.bash ref=host.cmdline.templates-run replace=source}
 ```
 
 Using the `truncate` command-line utility, the session creates a 4KiB file `output.raw` containing only zeros to serve as the output drive image.
@@ -610,13 +1117,18 @@ Then, it creates the `input.raw` file for use as the input drive image containin
 This file is then padded with zeros to 4KiB in size by the `truncate` utility.
 The session then invokes the `cartesi-machine` command-line utility to evaluate the expression.
 The output of the `cartesi-machine` command is
-```{output=host.cmdline.templates-run}
+```{ref=host.cmdline.templates-run replace=output}
 ```
 Once the emulator returns, a tiny Lua script, run by the playground's `lua5.3` Lua interpreter, prints the contents of the output drive
-```{.bash script=host.cmdline.templates-run-result}
+```{.bash key=host.cmdline.templates-run-result depends=host.cmdline.templates-run/output.raw replace=source}
+trap 'rm -f output.raw' EXIT
+ln -sf "$host.cmdline.templates-run/output.raw" output.raw
+# docs:begin
+lua5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw > "$out" 2>&1
+# docs:end
 ```
 which reads
-```{output=host.cmdline.templates-run-result}
+```{ref=host.cmdline.templates-run-result replace=output}
 ```
 This is indeed the result of 6&times;2<sup>1024</sup>+3&times;2<sup>512</sup>.
 
@@ -625,19 +1137,31 @@ This will cause the Cartesi Machine to assume both drives are filled with zeros.
 Then, limit the computation with `--max-mcycle=0`, to prevent the Cartesi Machine from running.
 Finally, use the `--store="calculator-template"` command-line option to store the Cartesi Machine template.
 The `--final-hash` command-line option prints the resulting template hash.
-```{.bash script=host.cmdline.templates-store}
+```{.bash key=host.cmdline.templates-store replace=source}
+trap 'rm -rf calculator-template' EXIT
+# docs:begin
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > "$out" 2>&1
+# docs:end
 ```
 The result is as follows
-```{output=host.cmdline.templates-store}
+```{ref=host.cmdline.templates-store replace=output}
 ```
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
-```{.bash script=host.cmdline.templates-hash}
+```{.bash ref=host.cmdline.templates-hash replace=source}
 ```
 we can see from the output
-```{output=host.cmdline.templates-hash}
+```{ref=host.cmdline.templates-hash replace=output}
 ```
-that the stored template hash is [...]{output=host.cmdline.templates-trunc-hash}.
+that the stored template hash is [...]{ref=host.cmdline.templates-trunc-hash replace=output}.
 
 Templates are typically used by programs that control the emulator with the C++, Lua, or gRPC interfaces.
 
@@ -686,20 +1210,37 @@ Since the leaves have size 8 (for 64-bits), the valid values for `<log2_size>` a
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash script=host.cmdline.proofs-pristine-run}
+```{.bash key=host.cmdline.proofs-pristine-run replace=source}
+trap 'rm -rf calculator-template pristine-input-proof' EXIT
+cartesi-machine \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+# docs:begin
+cartesi-machine \
+    --load="calculator-template" \
+    --max-mcycle=0 \
+    --initial-hash \
+    --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof" \
+    > "$out" 2>&1
+# docs:end
 ```
 Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address `0x8000000000000000`.
 The input flash drive is therefore the second drive.
 It is automatically spaced by 2<sup>60</sup> bytes relative to the first drive, so that its starting address is `0x9000000000000000`.
 
 The output of the command is
-```{output=host.cmdline.proofs-pristine-run}
+```{ref=host.cmdline.proofs-pristine-run replace=output}
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{output=host.cmdline.proofs-pristine-json}
+```{ref=host.cmdline.proofs-pristine-json replace=output}
 ```
-The `root_hash` value [...]{output=host.cmdline.templates-trunc-hash} is the expected initial state hash seen in the output of the `cartesi-machine` command.
+The `root_hash` value [...]{ref=host.cmdline.templates-trunc-hash replace=output} is the expected initial state hash seen in the output of the `cartesi-machine` command.
 The `address` value `10376293541461622784` is the same as `0x9000000000000000` in decimal.
 The `log2_size` value `12` refers to the size of the 4KiB input drive.
 The `target_hash` value `d8b96e5b7...` in the proof gives the hash of the input drive.
@@ -736,29 +1277,29 @@ to obtain
 
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash `2c92c997...` of the desired `input.raw` image rather than hash `d8b96e5b...` of the template's pristine drive.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
-```{.bash script=host.cmdline.proofs-input-json}
+```{.bash ref=host.cmdline.proofs-input-json replace=source}
 ```
 
 The contents of the `input-proof` are
 
-```{output=host.cmdline.proofs-input-json}
+```{ref=host.cmdline.proofs-input-json replace=output}
 ```
-The `target_hash` value `2c92c997...` reflects the hash computed for the input, whereas `root_hash` value [...]{output=host.cmdline.proofs-input-roothash} differs from [...]{output=host.cmdline.templates-trunc-hash} obtained for template, as expected.
+The `target_hash` value `2c92c997...` reflects the hash computed for the input, whereas `root_hash` value [...]{ref=host.cmdline.proofs-input-roothash replace=output} differs from [...]{ref=host.cmdline.templates-trunc-hash replace=output} obtained for template, as expected.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
-```{.bash script=host.cmdline.proofs-output-run}
+```{.bash ref=host.cmdline.proofs-output-run replace=source}
 ```
 
 This produces the output
 
-```{output=host.cmdline.proofs-output-run}
+```{ref=host.cmdline.proofs-output-run replace=output}
 ```
 The contents of the `output-proof` are
-```{output=host.cmdline.proofs-output-json}
+```{ref=host.cmdline.proofs-output-json replace=output}
 ```
-Note how the `root_hash` field in the proof matches the final state hash [...]{output=host.cmdline.proofs-output-roothash} output by the `cartesi-machine` command-line utility.
+Note how the `root_hash` field in the proof matches the final state hash [...]{ref=host.cmdline.proofs-output-roothash replace=output} output by the `cartesi-machine` command-line utility.
 
 To see that the `target_hash` field matches the `output.raw` drive, use the `merkle-tree-hash` command-line utility
 ```bash
@@ -804,13 +1345,26 @@ Additionally, terminal output for the Cartesi Machine instantiated by the server
 Terminal input, when enabled, must also happen via the remote shell.
 
 With this in mind, running the command in the client shell
-```{.bash script=host.cmdline.remote name=client}
+```{.bash key=host.cmdline.remote outputs=server,client block=client replace=source}
+srv_tmp=$(mktemp)
+remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+# docs:begin client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --remote-shutdown \
+    > "$out_client" 2>&1
+# docs:end client
+wait "$srv_pid"
+mv "$srv_tmp" "$out_server"
 ```
 produces the following output on the client shell
-```{output=host.cmdline.remote-client}
+```{ref=host.cmdline.remote/client replace=output}
 ```
 and the following output on the server shell
-```{output=host.cmdline.remote-server}
+```{ref=host.cmdline.remote/server replace=output}
 ```
 
 The client first binds to the check-in address, connects to the remote address, and prints out the version returned by the server.
@@ -828,19 +1382,40 @@ remote-cartesi-machine \
     --server-address=localhost:8080
 ```
 use the `cartesi-machine` command-line utility to instantiate and run a Cartesi Machine for 2^2O cycles:
-```{.bash script=host.cmdline.remote-end name=begin-client}
+```{.bash key=host.cmdline.remote-end outputs=begin-end-server,end-client,begin-client block=begin-client replace=source}
+srv_tmp=$(mktemp)
+remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+# docs:begin begin-client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --no-remote-destroy \
+    --max-mcycle=1Mi \
+    -- echo "Still here!" > "$out_begin_client" 2>&1
+# docs:end begin-client
+# docs:begin end-client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --remote-shutdown \
+    --no-remote-create > "$out_end_client" 2>&1
+# docs:end end-client
+wait "$srv_pid"
+mv "$srv_tmp" "$out_begin_end_server"
 ```
 The client shell shows:
-```{output=host.cmdline.remote-begin-client}
+```{ref=host.cmdline.remote-end/begin-client replace=output}
 ```
 To continue execution of the same Cartesi Machine until it ends, rather than instantiating a new one, use the `cartesi-machine` command-line utility with the option `--no-remote-create`:
-```{.bash script=host.cmdline.remote-end name=end-client}
+```{.bash ref=host.cmdline.remote-end replace=source block=end-client}
 ```
 The client shell now shows:
-```{output=host.cmdline.remote-end-client}
+```{ref=host.cmdline.remote-end/end-client replace=output}
 ```
 The server shell shows the execution of both sessions:
-```{output=host.cmdline.remote-begin-end-server}
+```{ref=host.cmdline.remote-end/begin-end-server replace=output}
 ```
 
 Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can create a state _snapshot_ they can later _rollback_ to.
@@ -883,7 +1458,7 @@ The `rollup-memory-range` command-line utility can encode input metadata, inputs
 For example, the following commands create the input metadata and input files for two distinct advance-state requests
 (saved as `epoch-0-input-metadata-0.bin`, `epoch-0-input-0.bin`, `epoch-0-input-metadata-1.bin`, and `epoch-0-input-1.bin`), and one query for an inspect state request (saved as `query.bin`):
 
-```{.bash script=host.cmdline.rolling-ioctl-echo-loop name=encode}
+```{.bash ref=host.cmdline.rolling-ioctl-echo-loop replace=source block=encode}
 ```
 Listing the files created
 ```bash
@@ -916,7 +1491,7 @@ remote-cartesi-machine \
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```{.bash script=host.cmdline.rolling-ioctl-echo-loop name=client}
+```{.bash ref=host.cmdline.rolling-ioctl-echo-loop replace=source block=client}
 ```
 
 The command-line option `--rollup` is a shortcut that combines a variety of settings needed by the Rolling Cartesi Machine functionality.
@@ -931,16 +1506,11 @@ By default, the query is loaded from a file `query.bin`.
 Finally, the command-line for `ioctl-echo-loop` instructs it to echo each payload as one voucher, one notice, and one report, and to reject the input with index 1.
 
 As a result of these commands, the server shell simply shows the splash screen and a message from `ioctl-echo-loop` declaring what will be echoed:
-```{output=host.cmdline.rolling-ioctl-echo-loop-server}
+```{ref=host.cmdline.rolling-ioctl-echo-loop/server replace=output}
 ```
 The client shell shows a lot more activity:
 
-```{.bash pipe=sh}
-V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_0CLIENT=$(cat "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-0client.out")
-printf "%s\n" "${V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_0CLIENT}"
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
+```{ref=host.cmdline.rolling-ioctl-echo-loop-0client replace=output}
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
@@ -948,23 +1518,15 @@ It then runs the machine in a loop, occasionally transferring information in and
 The first `manual yield rx-accepted` signals the point at which the target application attempted to obtain the first request.
 In other words, the application is _ready_.
 
-```{.bash pipe=sh}
-V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_1CLIENT=$(cat "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-1client.out")
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
-printf "%s\n" "${V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_1CLIENT}"
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
+```{ref=host.cmdline.rolling-ioctl-echo-loop-1client replace=output}
 ```
-Upon receiving control back from the machine at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles0}, the client prints the epoch index 0 and input index 1, prints state hash [...]{output=host.cmdline.rolling-ioctl-echo-loop-hashes0}, loads files `epoch-0-input-metadata-1.bin` and `epoch-0-input-1.bin` into the appropriate memory ranges, prints the modified state hash [...]{output=host.cmdline.rolling-ioctl-echo-loop-hashes1}, and resumes the machine.
+Upon receiving control back from the machine at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles0 replace=output}, the client prints the epoch index 0 and input index 1, prints state hash [...]{ref=host.cmdline.rolling-ioctl-echo-loop-hashes0 replace=output}, loads files `epoch-0-input-metadata-1.bin` and `epoch-0-input-1.bin` into the appropriate memory ranges, prints the modified state hash [...]{ref=host.cmdline.rolling-ioctl-echo-loop-hashes1 replace=output}, and resumes the machine.
 The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
-These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-voucher` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles1}, a `tx-notice` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles2}, and a `tx-report` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles3}.
+These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-voucher` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles1 replace=output}, a `tx-notice` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles2 replace=output}, and a `tx-report` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles3 replace=output}.
 For each of them, the client receives control back from the machine.
 It reads the appropriate memory range to store files `epoch-0-input-1-voucher-0.bin`, `epoch-0-input-1-notice-0.bin`, and `epoch-0-input-1-report-0.bin`, respectively.
 
-The `manual yield rx-rejected` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles4} signals that the `ioctl-echo-loop` application is done processing input index 1 of epoch 0 (and rejected it!).
+The `manual yield rx-rejected` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles4 replace=output} signals that the `ioctl-echo-loop` application is done processing input index 1 of epoch 0 (and rejected it!).
 During the processing of an advance-state request, when the `/dev/rollup` Linux device receives a voucher, it appends its hash into a memory array.
 It does the same for the notices it receives.
 Since there will be no more vouchers or notices generated for the input (it was, after all, rejected), the client saves the hash arrays into files `epoch-0-index-1-voucher-hashes.bin` and `epoch-0-index-1-notice-hashes.bin`, respectively.
@@ -972,34 +1534,21 @@ Since there will be no more vouchers or notices generated for the input (it was,
 In production, when an input to an advance state request is rejected, the Server Manager will rollback the Rolling Cartesi Machine to the state it was before the input was processed.
 Moreover, all vouchers and notices are deleted (the reports are preserved).
 To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
-This can be confirmed by the fact that the cycle counts ([]{output=host.cmdline.rolling-ioctl-echo-loop-cycles0}) and state hashes ([...]{output=host.cmdline.rolling-ioctl-echo-loop-hashes0}) following the epoch 0 input 1 and epoch 0 input 2 are the same.
+This can be confirmed by the fact that the cycle counts ([]{ref=host.cmdline.rolling-ioctl-echo-loop-cycles0 replace=output}) and state hashes ([...]{ref=host.cmdline.rolling-ioctl-echo-loop-hashes0 replace=output}) following the epoch 0 input 1 and epoch 0 input 2 are the same.
 (The files with the vouchers and notices issued before rejection, as well as the files with the arrays of hashes, are left in place for the developer's inspection.)
 
-```{.bash pipe=sh}
-V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_2CLIENT=$(cat "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-2client.out")
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
-printf "%s\n" "${V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_2CLIENT}"
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
+```{ref=host.cmdline.rolling-ioctl-echo-loop-2client replace=output}
 ```
 A similar procedure is followed when processing the advance-state request with input index 2 of epoch index 0, except this time the input is accepted.
-Indeed, when the `manual yield rx-accepted` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles8} is received by the client, it has run out of advance-state requests to return.
+Indeed, when the `manual yield rx-accepted` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles8 replace=output} is received by the client, it has run out of advance-state requests to return.
 
-```{.bash pipe=sh}
-V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_3CLIENT=$(cat "$CACHE_DIR/host.cmdline.rolling-ioctl-echo-loop-3client.out")
-cat <<'_PIPESTATIC_'
-...
-_PIPESTATIC_
-printf "%s\n" "${V_HOST_CMDLINE_ROLLING_IOCTL_ECHO_LOOP_3CLIENT}"
+```{ref=host.cmdline.rolling-ioctl-echo-loop-3client replace=output}
 ```
 The client now moves to the inspect-state request.
 It loads `query.bin`, copies it to the appropriate memory range, and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
-The `automatic yield tx-report` at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles9} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+The `automatic yield tx-report` at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles9 replace=output} signals the application issued a report, which the client then saves as `query-report-0.bin`.
 
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{output=host.cmdline.rolling-ioctl-echo-loop-cycles10}, the client simply shuts down the remote Cartesi Machine server and exits.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{ref=host.cmdline.rolling-ioctl-echo-loop-cycles10 replace=output}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
 ```bash
@@ -1085,7 +1634,7 @@ To interact with the `/dev/rollup` Linux device (i.e., to obtain the advance-sta
 
 Shell scripts become surprisingly powerful with the help of the `rollup` and `jq` command-line utilities.
 A `bc`-based arbitrary precision application, for example, might look like this:
-```{output=host.cmdline.rolling-calc-sh}
+```{ref=host.cmdline.rolling-calc-sh replace=output}
 ```
 
 The `rollup` command-line utility supports the commands `accept`, `reject`, `voucher`, `notice`, `report`, and `exception`.
@@ -1151,11 +1700,59 @@ genext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash script=host.cmdline.rolling-calc-template name=template}
+```{.bash key=host.cmdline.rolling-calc-template outputs=template,server,client block=template replace=source}
+srv_tmp=$(mktemp)
+_cleanup() {
+    rm -f "$srv_tmp" \
+        epoch-0-input-metadata-1.bin epoch-0-input-1.bin \
+        epoch-0-input-metadata-2.bin epoch-0-input-2.bin \
+        epoch-0-input-1-notice-hashes.bin epoch-0-input-1-voucher-hashes.bin \
+        epoch-0-input-2-notice-0.bin epoch-0-input-2-notice-hashes.bin \
+        epoch-0-input-2-voucher-hashes.bin \
+        calc.tar calc.ext2
+    rm -rf calc rolling-calculator-template
+}
+trap _cleanup EXIT
+rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin \
+    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 1\n}\n' 1)
+rollup-memory-range encode input > epoch-0-input-1.bin \
+    < <(printf '{\n    "payload": "invalid input"\n}\n')
+rollup-memory-range encode input-metadata > epoch-0-input-metadata-2.bin \
+    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 2\n}\n' 2)
+rollup-memory-range encode input > epoch-0-input-2.bin \
+    < <(printf '{\n    "payload": "6*2^1024 + 3*2^512"\n}\n')
+rm -rf calc && mkdir calc && cp -f "$RECIPES_DIR/calc.sh" calc && chmod +x calc/calc.sh
+tar --sort=name --mtime="2022-01-01" --owner=1000 --group=1000 --numeric-owner \
+    -cf calc.tar --directory=calc .
+rm -rf calc
+genext2fs -f -b 1024 -a calc.tar calc.ext2
+rm -rf rolling-calculator-template
+# docs:begin template
+cartesi-machine \
+    --rollup \
+    --flash-drive=label:calc,filename:calc.ext2 \
+    --store="rolling-calculator-template" \
+    -- /mnt/calc/calc.sh > "$out_template" 2>&1
+# docs:end template
+remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+# docs:begin client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --remote-shutdown \
+    --rollup \
+    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
+    --load="rolling-calculator-template" \
+    > "$out_client" 2>&1
+# docs:end client
+wait "$srv_pid"
+mv "$srv_tmp" "$out_server"
 ```
 
 The result is as follows
-```{output=host.cmdline.rolling-calc-template.template}
+```{ref=host.cmdline.rolling-calc-template/template replace=output}
 ```
 The machine execution stops when the first call to `rollup finish` yields, and the machine at that state is stored in directory `"rolling-calculator-template"`.
 
@@ -1210,11 +1807,11 @@ remote-cartesi-machine \
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```{.bash script=host.cmdline.rolling-calc-template name=client}
+```{.bash ref=host.cmdline.rolling-calc-template replace=source block=client}
 ```
 
 The client shell shows
-```{output=host.cmdline.rolling-calc-template.client}
+```{ref=host.cmdline.rolling-calc-template/client replace=output}
 ```
 It starts by loading the machine from directory `"rolling-calculator-template"` and printing again the same yielded state that held when the server template was created.
 Then, the first input is rejected, as the payload `"invalid input"` is not an expression that `bc` can understand.
@@ -1236,7 +1833,7 @@ to produce
 ```
 The server shell shows only the error message output by `bc` and `rollup`.
 In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
-```{output=host.cmdline.rolling-calc-template.server}
+```{ref=host.cmdline.rolling-calc-template/server replace=output}
 ```
 
 ### Rarely used options
@@ -1251,10 +1848,15 @@ Please refer to the appropriate [section of the kernel documentation](https://ww
 
 For example, to prevent clutter in the console, the `cartesi-machine` utility automatically adds the `quiet` option to the kernel command-line, disabling most log messages.
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
-```{.bash script=host.cmdline.rarely-append-bootargs-loglevel}
+```{.bash key=host.cmdline.rarely-append-bootargs-loglevel replace=source}
+# docs:begin
+cartesi-machine \
+    --append-rom-bootargs="loglevel=8" \
+    > "$out" 2>&1
+# docs:end
 ```
 The output is
-```{output=host.cmdline.rarely-append-bootargs-loglevel}
+```{ref=host.cmdline.rarely-append-bootargs-loglevel replace=output}
 ```
 
 To clear the kernel command-line, use the option `--no-rom-bootargs`.
@@ -1262,24 +1864,43 @@ Notice that, without any options, the machine will not operate properly.
 In particular, as explained under the [Lua interface](../host/lua.md), flash-drives use kernel command-line arguments.
 For example, running the `cartesi-machine` command-line utility with no arguments produces a kernel command-line
 equivalent to running the command
-```{.bash pipe=sh}
-V_HOST_CMDLINE_DEFAULT_ROM_BOOTARGS=$(cat "$CACHE_DIR/host.cmdline.default-rom-bootargs.out")
-cat <<'_PIPESTATIC_'
-cartesi-machine \
-    --no-rom-bootargs \
-_PIPESTATIC_
-printf "    --append-rom-bootargs=%s\n" "${V_HOST_CMDLINE_DEFAULT_ROM_BOOTARGS}"
+```{.bash key=host.cmdline.no-rom-bootargs-equiv depends=host.cmdline.default-rom-bootargs replace=output}
+{
+    echo "cartesi-machine \\"
+    echo "    --no-rom-bootargs \\"
+    printf "    --append-rom-bootargs=%s\n" "$(cat $host.cmdline.default-rom-bootargs/out)"
+} > "$out"
 ```
 
 The command-line option `--periodic-hashes=<number-period>[,<number-start>]` causes the command-line utility to periodically obtain and print the state hash.
 The `<number-period>` argument gives the distance between hashes in cycles. The optional `<number-start>` argument gives the starting cycle for the periodic hashes. (Both `--initial-hash` and `--final-hash` are implied by this option.)
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
-```{.bash script=host.cmdline.rarely-periodic-hashes subst=initial_cycle->host.cmdline.rarely-periodic-initial-cycle}
+```{.bash key=host.cmdline.rarely-periodic-hashes depends=host.cmdline.rarely-periodic-initial-cycle replace=source subst=initial_cycle->host.cmdline.rarely-periodic-initial-cycle}
+trap 'rm -rf calculator-template input.raw' EXIT
+initial_cycle=$(cat $host.cmdline.rarely-periodic-initial-cycle/out)
+cartesi-machine \
+    --append-rom-bootargs="single=yes" \
+    --flash-drive="label:input,length:1<<12" \
+    --flash-drive="label:output,length:1<<12" \
+    --max-mcycle=0 \
+    --final-hash \
+    --store="calculator-template" \
+    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)' \
+    > /dev/null 2>&1
+# docs:begin
+echo "6*2^1024 + 3*2^512" > input.raw
+truncate -s 4K input.raw
+cartesi-machine \
+    --load="calculator-template" \
+    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --periodic-hashes=1,$initial_cycle \
+    > "$out" 2>&1
+# docs:end
 ```
 The output is
 
-```{output=host.cmdline.rarely-periodic-hashes}
+```{ref=host.cmdline.rarely-periodic-hashes replace=output}
 ```
 
 The command-line option `--dump-pmas` causes the emulator to dump the contents of all mapped spans in the address space to files.
@@ -1309,10 +1930,18 @@ The `--step` command-line option instructs `cartesi-machine` to dump to screen a
 
 For the sake of completeness, consider the example in which the Cartesi Machine was stopped while it drew the splash screen.
 The example below shows the step it was about to execute
-```{.bash script=host.cmdline.rarely-step subst=cycles->host.cmdline.cycles-limit-exec}
+```{.bash key=host.cmdline.rarely-step depends=host.cmdline.cycles-limit-exec replace=source subst=cycles->host.cmdline.cycles-limit-exec}
+cycles=$(cat $host.cmdline.cycles-limit-exec/out)
+{
+# docs:begin
+cartesi-machine \
+    --max-mcycle=$cycles \
+    --step > /dev/null
+# docs:end
+} 2>"$out"
 ```
 and produces the log
-```{output=host.cmdline.rarely-step}
+```{ref=host.cmdline.rarely-step replace=output}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
@@ -1571,23 +2200,19 @@ The command-line option `--max-mcycle=0` instructs the utility to stop execution
 The key command-line option is `--store-config`, which causes the emulator to print the corresponding configuration to the standard output.
 To store directly to a file, use the `--store-config=<filename>` instead, in which case, the `--load-config=<filename>` command-line option can be used to load the stored config.
 
-```{output=host.lua.config-dump-ls-bin}
+```{ref=host.lua.config-dump-ls-bin replace=output}
 ```
 
 The resulting configuration includes a number of default values, conveniently marked as such by the `cartesi-machine` utility.
 It can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua pipe=sh title="config/ls-bin.lua"}
-V_HOST_LUA_CONFIG_MVENDORID=$(cat "$CACHE_DIR/host.lua.config-mvendorid.out")
-V_HOST_LUA_CONFIG_MIMPID=$(cat "$CACHE_DIR/host.lua.config-mimpid.out")
-V_HOST_LUA_CONFIG_MARCHID=$(cat "$CACHE_DIR/host.lua.config-marchid.out")
-cat <<'_PIPESTATIC_'
-return {
-  processor = {
-_PIPESTATIC_
-printf "    mvendorid = %s,\n" "${V_HOST_LUA_CONFIG_MVENDORID}"
-printf "    mimpid = %s,\n" "${V_HOST_LUA_CONFIG_MIMPID}"
-printf "    marchid = %s,\n" "${V_HOST_LUA_CONFIG_MARCHID}"
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.config-ls-bin depends=host.lua.config-mvendorid,host.lua.config-mimpid,host.lua.config-marchid replace=output title="config/ls-bin.lua"}
+{
+echo "return {"
+echo "  processor = {"
+printf "    mvendorid = %s,\n" "$(cat $host.lua.config-mvendorid/out)"
+printf "    mimpid = %s,\n" "$(cat $host.lua.config-mimpid/out)"
+printf "    marchid = %s,\n" "$(cat $host.lua.config-marchid/out)"
+cat <<'EOF'
   },
   ram = {
     length = 0x4000000,
@@ -1605,7 +2230,8 @@ cat <<'_PIPESTATIC_'
     },
   },
 }
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 The only required values in the `processor` configuration are the `mvendorid`, `mimpid`, `marchid` CSRs.
 These are used to ensure the emulator version matches the version the configuration was generated for.
@@ -1657,18 +2283,14 @@ cartesi-machine \
 ```
 produces the corresponding machine configuration.
 This can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua pipe=sh title="config/cat-foo-bar.lua"}
-V_HOST_LUA_CONFIG_MVENDORID=$(cat "$CACHE_DIR/host.lua.config-mvendorid.out")
-V_HOST_LUA_CONFIG_MIMPID=$(cat "$CACHE_DIR/host.lua.config-mimpid.out")
-V_HOST_LUA_CONFIG_MARCHID=$(cat "$CACHE_DIR/host.lua.config-marchid.out")
-cat <<'_PIPESTATIC_'
-return {
-  processor = {
-_PIPESTATIC_
-printf "    mvendorid = %s,\n" "${V_HOST_LUA_CONFIG_MVENDORID}"
-printf "    mimpid = %s,\n" "${V_HOST_LUA_CONFIG_MIMPID}"
-printf "    marchid = %s,\n" "${V_HOST_LUA_CONFIG_MARCHID}"
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.config-cat-foo-bar depends=host.lua.config-mvendorid,host.lua.config-mimpid,host.lua.config-marchid replace=output title="config/cat-foo-bar.lua"}
+{
+echo "return {"
+echo "  processor = {"
+printf "    mvendorid = %s,\n" "$(cat $host.lua.config-mvendorid/out)"
+printf "    mimpid = %s,\n" "$(cat $host.lua.config-mimpid/out)"
+printf "    marchid = %s,\n" "$(cat $host.lua.config-marchid/out)"
+cat <<'EOF'
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -1691,7 +2313,8 @@ cat <<'_PIPESTATIC_'
     },
   },
 }
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 Note the entry in `mtdparts` that causes `flash.1`, the flash drive containing the `foo.ext2` file-system, to receive the label `foo`.
 When the Cartesi-provided `/sbin/init` detects a valid file-system in the flash drive, it automatically uses the label to mount it as `/mnt/foo`.
@@ -1707,18 +2330,14 @@ cartesi-machine \
     --max-mcycle=0 \
     --store-config
 ```
-```{.lua pipe=sh title="config/nothing-to-do.lua"}
-V_HOST_LUA_CONFIG_MVENDORID=$(cat "$CACHE_DIR/host.lua.config-mvendorid.out")
-V_HOST_LUA_CONFIG_MIMPID=$(cat "$CACHE_DIR/host.lua.config-mimpid.out")
-V_HOST_LUA_CONFIG_MARCHID=$(cat "$CACHE_DIR/host.lua.config-marchid.out")
-cat <<'_PIPESTATIC_'
-return {
-  processor = {
-_PIPESTATIC_
-printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "${V_HOST_LUA_CONFIG_MVENDORID}"
-printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "${V_HOST_LUA_CONFIG_MIMPID}"
-printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "${V_HOST_LUA_CONFIG_MARCHID}"
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.config-nothing-to-do depends=host.lua.config-mvendorid,host.lua.config-mimpid,host.lua.config-marchid replace=output title="config/nothing-to-do.lua"}
+{
+echo "return {"
+echo "  processor = {"
+printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "$(cat $host.lua.config-mvendorid/out)"
+printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "$(cat $host.lua.config-mimpid/out)"
+printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "$(cat $host.lua.config-marchid/out)"
+cat <<'EOF'
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -1736,7 +2355,8 @@ cat <<'_PIPESTATIC_'
     },
   },
 }
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
@@ -1747,18 +2367,14 @@ cartesi-machine \
     --store-config \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
-```{.lua pipe=sh title="config/progress.lua"}
-V_HOST_LUA_CONFIG_MVENDORID=$(cat "$CACHE_DIR/host.lua.config-mvendorid.out")
-V_HOST_LUA_CONFIG_MIMPID=$(cat "$CACHE_DIR/host.lua.config-mimpid.out")
-V_HOST_LUA_CONFIG_MARCHID=$(cat "$CACHE_DIR/host.lua.config-marchid.out")
-cat <<'_PIPESTATIC_'
-return {
-  processor = {
-_PIPESTATIC_
-printf "    mvendorid = %s,\n" "${V_HOST_LUA_CONFIG_MVENDORID}"
-printf "    mimpid = %s,\n" "${V_HOST_LUA_CONFIG_MIMPID}"
-printf "    marchid = %s,\n" "${V_HOST_LUA_CONFIG_MARCHID}"
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.config-progress depends=host.lua.config-mvendorid,host.lua.config-mimpid,host.lua.config-marchid replace=output title="config/progress.lua"}
+{
+echo "return {"
+echo "  processor = {"
+printf "    mvendorid = %s,\n" "$(cat $host.lua.config-mvendorid/out)"
+printf "    mimpid = %s,\n" "$(cat $host.lua.config-mimpid/out)"
+printf "    marchid = %s,\n" "$(cat $host.lua.config-marchid/out)"
+cat <<'EOF'
   },
   ram = {
     length = 0x4000000,
@@ -1780,7 +2396,8 @@ cat <<'_PIPESTATIC_'
     },
   },
 }
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
@@ -1792,18 +2409,14 @@ cartesi-machine \
     --store-config \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
 ```
-```{.lua pipe=sh title="config/calculator.lua"}
-V_HOST_LUA_CONFIG_MVENDORID=$(cat "$CACHE_DIR/host.lua.config-mvendorid.out")
-V_HOST_LUA_CONFIG_MIMPID=$(cat "$CACHE_DIR/host.lua.config-mimpid.out")
-V_HOST_LUA_CONFIG_MARCHID=$(cat "$CACHE_DIR/host.lua.config-marchid.out")
-cat <<'_PIPESTATIC_'
-return {
-  processor = {
-_PIPESTATIC_
-printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "${V_HOST_LUA_CONFIG_MVENDORID}"
-printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "${V_HOST_LUA_CONFIG_MIMPID}"
-printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "${V_HOST_LUA_CONFIG_MARCHID}"
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.config-calculator depends=host.lua.config-mvendorid,host.lua.config-mimpid,host.lua.config-marchid replace=output title="config/calculator.lua"}
+{
+echo "return {"
+echo "  processor = {"
+printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "$(cat $host.lua.config-mvendorid/out)"
+printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "$(cat $host.lua.config-mimpid/out)"
+printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "$(cat $host.lua.config-marchid/out)"
+cat <<'EOF'
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -1829,7 +2442,8 @@ cat <<'_PIPESTATIC_'
     },
   },
 }
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 
 ### Loading and running machines
@@ -2212,13 +2826,13 @@ cartesi-machine \
 <div class="grid md:grid-cols-2 gap-4">
 <div>
 
-```{output=host.lua.state-hashes-lua}
+```{ref=host.lua.state-hashes-lua replace=output}
 ```
 
 </div>
 <div>
 
-```{output=host.lua.state-hashes-utility}
+```{ref=host.lua.state-hashes-utility replace=output}
 ```
 
 </div>
@@ -2645,10 +3259,10 @@ lua5.3 run-remote-config.lua \
 
 ```
 The client shell produces
-```{output=host.lua.remote-client}
+```{ref=host.lua.remote/client replace=output}
 ```
 The server shell produces
-```{output=host.lua.remote-server}
+```{ref=host.lua.remote/server replace=output}
 ```
 
 ### Rolling Cartesi Machines
@@ -3049,9 +3663,9 @@ If the log was generated with the `proofs = true` option, then the current state
 
 Running the `dump-step.lua` program:
 
-```{.lua pipe=sh title="dump-step.lua"}
-V_HOST_CMDLINE_CYCLES_LIMIT_EXEC=$(cat "$CACHE_DIR/host.cmdline.cycles-limit-exec.out")
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.dump-step-source depends=host.cmdline.cycles-limit-exec replace=output title="dump-step.lua"}
+{
+cat <<'EOF'
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3060,9 +3674,9 @@ local util = require"cartesi.util"
 local machine = cartesi.machine(require"config.nothing-to-do")
 
 -- Run machine until it halts or yields
-_PIPESTATIC_
-printf "local max_mcycle = %s\n" "${V_HOST_CMDLINE_CYCLES_LIMIT_EXEC}"
-cat <<'_PIPESTATIC_'
+EOF
+printf "local max_mcycle = %s\n" "$(cat $host.cmdline.cycles-limit-exec/out)"
+cat <<'EOF'
 while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
     machine:run(max_mcycle)
 end
@@ -3074,14 +3688,15 @@ local step_log = machine:step{ annotations = true, proofs = true }
 -- Dump access log to screen
 io.stderr:write(string.format("\nContents of step %u access log:\n\n", max_mcycle))
 util.dump_log(step_log, io.stderr)
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 with command:
 ```bash
 lua5.3 dump-step.lua
 ```
 produces the output:
-```{output=host.lua.state-transition-dump-step}
+```{ref=host.lua.state-transition-dump-step replace=output}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
@@ -3114,9 +3729,9 @@ All required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
-```{.lua pipe=sh title="verify-step.lua"}
-V_HOST_CMDLINE_CYCLES_LIMIT_EXEC=$(cat "$CACHE_DIR/host.cmdline.cycles-limit-exec.out")
-cat <<'_PIPESTATIC_'
+```{.lua key=host.lua.verify-step-source depends=host.cmdline.cycles-limit-exec replace=output title="verify-step.lua"}
+{
+cat <<'EOF'
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3125,9 +3740,9 @@ local util = require"cartesi.util"
 local machine = cartesi.machine(require"config.nothing-to-do")
 
 -- Run machine until it halts or yields
-_PIPESTATIC_
-printf "local max_mcycle = %s\n" "${V_HOST_CMDLINE_CYCLES_LIMIT_EXEC}"
-cat <<'_PIPESTATIC_'
+EOF
+printf "local max_mcycle = %s\n" "$(cat $host.cmdline.cycles-limit-exec/out)"
+cat <<'EOF'
 while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
     machine:run(max_mcycle)
 end
@@ -3150,7 +3765,8 @@ end
 -- Verify step access log
 assert(cartesi.machine.verify_state_transition(hash_before_step, step_log, hash_after_step, {}))
 io.stderr:write("State transition accepted!\n")
-_PIPESTATIC_
+EOF
+} > "$out"
 ```
 
 Running the script without arguments accepts the valid state transition.
@@ -3289,7 +3905,7 @@ cartesi-machine -i -- sh
 
 Once executed, the Cartesi Machine boots Linux and drops into an interactive shell (The `sh` argument in the command-line.)
 
-```{output=target.linux.interactive-ls}
+```{ref=target.linux.interactive-ls replace=output}
 ```
 
 The session shows a user changing the working directory to `/bin/` and listing its contents.
@@ -3363,7 +3979,7 @@ cartesi-machine \
 
 The output is
 
-```{output=target.linux.hello-cpp}
+```{ref=target.linux.hello-cpp replace=output}
 ```
 
 To create the &ldquo;Hello world!&rdquo; program in Rust, first create a Cargo project:
@@ -4750,7 +5366,7 @@ cartesi-machine \
 
 The result is
 
-```{output=target.architecture.dtc}
+```{ref=target.architecture.dtc replace=output}
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
