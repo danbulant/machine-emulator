@@ -1,6 +1,6 @@
 local cartesi = require"cartesi"
 
-local config = require"config-nothing-to-do"
+local config = require"config.nothing-to-do"
 local machine = cartesi.machine(config)
 
 local mcycle = machine:read_mcycle()

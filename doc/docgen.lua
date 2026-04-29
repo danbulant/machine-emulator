@@ -1,5 +1,44 @@
 -- Pandoc Lua filter for the inline-script docs build system.
 --
+-- USAGE
+--
+-- The filter is run twice over the same template, with `make` in between:
+--
+--   1. Dry-run with DEPS_FILE set. The filter walks the template, computes
+--      a content hash for every key= block, writes cache/<hash>/script.sh
+--      for each, and emits a self-contained makefile fragment to
+--      $DEPS_FILE. Pandoc's rendered output from this run is discarded --
+--      the deliverable is the .d file. Cached outputs are not read in this
+--      run; ref=...replace=output and similar substitutions return "".
+--
+--   2. The outer Makefile includes the .d file. Its `all:` target lists
+--      every cache file referenced by the document, and each rule says
+--      "to produce cache/<hash>/<sub>, depend on cache/<hash>/script.sh
+--      and on each dep's cache file, then run the script". Running `make`
+--      therefore executes every needed script in topological order,
+--      populating the cache.
+--
+--   3. Real run: same filter, same template, but DEPS_FILE is unset and
+--      every cache/<hash>/<sub> referenced by the document now exists on
+--      disk. The filter walks the template again; ref=K replace=output
+--      reads cache/<hash_K>/out, ref=K replace=source renders K's body,
+--      and so on. Pandoc's output is the final rendered document.
+--
+-- Both filter runs use the same two-pass walk internally:
+--
+--   Pass 1 (collect): pandoc.walk_block records every key= block's body
+--   into `pending` without resolving anything. Detects duplicate keys.
+--
+--   Pass 2 (render): walk in document order, processing each CodeBlock
+--   and inline Code/Span. Each ref=K (or subst=...->K) calls
+--   ensure_defined(K), which lazily defines K -- recursing depth-first
+--   through K's depends= -- before reading its hash or output. This
+--   makes both ref= and depends= order-independent within the document.
+--
+-- Cache layout: cache/<hash>/script.sh, cache/<hash>/<sub>. Each script's
+-- preamble cd's into its own cache dir, so side-effect files land
+-- alongside the declared outputs.
+--
 -- Attributes (CodeBlock / Code / Span):
 --   key=K               Defines script K. The block body is its bash source.
 --                       In the body, every $D occurrence (D from depends=)
@@ -13,10 +52,11 @@
 --                       Default is "out". Each sub-name is also its filename
 --                       inside cache/<hash>/, so the file is reached by
 --                       writing "$D/<sub>" (i.e. "$D/out" by default).
---   replace=output      Render the cached output. Default for ref=.
+--   replace=output      Render the cached output.
 --   replace=source      Render the resolved body, optionally restricted to a
---                       docs:begin/end region. Default for key=.
+--                       docs:begin/end region.
 --   replace=null        Drop the block (used to declare without rendering).
+--                       Required on all key= and ref= blocks.
 --   block=NAME          With replace=source, restrict to the named region
 --                       between "# docs:begin NAME" and "# docs:end NAME"
 --                       (or the unnamed region when block= is omitted).
@@ -24,15 +64,6 @@
 --                       region, replace each $VAR with the contents of
 --                       cache/<hash_KEY>/<sub> (sub defaults to out).
 --                       Render-time only; not folded into the hash.
---
--- Cache layout: cache/<hash>/script.sh, cache/<hash>/<sub>. Each script's
--- preamble cd's into its own cache dir, so side-effect files land alongside
--- the declared outputs.
---
--- Two modes: when DEPS_FILE is set, dry run -- write script.sh files and
--- emit a self-contained makefile fragment to DEPS_FILE; cached outputs are
--- not read, so the substitution becomes "" placeholders. Without DEPS_FILE,
--- real run -- read cached outputs and render the document.
 
 local DEPS_FILE   = os.getenv("DEPS_FILE")
 local CACHE_DIR   = os.getenv("CACHE_DIR")   or error("CACHE_DIR not set")
@@ -40,14 +71,15 @@ local RECIPES_DIR = os.getenv("RECIPES_DIR") or error("RECIPES_DIR not set")
 
 local PREAMBLE = [[#!/bin/bash
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-out="$HERE/out"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+out=out
 export PATH="$RECIPES_DIR:$PATH"
-export LUA_PATH="$RECIPES_DIR/?.lua;$RECIPES_DIR/?/init.lua;;"
-cd "$HERE"
+export LUA_PATH="$RECIPES_DIR/?.lua;${LUA_PATH:-}"
 ]]
 
 -- State accumulated as the document is walked.
+local pending   = {}  -- key -> { attr, body }  (pass 1: raw collection)
+local defining  = {}  -- key -> true  (cycle detection during ensure_defined)
 local keys      = {}  -- key -> hash
 local outputs_t = {}  -- key -> { sub_name -> true }
 local sources   = {}  -- key -> resolved body (for ref= replace=source)
@@ -202,7 +234,7 @@ local function build_script_content(key, resolved, out_list)
         for _, n in ipairs(out_list) do
             if n ~= "out" then
                 local var = "out_" .. n:gsub("[^%w]", "_")
-                parts[#parts + 1] = string.format('%s="$HERE/%s"\n', var, sub_to_filename(n))
+                parts[#parts + 1] = string.format('%s="%s"\n', var, sub_to_filename(n))
             end
         end
     end
@@ -257,11 +289,26 @@ local function define_script(key, attr, body)
     return resolved
 end
 
+-- Lazily define key and all its transitive depends= in DFS order.
+local function ensure_defined(key)
+    if keys[key] then return end
+    assertf(not defining[key], "key=%s: dependency cycle", key)
+    local p = pending[key]
+    assertf(p, "key=%s: not defined", key)
+    defining[key] = true
+    for _, d in ipairs(parse_depends(p.attr.depends)) do
+        ensure_defined(d.base)
+    end
+    define_script(key, p.attr, p.body)
+    defining[key] = nil
+end
+
 -- When need_sub is true, validate that the named sub-output exists.
 -- For replace=source we render the body and ignore the sub.
 local function resolve_ref(ref, label, need_sub)
     local base, sub = ref:match("^([%w._%-]+)/([%w._%-]+)$")
     if not base then base, sub = ref, "out" end
+    ensure_defined(base)
     assertf(keys[base], "%s: '%s' not defined", label, base)
     if need_sub then
         assertf(outputs_t[base][sub], "%s: '%s' has no output '%s'", label, base, sub)
@@ -280,6 +327,7 @@ local function render_source(text, attr, label)
     text = strip_redirect(text)
     local subst = parse_subst(attr.subst)
     for _, p in ipairs(subst) do
+        ensure_defined(p.base)
         local val = read_output(keys[p.base], p.sub, label .. ": subst=" .. p.var .. "->" .. p.raw)
         text = text:gsub('%$' .. p.var .. '%f[%W]', function() return val end)
     end
@@ -288,9 +336,11 @@ local function render_source(text, attr, label)
     return text
 end
 
--- Pandoc applies Inline filters across the whole document before Block
--- filters, which would visit Spans/Code that ref= a key= block before its
--- definition is seen. Walk the tree explicitly in document order instead.
+-- The filter uses two passes. Pass 1 (collect) uses pandoc.walk_block to
+-- record every key= block body without resolving anything. Pass 2
+-- (walk_blocks) renders in document order, lazily defining each key on
+-- demand via DFS through depends=. Both ref= and depends= are therefore
+-- order-independent.
 
 local function process_codeblock(el)
     local attr = el.attr.attributes
@@ -298,15 +348,15 @@ local function process_codeblock(el)
     if key and ref then error("CodeBlock: key= and ref= are mutually exclusive") end
 
     if key then
-        local resolved = define_script(key, attr, el.text)
-        replace = replace or "source"
+        ensure_defined(key)
+        assertf(replace, "key=%s: replace= attribute required", key)
         attr.key = nil
         attr.depends = nil
         attr.outputs = nil
         attr.replace = nil
         if replace == "null" then return {} end
         if replace == "source" then
-            el.text = render_source(resolved, attr, "key=" .. key)
+            el.text = render_source(sources[key], attr, "key=" .. key)
             force_fenced(el)
             return el
         end
@@ -321,7 +371,7 @@ local function process_codeblock(el)
     end
 
     if ref then
-        replace = replace or "output"
+        assertf(replace, "ref=%s: replace= attribute required", ref)
         attr.ref = nil
         attr.replace = nil
         if replace == "null" then return {} end
@@ -349,13 +399,12 @@ local function process_code(el)
     local attr = el.attr.attributes
     local ref = attr.ref
     if not ref then return el end
-    local replace = attr.replace or "output"
+    local replace = attr.replace
+    assertf(replace, "ref=%s: replace= attribute required on inline Code", ref)
+    assertf(replace == "output", "ref=%s: only replace=output supported on inline Code", ref)
     local base, sub = resolve_ref(ref, "ref=" .. ref, true)
     attr.ref = nil
     attr.replace = nil
-    if replace ~= "output" then
-        error("ref=" .. ref .. ": only replace=output supported on inline Code")
-    end
     el.text = read_output(keys[base], sub, "ref=" .. ref)
     return el
 end
@@ -364,11 +413,10 @@ local function process_span(el)
     local attr = el.attr.attributes
     local ref = attr.ref
     if not ref then return el end
-    local replace = attr.replace or "output"
+    local replace = attr.replace
+    assertf(replace, "ref=%s: replace= attribute required on inline Span", ref)
+    assertf(replace == "output", "ref=%s: only replace=output supported on inline Span", ref)
     local base, sub = resolve_ref(ref, "ref=" .. ref, true)
-    if replace ~= "output" then
-        error("ref=" .. ref .. ": only replace=output supported on inline Span")
-    end
     local suffix = pandoc.utils.stringify(el.content)
     return pandoc.Code(read_output(keys[base], sub, "ref=" .. ref) .. suffix)
 end
@@ -426,7 +474,19 @@ local function emit_deps()
     f:close()
 end
 
+local function collect_codeblock(b)
+    local key = b.attr.attributes.key
+    if not key then return end
+    assertf(not pending[key], "key=%s: duplicate definition", key)
+    pending[key] = { attr = b.attr.attributes, body = b.text }
+end
+
+local function collect(blocks)
+    pandoc.walk_block(pandoc.Div(blocks), {CodeBlock = collect_codeblock})
+end
+
 function Pandoc(doc)
+    collect(doc.blocks)
     doc.blocks = walk_blocks(doc.blocks)
     if DEPS_FILE then emit_deps() end
     return doc

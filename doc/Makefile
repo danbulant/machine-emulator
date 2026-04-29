@@ -35,6 +35,20 @@ playground-exec: check-playground
 		-w /work \
 		$(PLAYGROUND_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
+
+run-playground: check-playground
+	docker run --hostname playground --rm \
+		-e USER=$$(id -u -n) \
+		-e GROUP=$$(id -g -n) \
+		-e UID=$$(id -u) \
+		-e GID=$$(id -g) \
+		-v $(CURDIR):/work \
+		-w /work \
+	    -it \
+		$(PLAYGROUND_IMAGE):$(TAG) \
+	    /bin/bash
+
+
 build-playground:
 	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(PLAYGROUND_IMAGE):$(TAG) -f Dockerfile .
 

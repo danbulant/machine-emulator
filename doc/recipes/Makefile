@@ -6,7 +6,7 @@ export RECIPES_DIR CACHE_DIR
 
 .PHONY: all clean
 .DELETE_ON_ERROR:
-.NOTPARALLEL:
+#.NOTPARALLEL:
 all:
 
 clean:
