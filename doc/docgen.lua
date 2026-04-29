@@ -90,6 +90,11 @@ local function assertf(cond, fmt, ...)
     if not cond then error(string.format(fmt, ...)) end
 end
 
+local function check_identifier(s, label)
+    assertf(s:match("^[%a_][%w_]*$"),
+        "%s: '%s' is not an identifier (must match [a-zA-Z_][a-zA-Z0-9_]*)", label, s)
+end
+
 local function strip_ansi(s)
     return (s:gsub("\27%[[%d;]*[mGK]", ""):gsub("\r", ""))
 end
@@ -106,6 +111,7 @@ local function parse_depends(s)
     for _, tok in ipairs(parse_list(s)) do
         local base, sub = tok:match("^([%w._%-]+)/([%w._%-]+)$")
         if not base then base, sub = tok, "out" end
+        check_identifier(base, "depends=" .. tok)
         r[#r + 1] = {base = base, sub = sub, raw = tok}
     end
     return r
@@ -117,6 +123,7 @@ local function parse_subst(s)
     for var, ref in s:gmatch("([%w_]+)%->([%w._%-/]+)") do
         local base, sub = ref:match("^([%w._%-]+)/([%w._%-]+)$")
         if not base then base, sub = ref, "out" end
+        check_identifier(base, "subst=" .. var .. "->" .. ref)
         r[#r + 1] = {var = var, base = base, sub = sub, raw = ref}
     end
     return r
@@ -240,6 +247,11 @@ local function build_script_content(key, resolved, out_list)
     end
     parts[#parts + 1] = resolved
     if not resolved:match("\n$") then parts[#parts + 1] = "\n" end
+    for _, n in ipairs(out_list) do
+        parts[#parts + 1] = string.format(
+            '[ -e "%s" ] || { echo "key=%s: declared output %q was not created" >&2; exit 1; }\n',
+            sub_to_filename(n), key, n)
+    end
     return table.concat(parts)
 end
 
@@ -308,6 +320,7 @@ end
 local function resolve_ref(ref, label, need_sub)
     local base, sub = ref:match("^([%w._%-]+)/([%w._%-]+)$")
     if not base then base, sub = ref, "out" end
+    check_identifier(base, label)
     ensure_defined(base)
     assertf(keys[base], "%s: '%s' not defined", label, base)
     if need_sub then
@@ -477,6 +490,7 @@ end
 local function collect_codeblock(b)
     local key = b.attr.attributes.key
     if not key then return end
+    check_identifier(key, "key=" .. key)
     assertf(not pending[key], "key=%s: duplicate definition", key)
     pending[key] = { attr = b.attr.attributes, body = b.text }
 end
