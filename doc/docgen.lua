@@ -9,7 +9,7 @@
 --      for each, and emits a self-contained makefile fragment to
 --      $DEPS_FILE. Pandoc's rendered output from this run is discarded --
 --      the deliverable is the .d file. Cached outputs are not read in this
---      run; ref=...replace=output and similar substitutions return "".
+--      run; replace=K/both and similar substitutions return "".
 --
 --   2. The outer Makefile includes the .d file. Its `all:` target lists
 --      every cache file referenced by the document, and each rule says
@@ -20,9 +20,9 @@
 --
 --   3. Real run: same filter, same template, but DEPS_FILE is unset and
 --      every cache/<hash>/<sub> referenced by the document now exists on
---      disk. The filter walks the template again; ref=K replace=output
---      reads cache/<hash_K>/out, ref=K replace=source renders K's body,
---      and so on. Pandoc's output is the final rendered document.
+--      disk. The filter walks the template again; replace=K/both reads
+--      cache/<hash_K>/both, replace=source renders K's body, and so on.
+--      Pandoc's output is the final rendered document.
 --
 -- Both filter runs use the same two-pass walk internally:
 --
@@ -30,59 +30,68 @@
 --   into `pending` without resolving anything. Detects duplicate keys.
 --
 --   Pass 2 (render): walk in document order, processing each CodeBlock
---   and inline Code/Span. Each ref=K (or subst=...->K) calls
---   ensure_defined(K), which lazily defines K -- recursing depth-first
---   through K's depends= -- before reading its hash or output. This
---   makes both ref= and depends= order-independent within the document.
+--   and inline Code/Span. Each replace=K/... calls ensure_defined(K),
+--   which lazily defines K -- recursing depth-first through K's depends=
+--   -- before reading its hash or output. This makes replace= and
+--   depends= order-independent within the document.
 --
--- Cache layout: cache/<hash>/script.sh, cache/<hash>/<sub>. Each script's
--- preamble cd's into its own cache dir, so side-effect files land
--- alongside the declared outputs.
+-- Cache layout: cache/<hash>/script.sh, plus outputs in cache/<hash>/.
+-- The PREAMBLE redirects stdout -> cache/<hash>/stdout, stderr ->
+-- cache/<hash>/stderr, and both streams -> cache/<hash>/both. Artifacts
+-- declared in outputs= are written by the script to its cwd.
 --
 -- Attributes (CodeBlock / Code / Span):
 --   key=K               Defines script K. The block body is its bash source.
 --                       In the body, every $D occurrence (D from depends=)
---                       is replaced before hashing with $CACHE_DIR/<hash_D>;
---                       the author writes "$D/out" or "$D/sub.out" after
---                       the marker. Longest-base-key match wins.
---   ref=K[/sub]         References a previously-defined K. With no body.
---   depends=A,B/sub,..  On key= blocks: list of dep refs. Bare A means A/out.
---                       Resolves to a make prereq and licences $A in the body.
---   outputs=a,b,c       On key= blocks: declares the sub-outputs produced.
---                       Default is "out". Each sub-name is also its filename
---                       inside cache/<hash>/, so the file is reached by
---                       writing "$D/<sub>" (i.e. "$D/out" by default).
---   replace=output      Render the cached output.
---   replace=source      Render the resolved body, optionally restricted to a
---                       docs:begin/end region.
---   replace=null        Drop the block (used to declare without rendering).
---                       Required on all key= and ref= blocks.
---   block=NAME          With replace=source, restrict to the named region
---                       between "# docs:begin NAME" and "# docs:end NAME"
---                       (or the unnamed region when block= is omitted).
---   subst=VAR->KEY,...  On replace=source renders only: after extracting the
---                       region, replace each $VAR with the contents of
---                       cache/<hash_KEY>/<sub> (sub defaults to out).
---                       Render-time only; not folded into the hash.
+--                       is replaced before hashing with $CACHE_DIR/<hash_D>.
+--                       Longest-base-key match wins.
+--   depends=A,B/sub,..  On key= blocks: list of dep refs. Bare A means
+--                       A/stdout. Resolves to a make prereq and licences
+--                       $A in the body.
+--   outputs=a,b,c       On key= blocks: declares artifact filenames produced
+--                       by the script (written to cwd = cache/<hash>/).
+--                       Reserved names (stdout, stderr, both, source, null)
+--                       are not allowed.
+--   replace=<value>     What to render in place of this block. Values:
+--     null              Drop the block.
+--     source[/<region>] This key's body (optionally a docs:begin/end region).
+--     stdout|stderr|both  This key's captured stream (requires key=).
+--     <artifact>        This key's declared artifact (requires key=, name in
+--                       outputs=).
+--     K[/<thing>]       Cross-block: render K's thing (default: both).
+--                       thing is stdout|stderr|both|<artifact>|source[/<region>].
+--   subst=VAR->K[/thing],...  On replace=source only: substitute $VAR with
+--                       K's thing after extracting the region. thing defaults
+--                       to both. Render-time only; not folded into the hash.
 
 local DEPS_FILE   = os.getenv("DEPS_FILE")
 local CACHE_DIR   = os.getenv("CACHE_DIR")   or error("CACHE_DIR not set")
 local RECIPES_DIR = os.getenv("RECIPES_DIR") or error("RECIPES_DIR not set")
 
-local PREAMBLE = [[#!/bin/bash
+-- PREAMBLE is split so the echo (progress line) runs before the exec redirect.
+-- exec redirect captures everything into stdout/stderr/both; echo must precede it
+-- so it reaches the terminal (not the captured files) -- matching old behavior.
+local PREAMBLE_HEADER = [[#!/bin/bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
-out=out
+]]
+-- Capture redirect feeds tees via process substitution; the trap closes FDs 1/2
+-- before `wait` so the tees see EOF and exit. Without the close, `wait` deadlocks:
+-- the trap fires while FD 1/2 still point at the tee pipes, so the tees never EOF.
+local PREAMBLE_CAPTURE = [[exec > >(tee stdout >> both) 2> >(tee stderr >> both)
+trap 'exec >&- 2>&-; wait' EXIT
 export PATH="$RECIPES_DIR:$PATH"
 export LUA_PATH="$RECIPES_DIR/?.lua;${LUA_PATH:-}"
 ]]
+
+local RESERVED = { stdout = true, stderr = true, both = true, source = true, null = true }
 
 -- State accumulated as the document is walked.
 local pending   = {}  -- key -> { attr, body }  (pass 1: raw collection)
 local defining  = {}  -- key -> true  (cycle detection during ensure_defined)
 local keys      = {}  -- key -> hash
-local outputs_t = {}  -- key -> { sub_name -> true }
-local sources   = {}  -- key -> resolved body (for ref= replace=source)
+local outputs_t = {}  -- key -> { artifact_name -> true }
+local sources   = {}  -- key -> resolved body (for replace=source)
 local rules     = {}  -- list of make rule strings (dry-run only)
 local consumed  = {}  -- "<hash>/<file>" -> true (referenced cache files)
 
@@ -110,7 +119,7 @@ local function parse_depends(s)
     local r = {}
     for _, tok in ipairs(parse_list(s)) do
         local base, sub = tok:match("^([%w._%-]+)/([%w._%-]+)$")
-        if not base then base, sub = tok, "out" end
+        if not base then base, sub = tok, "stdout" end
         check_identifier(base, "depends=" .. tok)
         r[#r + 1] = {base = base, sub = sub, raw = tok}
     end
@@ -121,16 +130,12 @@ local function parse_subst(s)
     local r = {}
     if not s then return r end
     for var, ref in s:gmatch("([%w_]+)%->([%w._%-/]+)") do
-        local base, sub = ref:match("^([%w._%-]+)/([%w._%-]+)$")
-        if not base then base, sub = ref, "out" end
+        local base, sub = ref:match("^([%w._%-]+)/(.+)$")
+        if not base then base, sub = ref, "both" end
         check_identifier(base, "subst=" .. var .. "->" .. ref)
         r[#r + 1] = {var = var, base = base, sub = sub, raw = ref}
     end
     return r
-end
-
-local function sub_to_filename(sub)
-    return sub
 end
 
 -- Substitute $K in body for K in deps' unique base keys, longest first.
@@ -204,18 +209,10 @@ local function extract_region(body, name, label)
     return (scan:sub(r.first, r.last):gsub("\n$", ""))
 end
 
--- Strip a trailing `> "$out" 2>&1`-style redirect from each line. The leading
--- char class avoids matching `>>` (append) by requiring the character before
--- the redirect to be neither `>` nor whitespace.
-local function strip_redirect(text)
-    return (text:gsub('([^>%s])%s*\\?%s*>%s*"?%$out[%w_]*"?[^\n]*', '%1'))
-end
-
 local function read_output(hash, sub, label)
-    local file = sub_to_filename(sub)
-    consumed[hash .. "/" .. file] = true
+    consumed[hash .. "/" .. sub] = true
     if DEPS_FILE then return "" end
-    local path = CACHE_DIR .. "/" .. hash .. "/" .. file
+    local path = CACHE_DIR .. "/" .. hash .. "/" .. sub
     local f = assert(io.open(path, "r"), label .. ": cannot open " .. path)
     local txt = f:read("a")
     f:close()
@@ -235,39 +232,33 @@ local function write_script(hash, content)
 end
 
 local function build_script_content(key, resolved, out_list)
-    local parts = {PREAMBLE}
+    local parts = {PREAMBLE_HEADER}
     parts[#parts + 1] = string.format('echo "%s"\n', key)
-    if #out_list > 1 then
-        for _, n in ipairs(out_list) do
-            if n ~= "out" then
-                local var = "out_" .. n:gsub("[^%w]", "_")
-                parts[#parts + 1] = string.format('%s="%s"\n', var, sub_to_filename(n))
-            end
-        end
-    end
+    parts[#parts + 1] = PREAMBLE_CAPTURE
     parts[#parts + 1] = resolved
     if not resolved:match("\n$") then parts[#parts + 1] = "\n" end
     for _, n in ipairs(out_list) do
         parts[#parts + 1] = string.format(
             '[ -e "%s" ] || { echo "key=%s: declared output %q was not created" >&2; exit 1; }\n',
-            sub_to_filename(n), key, n)
+            n, key, n)
     end
     return table.concat(parts)
 end
 
--- Emit a make rule. Multi-output blocks use a primary target carrying the
--- recipe and sibling targets that depend on the primary with no recipe.
+-- Emit a make rule. stdout is the primary target; stderr, both, and any
+-- declared artifacts are sibling targets that depend on the primary.
 -- (GNU Make 3.81 predates `&:` grouped-target syntax.)
 local function emit_rule(hash, out_list, deps)
     local prereqs = {"$(CACHE_DIR)/" .. hash .. "/script.sh"}
     for _, d in ipairs(deps) do
-        prereqs[#prereqs + 1] = "$(CACHE_DIR)/" .. keys[d.base] .. "/" .. sub_to_filename(d.sub)
+        prereqs[#prereqs + 1] = "$(CACHE_DIR)/" .. keys[d.base] .. "/" .. d.sub
     end
-    local primary = "$(CACHE_DIR)/" .. hash .. "/" .. sub_to_filename(out_list[1])
+    local primary = "$(CACHE_DIR)/" .. hash .. "/stdout"
+    local siblings = {"stderr", "both"}
+    for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
     rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n\t@bash $<"
-    for i = 2, #out_list do
-        local sec = "$(CACHE_DIR)/" .. hash .. "/" .. sub_to_filename(out_list[i])
-        rules[#rules + 1] = sec .. ": " .. primary
+    for _, s in ipairs(siblings) do
+        rules[#rules + 1] = "$(CACHE_DIR)/" .. hash .. "/" .. s .. ": " .. primary
     end
 end
 
@@ -283,11 +274,15 @@ end
 local function define_script(key, attr, body)
     assertf(not keys[key], "key=%s: duplicate definition", key)
     local out_list = parse_list(attr.outputs)
-    if #out_list == 0 then out_list = {"out"} end
+    for _, n in ipairs(out_list) do
+        assertf(not RESERVED[n], "key=%s: outputs= cannot contain reserved name '%s'", key, n)
+    end
     local deps = parse_depends(attr.depends)
     for _, d in ipairs(deps) do
         assertf(keys[d.base], "key=%s: depends=%s: '%s' not yet defined", key, d.raw, d.base)
-        assertf(outputs_t[d.base][d.sub], "key=%s: depends=%s: '%s' has no output '%s'", key, d.raw, d.base, d.sub)
+        local valid = (d.sub == "stdout" or d.sub == "stderr" or d.sub == "both")
+            or (outputs_t[d.base] and outputs_t[d.base][d.sub])
+        assertf(valid, "key=%s: depends=%s: '%s' has no output '%s'", key, d.raw, d.base, d.sub)
     end
     local resolved = substitute(body, deps)
     local content = build_script_content(key, resolved, out_list)
@@ -315,130 +310,150 @@ local function ensure_defined(key)
     defining[key] = nil
 end
 
--- When need_sub is true, validate that the named sub-output exists.
--- For replace=source we render the body and ignore the sub.
-local function resolve_ref(ref, label, need_sub)
-    local base, sub = ref:match("^([%w._%-]+)/([%w._%-]+)$")
-    if not base then base, sub = ref, "out" end
-    check_identifier(base, label)
-    ensure_defined(base)
-    assertf(keys[base], "%s: '%s' not defined", label, base)
-    if need_sub then
-        assertf(outputs_t[base][sub], "%s: '%s' has no output '%s'", label, base, sub)
+-- Parse the replace= value into (kind, a, b).
+-- kind == "null"     -> drop the block
+-- kind == "source"   -> a = region string or nil
+-- kind == "stream"   -> a = "stdout"|"stderr"|"both" (own key only)
+-- kind == "artifact" -> a = artifact name (own key only; must be in outputs=)
+-- kind == "cross"    -> a = K, b = thing (stream/artifact/source[/region])
+local function parse_replace_target(val, self_key)
+    if val == "null" then return "null" end
+    if val == "source" then return "source", nil end
+    if val == "stdout" or val == "stderr" or val == "both" then return "stream", val end
+    if val:sub(1, 7) == "source/" then return "source", val:sub(8) end
+    if self_key and outputs_t[self_key] and outputs_t[self_key][val] then
+        return "artifact", val
     end
-    return base, sub
+    local k, rest = val:match("^([%w._%-]+)/(.+)$")
+    if k then return "cross", k, rest end
+    if val:match("^[%w._%-]+$") then return "cross", val, "both" end
+    error("replace=" .. val .. ": unrecognized value")
 end
 
-local function render_source(text, attr, label)
-    local block_name = attr.block
-    -- Extract a docs:begin/docs:end region when block= names one, or when the
-    -- body has any markers (default to the unnamed region). With no markers
-    -- and no block=, render the whole body.
-    if block_name or text:find("# docs:begin", 1, true) then
-        text = extract_region(text, block_name, label)
+local render_source  -- forward declaration (render_source <-> cross_read mutual ref)
+
+local function cross_read(K, thing, subst_spec, label)
+    ensure_defined(K)
+    assertf(keys[K], "%s: key '%s' not defined", label, K)
+    if thing == "source" then
+        assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
+        return render_source(sources[K], nil, subst_spec, label)
     end
-    text = strip_redirect(text)
-    local subst = parse_subst(attr.subst)
-    for _, p in ipairs(subst) do
+    if thing:sub(1, 7) == "source/" then
+        local region = thing:sub(8)
+        assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
+        return render_source(sources[K], region, subst_spec, label)
+    end
+    if thing == "stdout" or thing == "stderr" or thing == "both" then
+        return read_output(keys[K], thing, label)
+    end
+    assertf(outputs_t[K] and outputs_t[K][thing],
+        "%s: key '%s' has no artifact '%s'", label, K, thing)
+    return read_output(keys[K], thing, label)
+end
+
+render_source = function(text, region, subst_spec, label)
+    if region or text:find("# docs:begin", 1, true) then
+        text = extract_region(text, region, label)
+    end
+    for _, p in ipairs(subst_spec or {}) do
         ensure_defined(p.base)
-        local val = read_output(keys[p.base], p.sub, label .. ": subst=" .. p.var .. "->" .. p.raw)
+        local val
+        if p.sub == "source" then
+            val = render_source(sources[p.base], nil, nil, label .. ": subst=" .. p.var)
+        elseif p.sub:sub(1, 7) == "source/" then
+            local r = p.sub:sub(8)
+            val = render_source(sources[p.base], r, nil, label .. ": subst=" .. p.var)
+        else
+            val = read_output(keys[p.base], p.sub, label .. ": subst=" .. p.var .. "->" .. p.raw)
+        end
         text = text:gsub('%$' .. p.var .. '%f[%W]', function() return val end)
     end
-    attr.block = nil
-    attr.subst = nil
     return text
 end
 
 -- The filter uses two passes. Pass 1 (collect) uses pandoc.walk_block to
 -- record every key= block body without resolving anything. Pass 2
 -- (walk_blocks) renders in document order, lazily defining each key on
--- demand via DFS through depends=. Both ref= and depends= are therefore
+-- demand via DFS through depends=. Both replace= and depends= are therefore
 -- order-independent.
 
 local function process_codeblock(el)
     local attr = el.attr.attributes
-    local key, ref, replace = attr.key, attr.ref, attr.replace
-    if key and ref then error("CodeBlock: key= and ref= are mutually exclusive") end
+    local key, replace = attr.key, attr.replace
+    if not key and not replace then return el end
 
-    if key then
-        ensure_defined(key)
-        assertf(replace, "key=%s: replace= attribute required", key)
-        attr.key = nil
-        attr.depends = nil
-        attr.outputs = nil
-        attr.replace = nil
-        if replace == "null" then return {} end
-        if replace == "source" then
-            el.text = render_source(sources[key], attr, "key=" .. key)
-            force_fenced(el)
-            return el
-        end
-        if replace == "output" then
-            el.text = read_output(keys[key], "out", "key=" .. key)
-            attr.block = nil
-            attr.subst = nil
-            force_fenced(el)
-            return el
-        end
-        error("key=" .. key .. ": unknown replace=" .. tostring(replace))
-    end
+    if key then ensure_defined(key) end
+    assertf(replace, "%s: replace= attribute required", key and "key=" .. key or "CodeBlock")
 
-    if ref then
-        assertf(replace, "ref=%s: replace= attribute required", ref)
-        attr.ref = nil
-        attr.replace = nil
-        if replace == "null" then return {} end
-        if replace == "output" then
-            local base, sub = resolve_ref(ref, "ref=" .. ref, true)
-            el.text = read_output(keys[base], sub, "ref=" .. ref)
-            attr.block = nil
-            attr.subst = nil
-            force_fenced(el)
-            return el
-        end
-        if replace == "source" then
-            local base = resolve_ref(ref, "ref=" .. ref, false)
-            assertf(sources[base], "ref=%s: replace=source: source not stored", ref)
-            el.text = render_source(sources[base], attr, "ref=" .. ref)
-            force_fenced(el)
-            return el
-        end
-        error("ref=" .. ref .. ": unknown replace=" .. tostring(replace))
+    local subst_spec = parse_subst(attr.subst)
+    attr.key = nil
+    attr.ref = nil
+    attr.depends = nil
+    attr.outputs = nil
+    attr.replace = nil
+    attr.block = nil
+    attr.subst = nil
+
+    if replace == "null" then return {} end
+
+    local label = key and "key=" .. key or "replace=" .. replace
+    local kind, a, b = parse_replace_target(replace, key)
+
+    if kind == "null" then return {} end
+    if kind == "source" then
+        assertf(key, "%s: replace=source requires key=", label)
+        el.text = render_source(sources[key], a, subst_spec, label)
+        force_fenced(el)
+        return el
     end
-    return el
+    if kind == "stream" or kind == "artifact" then
+        assertf(key, "%s: replace=%s requires key=", label, a)
+        el.text = read_output(keys[key], a, label)
+        force_fenced(el)
+        return el
+    end
+    if kind == "cross" then
+        el.text = cross_read(a, b, subst_spec, label)
+        force_fenced(el)
+        return el
+    end
+    error(label .. ": unknown replace= value")
 end
 
 local function process_code(el)
     local attr = el.attr.attributes
-    local ref = attr.ref
-    if not ref then return el end
     local replace = attr.replace
-    assertf(replace, "ref=%s: replace= attribute required on inline Code", ref)
-    assertf(replace == "output", "ref=%s: only replace=output supported on inline Code", ref)
-    local base, sub = resolve_ref(ref, "ref=" .. ref, true)
-    attr.ref = nil
+    if not replace then return el end
     attr.replace = nil
-    el.text = read_output(keys[base], sub, "ref=" .. ref)
-    return el
+    local label = "inline Code replace=" .. replace
+    local kind, a, b = parse_replace_target(replace, nil)
+    if kind == "cross" then
+        el.text = cross_read(a, b, nil, label)
+        return el
+    end
+    error(label .. ": only cross-block replace= (K or K/<thing>) supported on inline Code")
 end
 
 local function process_span(el)
     local attr = el.attr.attributes
-    local ref = attr.ref
-    if not ref then return el end
     local replace = attr.replace
-    assertf(replace, "ref=%s: replace= attribute required on inline Span", ref)
-    assertf(replace == "output", "ref=%s: only replace=output supported on inline Span", ref)
-    local base, sub = resolve_ref(ref, "ref=" .. ref, true)
-    local suffix = pandoc.utils.stringify(el.content)
-    return pandoc.Code(read_output(keys[base], sub, "ref=" .. ref) .. suffix)
+    if not replace then return el end
+    attr.replace = nil
+    local label = "inline Span replace=" .. replace
+    local kind, a, b = parse_replace_target(replace, nil)
+    if kind == "cross" then
+        local suffix = pandoc.utils.stringify(el.content)
+        return pandoc.Code(cross_read(a, b, nil, label) .. suffix)
+    end
+    error(label .. ": only cross-block replace= (K or K/<thing>) supported on inline Span")
 end
 
 local INLINE_FILTER = {Code = process_code, Span = process_span}
 
 -- Walk a list of blocks in document order, processing CodeBlocks via
 -- process_codeblock and recursing into block containers (Div, BlockQuote,
--- list items) so nested key=/ref= blocks are handled. Inline filters run
+-- list items) so nested key=/replace= blocks are handled. Inline filters run
 -- on every visited block.
 local walk_blocks
 local function walk_block(b)
