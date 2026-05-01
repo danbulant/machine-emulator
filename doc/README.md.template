@@ -565,8 +565,8 @@ produces the output
 
 ```{.bash key=state_hashes_initial depends=state_hashes_limit_exec replace=null}
 cat $state_hashes_limit_exec/both \
-    | find-hash.sh 0 \
-    | trunc8.sh
+    | $RECIPES_DIR/find-hash.sh 0 \
+    | $RECIPES_DIR/trunc8.sh
 ```
 The initial state hash [...]{replace=state_hashes_initial/stdout} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
@@ -574,8 +574,8 @@ Since Cartesi Machines are reproducible, the initial state hash also works as a 
 ```{.bash key=state_hashes_final_limit_exec depends=cycles_limit_exec,state_hashes_limit_exec replace=null}
 cycles=$(cat $cycles_limit_exec/stderr)
 cat $state_hashes_limit_exec/both \
-    | find-hash.sh "$cycles" \
-    | trunc8.sh
+    | $RECIPES_DIR/find-hash.sh "$cycles" \
+    | $RECIPES_DIR/trunc8.sh
 ```
 In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_limit_exec/stderr}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout}.
 
@@ -606,14 +606,14 @@ produces instead the output
 Naturally, the initial state hash is the same as before.
 
 ```{.bash key=state_hashes_cycles_no_limit depends=state_hashes_no_limit replace=null}
-cat $state_hashes_no_limit/both | last-cycles.sh
+cat $state_hashes_no_limit/both | $RECIPES_DIR/last-cycles.sh
 ```
 
 ```{.bash key=state_hashes_final_no_limit depends=state_hashes_cycles_no_limit,state_hashes_no_limit replace=null}
 cycles=$(cat $state_hashes_cycles_no_limit/stdout)
 cat $state_hashes_no_limit/both \
-    | find-hash.sh "$cycles" \
-    | trunc8.sh
+    | $RECIPES_DIR/find-hash.sh "$cycles" \
+    | $RECIPES_DIR/trunc8.sh
 ```
 However, the final state hash [...]{replace=state_hashes_final_no_limit/stdout} now pertains to cycle []{replace=state_hashes_cycles_no_limit/stdout}, where the machine is halted.
 This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{replace=state_hashes_initial/stdout}.
@@ -809,7 +809,7 @@ we can see from the output
 ```
 
 ```{.bash key=templates_trunc_hash depends=templates_hash replace=null}
-cat $templates_hash/stdout | trunc8.sh
+cat $templates_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 that the stored template hash is [...]{replace=templates_trunc_hash/stdout}.
 
@@ -824,7 +824,10 @@ This functionality can be used to test templates.
 For example, the following command loads the calculator template, and replaces its pristine input drive with a drive containing the contents of the `input.raw` file.
 Then, it replaces the pristine output drive so the machine saves results in the file `output.raw`.
 
-```bash
+```{.bash key=templates_replace_flash_drive depends=templates_store/calculator-template replace=source}
+rm -f calculator-template
+ln -s "$templates_store/calculator-template" calculator-template
+# docs:begin
 rm -f output.raw
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -834,14 +837,10 @@ cartesi-machine \
     --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
     --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared"
 lua5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
+# docs:end
 ```
 The result of running the command is, as expected,
-```
-10786158809173895446375831144734148401707861873653839436405804869463\
-96054833005778796250863934445216126720683279228360145952738612886499\
-73495708458383684478649003115037698421037988831222501494715481595948\
-96901677837132352593468675094844090688678579236903861342030923488978\
-36036892526733668721977278692363075584
+```{replace=templates_replace_flash_drive/stdout}
 ```
 
 ### State value proofs
@@ -906,7 +905,7 @@ For example, to quickly generate the hash for a pristine input with 4KiB size, r
 head -c 0 | merkle-tree-hash --tree-log2-size=12
 ```
 ```{.bash key=proofs_pristine_input_trunc_hash depends=proofs_pristine_input_hash replace=null}
-cat $proofs_pristine_input_hash/stdout | trunc8.sh
+cat $proofs_pristine_input_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
 ```{replace=proofs_pristine_input_hash/stdout}
@@ -924,7 +923,7 @@ To compute the hash for the desired `input.raw` file with contents `6*2^1024 + 3
 echo "6*2^1024 + 3*2^512" | merkle-tree-hash --tree-log2-size=12
 ```
 ```{.bash key=proofs_input_raw_trunc_hash depends=proofs_input_raw_hash replace=null}
-cat $proofs_input_raw_hash/stdout | trunc8.sh
+cat $proofs_input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
 ```{replace=proofs_input_raw_hash/stdout}
@@ -959,8 +958,8 @@ The contents of the `input-proof` are
 
 ```{.bash key=proofs_input_roothash depends=proofs_input_json replace=null}
 cat $proofs_input_json/stdout \
-    | find-hash.sh root_hash \
-    | trunc8.sh
+    | $RECIPES_DIR/find-hash.sh root_hash \
+    | $RECIPES_DIR/trunc8.sh
 ```
 The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout} differs from [...]{replace=templates_trunc_hash/stdout} obtained for template, as expected.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
@@ -1011,8 +1010,8 @@ cat output-proof
 
 ```{.bash key=proofs_output_roothash depends=proofs_output_json replace=null}
 cat $proofs_output_json/stdout \
-    | find-hash.sh root_hash \
-    | trunc8.sh
+    | $RECIPES_DIR/find-hash.sh root_hash \
+    | $RECIPES_DIR/trunc8.sh
 ```
 Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash/stdout} output by the `cartesi-machine` command-line utility.
 
@@ -1182,18 +1181,34 @@ For example, the following commands create the input metadata and input files fo
 (saved as `epoch-0-input-metadata-0.bin`, `epoch-0-input-0.bin`, `epoch-0-input-metadata-1.bin`, and `epoch-0-input-1.bin`), and one query for an inspect state request (saved as `query.bin`):
 
 
-```{.bash key=rolling_ioctl_echo_loop outputs=server,client replace=null}
+```{.bash key=rolling_ioctl_echo_loop depends=rolling_ioctl_echo_loop_encode outputs=server,client replace=null}
+ln -s $rolling_ioctl_echo_loop_encode/*.bin .
 srv_tmp=$(mktemp)
-_cleanup() {
-    rm -f "$srv_tmp" \
-        epoch-0-input-1.bin epoch-0-input-1-notice-0.bin epoch-0-input-1-notice-hashes.bin \
-        epoch-0-input-1-report-0.bin epoch-0-input-1-voucher-0.bin epoch-0-input-1-voucher-hashes.bin \
-        epoch-0-input-2.bin epoch-0-input-2-notice-0.bin epoch-0-input-2-notice-hashes.bin \
-        epoch-0-input-2-report-0.bin epoch-0-input-2-voucher-0.bin epoch-0-input-2-voucher-hashes.bin \
-        epoch-0-input-metadata-1.bin epoch-0-input-metadata-2.bin query.bin query-report-0.bin
-}
-trap _cleanup EXIT
-# docs:begin encode
+{
+# docs:begin server
+remote-cartesi-machine \
+    --server-address=localhost:8080
+# docs:end server
+} > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
+{
+# docs:begin client
+cartesi-machine \
+    --remote-address=localhost:8080 \
+    --checkin-address=localhost:8081 \
+    --remote-shutdown \
+    --rollup \
+    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
+    --rollup-inspect-state \
+    -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1
+# docs:end client
+} > client 2>&1
+wait "$srv_pid"
+mv "$srv_tmp" server
+```
+
+```{.bash key=rolling_ioctl_echo_loop_encode replace=source}
 for i in 1 2; do
     rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOF
     {
@@ -1215,35 +1230,16 @@ rollup-memory-range encode input > query.bin <<-EOF
     "payload": "hello from query!"
 }
 EOF
-# docs:end encode
-remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
-srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
-{
-# docs:begin client
-cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
-    --remote-shutdown \
-    --rollup \
-    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
-    --rollup-inspect-state \
-    -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1
-# docs:end client
-} > client 2>&1
-wait "$srv_pid"
-mv "$srv_tmp" server
-```
-```{.bash replace=rolling_ioctl_echo_loop/source/encode}
 ```
 Listing the files created
-```bash
+```{.bash key=rolling_ioctl_echo_loop_encoded_bins depends=rolling_ioctl_echo_loop/client replace=source}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 ls *.bin
+# docs:end
 ```
 We see
-```
-epoch-0-input-1.bin  epoch-0-input-metadata-1.bin  query.bin
-epoch-0-input-2.bin  epoch-0-input-metadata-2.bin
+```{.bash key=encoded_bins_ls replace=rolling_ioctl_echo_loop_encoded_bins/stdout}
 ```
 
 #### Running a simple target application
@@ -1252,18 +1248,8 @@ The command-line utility `/opt/cartesi/bin/ioctl-echo-loop`, pre-installed in th
 It is perfect to showcase the input-output mechanism.
 
 Since Rolling Cartesi Machines rely on the snapshot/rollback functionality of Remote Cartesi Machines, running a Rolling Cartesi Machine in the command line requires using the `remote-cartesi-machine` server in combination with the `cartesi-machine` client.
-With the files just created by `rollup-memory-ranges` in the working directory
-```bash
-ls *.bin
-```
-```
-epoch-0-input-1.bin  epoch-0-input-metadata-1.bin  query.bin
-epoch-0-input-2.bin  epoch-0-input-metadata-2.bin
-```
-run the remote server with the command
-```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+With the files just created by `rollup-memory-ranges` in the working directory, run the remote server with the command
+```{.bash replace=rolling_ioctl_echo_loop/source/server}
 ```
 
 Then, from a different shell into the same container, run the client with the command
@@ -1300,29 +1286,29 @@ echo "..."; sed -n '8,28p' $rolling_ioctl_echo_loop/client; echo "..."
 ```
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles0 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '1p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '1p'
 ```
 
 ```{.bash key=rolling_ioctl_echo_loop_hashes0 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-hashes.sh     | sed -n '1p'     | trunc8.sh
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '1p'     | $RECIPES_DIR/trunc8.sh
 ```
 
 ```{.bash key=rolling_ioctl_echo_loop_hashes1 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-hashes.sh     | sed -n '2p'     | trunc8.sh
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '2p'     | $RECIPES_DIR/trunc8.sh
 ```
 Upon receiving control back from the machine at cycle []{replace=rolling_ioctl_echo_loop_cycles0/stdout}, the client prints the epoch index 0 and input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hashes0/stdout}, loads files `epoch-0-input-metadata-1.bin` and `epoch-0-input-1.bin` into the appropriate memory ranges, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hashes1/stdout}, and resumes the machine.
 The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles1 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '2p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '2p'
 ```
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles2 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '3p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '3p'
 ```
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles3 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '4p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '4p'
 ```
 These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-voucher` at cycle []{replace=rolling_ioctl_echo_loop_cycles1/stdout}, a `tx-notice` at cycle []{replace=rolling_ioctl_echo_loop_cycles2/stdout}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles3/stdout}.
 For each of them, the client receives control back from the machine.
@@ -1330,7 +1316,7 @@ It reads the appropriate memory range to store files `epoch-0-input-1-voucher-0.
 
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles4 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '5p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '5p'
 ```
 The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_cycles4/stdout} signals that the `ioctl-echo-loop` application is done processing input index 1 of epoch 0 (and rejected it!).
 During the processing of an advance-state request, when the `/dev/rollup` Linux device receives a voucher, it appends its hash into a memory array.
@@ -1349,7 +1335,7 @@ echo "..."; sed -n '31,52p' $rolling_ioctl_echo_loop/client; echo "..."
 A similar procedure is followed when processing the advance-state request with input index 2 of epoch index 0, except this time the input is accepted.
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles8 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '9p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '9p'
 ```
 Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_cycles8/stdout} is received by the client, it has run out of advance-state requests to return.
 
@@ -1360,29 +1346,24 @@ The client now moves to the inspect-state request.
 It loads `query.bin`, copies it to the appropriate memory range, and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles9 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '10p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '10p'
 ```
 The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles9/stdout} signals the application issued a report, which the client then saves as `query-report-0.bin`.
 
 
 ```{.bash key=rolling_ioctl_echo_loop_cycles10 depends=rolling_ioctl_echo_loop/client replace=null}
-cat $rolling_ioctl_echo_loop/client     | all-cycles.sh     | sed -n '11p'
+cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '11p'
 ```
 Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_cycles10/stdout}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
-```bash
+```{.bash key=rolling_ioctl_echo_loop_all_bins depends=rolling_ioctl_echo_loop replace=source}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 ls *.bin
+# docs:end
 ```
-```
-epoch-0-input-1-notice-0.bin        epoch-0-input-2-report-0.bin
-epoch-0-input-1-notice-hashes.bin   epoch-0-input-2-voucher-0.bin
-epoch-0-input-1-report-0.bin        epoch-0-input-2-voucher-hashes.bin
-epoch-0-input-1-voucher-0.bin       epoch-0-input-2.bin
-epoch-0-input-1-voucher-hashes.bin  epoch-0-input-metadata-1.bin
-epoch-0-input-1.bin                 epoch-0-input-metadata-2.bin
-epoch-0-input-2-notice-0.bin        query-report-0.bin
-epoch-0-input-2-notice-hashes.bin   query.bin
+```{.bash replace=rolling_ioctl_echo_loop_all_bins/stdout}
 ```
 
 #### Decoding responses
@@ -1706,7 +1687,7 @@ The `<number-period>` argument gives the distance between hashes in cycles. The 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
 ```{.bash key=rarely_periodic_initial_cycle depends=proofs_output_run replace=null}
-cycles=$(cat $proofs_output_run/both | last-cycles.sh)
+cycles=$(cat $proofs_output_run/both | $RECIPES_DIR/last-cycles.sh)
 printf '%d\n' "$((cycles - 10))"
 ```
 ```{.bash key=rarely_periodic_hashes depends=rarely_periodic_initial_cycle,templates_store/calculator-template replace=source subst=initial_cycle->rarely_periodic_initial_cycle/stdout}
@@ -2038,23 +2019,22 @@ The resulting configuration includes a number of default values, conveniently ma
 It can be edited down to its essential, and stored into a file, for example as a Lua module:
 
 ```{.bash key=config_marchid depends=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | find-lua-val.sh marchid
+cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh marchid
 ```
 
 ```{.bash key=config_mimpid depends=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | find-lua-val.sh mimpid
+cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mimpid
 ```
 
 ```{.bash key=config_mvendorid depends=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | find-lua-val.sh mvendorid
+cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mvendorid
 ```
-```{.lua key=config_ls_bin depends=config_mvendorid,config_mimpid,config_marchid replace=both title="config/ls-bin.lua"}
-echo "return {"
-echo "  processor = {"
-printf "    mvendorid = %s,\n" "$(cat $config_mvendorid/stdout)"
-printf "    mimpid = %s,\n" "$(cat $config_mimpid/stdout)"
-printf "    marchid = %s,\n" "$(cat $config_marchid/stdout)"
-cat <<'EOF'
+```{.lua key=config_ls_bin depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua"}
+return {
+  processor = {
+    mvendorid = $MVENDORID,
+    mimpid = $MIMPID,
+    marchid = $MARCHID,
   },
   ram = {
     length = 0x4000000,
@@ -2072,7 +2052,6 @@ cat <<'EOF'
     },
   },
 }
-EOF
 ```
 The only required values in the `processor` configuration are the `mvendorid`, `mimpid`, `marchid` CSRs.
 These are used to ensure the emulator version matches the version the configuration was generated for.
@@ -2111,13 +2090,12 @@ cartesi-machine \
 ```
 produces the corresponding machine configuration.
 This can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua key=config_cat_foo_bar depends=config_mvendorid,config_mimpid,config_marchid replace=both title="config/cat-foo-bar.lua"}
-echo "return {"
-echo "  processor = {"
-printf "    mvendorid = %s,\n" "$(cat $config_mvendorid/stdout)"
-printf "    mimpid = %s,\n" "$(cat $config_mimpid/stdout)"
-printf "    marchid = %s,\n" "$(cat $config_marchid/stdout)"
-cat <<'EOF'
+```{.lua key=config_cat_foo_bar depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua"}
+return {
+  processor = {
+    mvendorid = $MVENDORID,
+    mimpid = $MIMPID,
+    marchid = $MARCHID,
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -2140,7 +2118,6 @@ cat <<'EOF'
     },
   },
 }
-EOF
 ```
 Note the entry in `mtdparts` that causes `flash.1`, the flash drive containing the `foo.ext2` file-system, to receive the label `foo`.
 When the Cartesi-provided `/sbin/init` detects a valid file-system in the flash drive, it automatically uses the label to mount it as `/mnt/foo`.
@@ -2156,13 +2133,12 @@ cartesi-machine \
     --max-mcycle=0 \
     --store-config
 ```
-```{.lua key=config_nothing_to_do depends=config_mvendorid,config_mimpid,config_marchid replace=both title="config/nothing-to-do.lua"}
-echo "return {"
-echo "  processor = {"
-printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "$(cat $config_mvendorid/stdout)"
-printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "$(cat $config_mimpid/stdout)"
-printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "$(cat $config_marchid/stdout)"
-cat <<'EOF'
+```{.lua key=config_nothing_to_do depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua"}
+return {
+  processor = {
+    mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
+    mimpid = $MIMPID, -- cartesi.machine.MIMPID
+    marchid = $MARCHID, -- cartesi.machine.MARCHID
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -2180,7 +2156,6 @@ cat <<'EOF'
     },
   },
 }
-EOF
 ```
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
@@ -2191,13 +2166,12 @@ cartesi-machine \
     --store-config \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
-```{.lua key=config_progress depends=config_mvendorid,config_mimpid,config_marchid replace=both title="config/progress.lua"}
-echo "return {"
-echo "  processor = {"
-printf "    mvendorid = %s,\n" "$(cat $config_mvendorid/stdout)"
-printf "    mimpid = %s,\n" "$(cat $config_mimpid/stdout)"
-printf "    marchid = %s,\n" "$(cat $config_marchid/stdout)"
-cat <<'EOF'
+```{.lua key=config_progress depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua"}
+return {
+  processor = {
+    mvendorid = $MVENDORID,
+    mimpid = $MIMPID,
+    marchid = $MARCHID,
   },
   ram = {
     length = 0x4000000,
@@ -2219,7 +2193,6 @@ cat <<'EOF'
     },
   },
 }
-EOF
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
@@ -2231,13 +2204,12 @@ cartesi-machine \
     --store-config \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
 ```
-```{.lua key=config_calculator depends=config_mvendorid,config_mimpid,config_marchid replace=both title="config/calculator.lua"}
-echo "return {"
-echo "  processor = {"
-printf "    mvendorid = %s, -- cartesi.machine.MVENDORID\n" "$(cat $config_mvendorid/stdout)"
-printf "    mimpid = %s, -- cartesi.machine.MIMPID\n" "$(cat $config_mimpid/stdout)"
-printf "    marchid = %s, -- cartesi.machine.MARCHID\n" "$(cat $config_marchid/stdout)"
-cat <<'EOF'
+```{.lua key=config_calculator depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua"}
+return {
+  processor = {
+    mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
+    mimpid = $MIMPID, -- cartesi.machine.MIMPID
+    marchid = $MARCHID, -- cartesi.machine.MARCHID
   },
   ram = {
     image_filename = "/opt/cartesi/share/images/linux.bin",
@@ -2263,7 +2235,6 @@ cat <<'EOF'
     },
   },
 }
-EOF
 ```
 
 ### Loading and running machines
@@ -3499,8 +3470,7 @@ If the log was generated with the `proofs = true` option, then the current state
 
 Running the `dump-step.lua` program:
 
-```{.lua key=dump_step_source depends=cycles_limit_exec replace=both title="dump-step.lua"}
-cat <<'EOF'
+```{.lua key=dump_step_source depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr title="dump-step.lua"}
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3509,9 +3479,7 @@ local util = require"cartesi.util"
 local machine = cartesi.machine(require"config.nothing-to-do")
 
 -- Run machine until it halts or yields
-EOF
-printf "local max_mcycle = %s\n" "$(cat $cycles_limit_exec/stderr)"
-cat <<'EOF'
+local max_mcycle = $cycles
 while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
     machine:run(max_mcycle)
 end
@@ -3523,7 +3491,6 @@ local step_log = machine:step{ annotations = true, proofs = true }
 -- Dump access log to screen
 io.stderr:write(string.format("\nContents of step %u access log:\n\n", max_mcycle))
 util.dump_log(step_log, io.stderr)
-EOF
 ```
 with command:
 ```bash
@@ -3565,8 +3532,7 @@ All required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
-```{.lua key=verify_step_source depends=cycles_limit_exec replace=both title="verify-step.lua"}
-cat <<'EOF'
+```{.lua key=verify_step_source depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr title="verify-step.lua"}
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3575,9 +3541,7 @@ local util = require"cartesi.util"
 local machine = cartesi.machine(require"config.nothing-to-do")
 
 -- Run machine until it halts or yields
-EOF
-printf "local max_mcycle = %s\n" "$(cat $cycles_limit_exec/stderr)"
-cat <<'EOF'
+local max_mcycle = $cycles
 while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
     machine:run(max_mcycle)
 end
@@ -3600,7 +3564,6 @@ end
 -- Verify step access log
 assert(cartesi.machine.verify_state_transition(hash_before_step, step_log, hash_after_step, {}))
 io.stderr:write("State transition accepted!\n")
-EOF
 ```
 
 Running the script without arguments accepts the valid state transition.
@@ -5408,7 +5371,7 @@ This can be the value of a single word in a raw output flash drive, or it can be
 
 ## Verification game
 
-:::danger EDITOR NOTE
+::: {.danger}
 This section is still under construction.
 Meanwhile, for details on how the verification game works, please refer to our [technical paper](https://cartesi.io/cartesi_whitepaper.pdf).
 :::

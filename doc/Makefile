@@ -52,10 +52,10 @@ run-playground: check-playground
 build-playground:
 	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(PLAYGROUND_IMAGE):$(TAG) -f Dockerfile .
 
-README.md: README.md.template docgen.lua
+README.md: README.md.template replace.lua alerts.lua
 	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
 		$(MAKE) -C recipes/ && \
-		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter docgen.lua README.md.template -o README.md; \
+		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter replace.lua --lua-filter alerts.lua README.md.template -o README.md; \
 	else \
 		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
 	fi
