@@ -202,32 +202,32 @@ cartesi-machine --help
 
 <!-- separate -->
 
-```{key=help replace=both}
+```{key=help replace=both enabled=yes}
 cartesi-machine --help
 ```
 
 A final check can also be performed to verify if the contents inside the container are as expected:
 
-```{.bash key=linux_sha replace=source}
+```{.bash key=linux_sha replace=source enabled=yes}
 rm -f linux.bin
-ln -s /opt/cartesi/share/images/linux.bin .
+ln -s /usr/share/cartesi-machine/images/linux.bin .
 # docs:begin
 sha256sum linux.bin
 # docs:end
 ```
 
-```{.text replace=linux_sha/both}
+```{.text replace=linux_sha/both enabled=yes}
 ```
 
-```{.bash key=rootfs_sha replace=source}
+```{.bash key=rootfs_sha replace=source enabled=yes}
 rm -f rootfs.ext2
-ln -s /opt/cartesi/share/images/rootfs.ext2 .
+ln -s /usr/share/cartesi-machine/images/rootfs.ext2 .
 # docs:begin
 sha256sum rootfs.ext2
 # docs:end
 ```
 
-```{.text replace=rootfs_sha/both}
+```{.text replace=rootfs_sha/both enabled=yes}
 ```
 
 Note that, if the hashes of the files you are using do not match the ones above, then when you attempt to replicate the examples in the documentation, you will obtain different hashes.
@@ -295,17 +295,19 @@ it drops into the shell.
 Running the command `ls /bin` causes the listing of directory `/bin` to appear.
 The command `exit` causes the shell to exit.
 The output is
-```{key=cmdline_interactive_ls replace=both}
-# No # docs:begin/end markers: this recipe wraps "cartesi-machine -i -- sh"
-# in a heredoc to make the interactive session capturable, but the README
-# prose teaches the user to run "cartesi-machine -i -- sh" *interactively*
-# and type ls/exit at the prompt. Showing the heredoc would mislead readers
-# about how to use interactive mode, so the displayed command stays
-# hand-typed in README.md.template.
-cartesi-machine -i -- sh 2>&1 <<'MACHINE'
+```{key=cmdline_interactive_ls replace=both enabled=yes}
+# The user-facing command is shown in the bash block above. Here we feed
+# the session non-interactively: -i defaults console.input_source to
+# from_stdin, which calls open_tty() and fails inside a non-TTY container.
+# from_file goes through fopen() and avoids the TTY altogether; /sbin/init
+# halts the machine when the user shell exits, so no EOF-from-getchar is
+# needed. The block uses replace=both, so the heredoc setup is hidden in
+# the rendered README.
+cat >/tmp/cmds <<'EOF'
 ls /bin
 exit
-MACHINE
+EOF
+cartesi-machine -i --console-io=input_source:from_file,input_filename:/tmp/cmds -- sh 2>&1
 ```
 :::note
 When running in interactive mode, not even the final cycle count is reproducible.
@@ -462,11 +464,11 @@ e2ls -al foo.ext2:*.txt
 ### Limiting execution
 
 Typically, the `cartesi-machine` utility only returns when the Cartesi Machine halts.  For example, running
-```{.bash key=nothing replace=source}
+```{.bash key=nothing replace=source enabled=yes}
 cartesi-machine
 ```
 produces the output
-```{replace=nothing/both}
+```{replace=nothing/both enabled=yes}
 ```
 Here, the Cartesi-provided `/sbin/init` simply reports there is nothing to do before halting gracefully.
 This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.

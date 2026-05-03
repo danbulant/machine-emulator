@@ -95,6 +95,17 @@
 --                       The runner verifies each artifact exists after the body
 --                       exits and fails if it does not.
 --
+--   enabled=yes|no      Optional. Controls whether this block is active.
+--                       When absent, the value of the -M default-replace=
+--                       pandoc variable applies (true/yes/1 -> enabled;
+--                       false/no/0 or missing -> disabled). When disabled,
+--                       the block's entire body is rendered verbatim as a
+--                       plain code block (no execution, no region trimming,
+--                       no docs:begin/end processing). Cross-block
+--                       replace= sites that reference a disabled key
+--                       render as empty. ensure_defined errors if an
+--                       enabled block depends on a disabled one.
+--
 --   replace=<value>     Required on every annotated block. See taxonomy below.
 --
 --   subst=VAR->K[/thing],...
@@ -150,6 +161,13 @@
 --   substitution. Bodies relying on exact byte-level capture should not use
 --   replace= to consume their output.
 --
+-- DEFAULT-REPLACE METADATA
+--
+--   Pass -M default-replace=true (or false) on the pandoc command line.
+--   replace.lua reads doc.meta["default-replace"] in Pandoc() and uses it
+--   as the default for blocks without an explicit enabled= attribute.
+--   true/yes/1 -> enabled; false/no/0 (or absent) -> disabled.
+--
 -- MAKE-FRAGMENT SHAPE (dry-run)
 --
 --   Primary target:  cache/<hash>/stdout  (depends on runner + body.<ext> + dep stdouts)
@@ -172,6 +190,7 @@
 --     consume the start of $foobar; longest base wins for disambiguation.
 
 local deps_file
+local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
 local CACHE_DIR = os.getenv("CACHE_DIR") or error("CACHE_DIR not set")
 
 -- Locate the directory containing this filter file; runners live alongside it.
@@ -217,6 +236,12 @@ end
 
 local function strip_ansi(s)
     return (s:gsub("\27%[[%d;]*[mGK]", ""):gsub("\r", ""))
+end
+
+local function is_enabled(attr)
+    local v = attr.enabled
+    if v == nil then return default_enabled end
+    return v == "yes" or v == "true" or v == "1"
 end
 
 local function parse_list(s)
@@ -538,8 +563,11 @@ local function process_codeblock(el)
     local key, replace = attr.key, attr.replace
     if not key and not replace then return el end
 
-    if key then ensure_defined(key) end
-    assertf(replace, "%s: replace= attribute required", key and "key=" .. key or "CodeBlock")
+    local enabled = is_enabled(attr)
+    if enabled then
+        if key then ensure_defined(key) end
+        assertf(replace, "%s: replace= attribute required", key and "key=" .. key or "CodeBlock")
+    end
 
     local subst_spec = parse_subst(attr.subst)
     attr.key = nil
@@ -549,6 +577,12 @@ local function process_codeblock(el)
     attr.replace = nil
     attr.block = nil
     attr.subst = nil
+    attr.enabled = nil
+
+    if not enabled then
+        force_fenced(el)
+        return el
+    end
 
     if replace == "null" then return {} end
 
@@ -580,7 +614,10 @@ local function process_code(el)
     local attr = el.attr.attributes
     local replace = attr.replace
     if not replace then return el end
+    local enabled = is_enabled(attr)
     attr.replace = nil
+    attr.enabled = nil
+    if not enabled then return el end
     local label = "inline Code replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
     if kind == "cross" then
@@ -594,7 +631,10 @@ local function process_span(el)
     local attr = el.attr.attributes
     local replace = attr.replace
     if not replace then return el end
+    local enabled = is_enabled(attr)
     attr.replace = nil
+    attr.enabled = nil
+    if not enabled then return el end
     local label = "inline Span replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
     if kind == "cross" then
@@ -660,6 +700,7 @@ end
 local function collect_codeblock(b)
     local key = b.attr.attributes.key
     if not key then return end
+    if not is_enabled(b.attr.attributes) then return end
     check_identifier(key, "key=" .. key)
     assertf(not pending[key], "key=%s: duplicate definition", key)
     pending[key] = { attr = b.attr.attributes, body = b.text, classes = b.classes }
@@ -672,6 +713,11 @@ end
 function Pandoc(doc)
     local m = doc.meta["write-user-dependencies"]
     deps_file = m and pandoc.utils.stringify(m) or nil
+    local dr = doc.meta["default-replace"]
+    if dr ~= nil then
+        local v = pandoc.utils.stringify(dr)
+        default_enabled = v == "true" or v == "yes" or v == "1"
+    end
     collect(doc.blocks)
     doc.blocks = walk_blocks(doc.blocks)
     if deps_file then emit_deps() end

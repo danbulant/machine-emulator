@@ -24,6 +24,6 @@ $(CACHE_DIR):
 # ensures the cache directory exists before any rule from template.d runs.
 template.d: $(TEMPLATE) ../replace.lua | $(CACHE_DIR)
 	CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -t plain \
-	    -M write-user-dependencies=$@ --lua-filter ../replace.lua $< -o /dev/null
+	    -M write-user-dependencies=$@ -M default-replace=false --lua-filter ../replace.lua $< -o /dev/null
 
 -include template.d

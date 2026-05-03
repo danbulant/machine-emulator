@@ -1,7 +1,11 @@
-# Docker image tag
-TAG ?= 0.5.0
+# Docker image tag — must match the tag used by the root Makefile's
+# build-emulator-image target so the docs image layers on top of an
+# emulator built from the local source (kernel/rootfs images in
+# tests/dependencies are built against the unreleased branch and may
+# require emulator features not in any released base image).
+TAG ?= devel
 
-PLAYGROUND_IMAGE = cartesi/machine-emulator-docs-playground
+DOCS_IMAGE = cartesi/machine-emulator-docs
 
 # Docker image platform
 BUILD_PLATFORM ?=
@@ -15,17 +19,17 @@ RECIPES_DIR ?= $(CURDIR)/recipes
 CACHE_DIR := $(RECIPES_DIR)/cache
 export RECIPES_DIR CACHE_DIR
 
-.PHONY: build-playground clean
+.PHONY: build-docs-image clean
 
-check-playground:
-	@if docker images $(DOCKER_PLATFORM) -q $(PLAYGROUND_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
-		echo "Docker image $(PLAYGROUND_IMAGE):$(TAG) exists"; \
+check-docs-image:
+	@if docker images $(DOCKER_PLATFORM) -q $(DOCS_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
+		echo "Docker image $(DOCS_IMAGE):$(TAG) exists"; \
 	else \
-		echo "Docker image $(PLAYGROUND_IMAGE):$(TAG) does not exist. Creating:"; \
-		$(MAKE) build-playground; \
+		echo "Docker image $(DOCS_IMAGE):$(TAG) does not exist. Creating:"; \
+		$(MAKE) build-docs-image; \
 	fi
 
-playground-exec: check-playground
+docs-image-exec: check-docs-image
 	docker run --hostname playground --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
@@ -33,10 +37,10 @@ playground-exec: check-playground
 		-e GID=$$(id -g) \
 		-v $(CURDIR):/work \
 		-w /work \
-		$(PLAYGROUND_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
+		$(DOCS_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
 
-run-playground: check-playground
+run-docs-image: check-docs-image
 	docker run --hostname playground --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
@@ -45,19 +49,20 @@ run-playground: check-playground
 		-v $(CURDIR):/work \
 		-w /work \
 	    -it \
-		$(PLAYGROUND_IMAGE):$(TAG) \
+		$(DOCS_IMAGE):$(TAG) \
 	    /bin/bash
 
 
-build-playground:
-	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(PLAYGROUND_IMAGE):$(TAG) -f Dockerfile .
+build-docs-image:
+	$(MAKE) -C .. build-emulator-image TAG=$(TAG)
+	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(DOCS_IMAGE):$(TAG) -f $(CURDIR)/Dockerfile ..
 
 README.md: README.md.template replace.lua alerts.lua
 	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
 		$(MAKE) -C recipes/ && \
-		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter replace.lua --lua-filter alerts.lua README.md.template -o README.md; \
+		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter replace.lua --lua-filter alerts.lua -M default-replace=false README.md.template -o README.md; \
 	else \
-		$(MAKE) playground-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
+		$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
 	fi
 
 clean:
