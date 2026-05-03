@@ -632,17 +632,17 @@ A stored machine can later be loaded to continue its execution from where it lef
 To store a machine to a given `<directory>`, use the command-line option `--store=<directory>`.
 (In `<directory>`, the `%h` escape will be replaced by the state hash in hex.)
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
-For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec/stdout}
-```{.bash key=persistent_machine_cmd replace=source subst=cycles->cycles_limit_exec/stderr,hash->state_hashes_final_limit_exec/stdout}
+For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes}
+```{.bash key=persistent_machine_cmd replace=source subst=cycles->cycles_limit_exec/stderr,hash->state_hashes_final_limit_exec/stdout enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --store="machine-$hash"
 ```
 
-```{.bash key=machine_dirname depends=state_hashes_final_limit_exec replace=null}
+```{.bash key=machine_dirname depends=state_hashes_final_limit_exec replace=null enabled=yes}
 printf 'machine-%s/' "$(cat $state_hashes_final_limit_exec/stdout)"
 ```
-This command creates a directory []{replace=machine_dirname/stdout}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
+This command creates a directory []{replace=machine_dirname/stdout enabled=yes}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
 Every image file is copied into the directory, so no external dependencies remain.
 
 :::note
@@ -655,7 +655,7 @@ If the directory already exists, the operation will fail.
 Once created, the directory can be compressed and transferred to other hosts.
 To restore the corresponding Cartesi Machine, use the command-line option `--load=<directory>`.
 For example,
-```{.bash key=persistent_machine depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout}
+```{.bash key=persistent_machine depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout enabled=yes}
 hash=$(cat $state_hashes_final_limit_exec/stdout)
 trap 'rm -rf "machine-$hash"' EXIT
 cycles=$(cat $cycles_limit_exec/stderr)
@@ -668,19 +668,19 @@ cartesi-machine \
 # docs:end
 ```
 produces the output
-```{replace=persistent_machine/both}
+```{replace=persistent_machine/both enabled=yes}
 ```
 Note that, other than `--load`, no initialization command-line options were used.
 These initializations were used to define the machine before it was stored: their values are implicitly encoded in the stored state.
-The machine continues from where it left off, and reaches the same final state hash [...]{replace=state_hashes_final_no_limit/stdout}, as if it had never been interrupted.
+The machine continues from where it left off, and reaches the same final state hash [...]{replace=state_hashes_final_no_limit/stdout enabled=yes}, as if it had never been interrupted.
 
-Note also that the initial state hash [...]{replace=state_hashes_final_limit_exec/stdout} after `--load` matches the final state hash before `--store`.
+Note also that the initial state hash [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes} after `--load` matches the final state hash before `--store`.
 After all, they are state hashes concerning the state of the same machine at the same cycle.
-In fact, `--store` writes this state hash inside the directory, and `--load` verifies that the state hash of the restored machine matches what it found in the directory.
+`--load` verifies the archive format version recorded in the stored machine, and the pre-store and post-load state hashes are equal because the same machine state is restored.
 
 The `cartesi-machine-stored-hash` command-line utility can be used to extract the state hash from a stored Cartesi Machine.
 The command
-```{.bash key=persistent_stored_hash depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout}
+```{.bash key=persistent_stored_hash depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout enabled=yes}
 hash=$(cat $state_hashes_final_limit_exec/stdout)
 trap 'rm -rf "machine-$hash"' EXIT
 cycles=$(cat $cycles_limit_exec/stderr)
@@ -690,7 +690,7 @@ cartesi-machine-stored-hash machine-$hash
 # docs:end
 ```
 produces the output
-```{replace=persistent_stored_hash/both}
+```{replace=persistent_stored_hash/both enabled=yes}
 ```
 
 ### Running as root
