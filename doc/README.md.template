@@ -481,26 +481,26 @@ This takes many millions of cycles to complete: time mostly spent initializing t
 The machine's processor includes a control and status register (CSR), named `mcycle`, that starts at 0 and is incremented after every instruction cycle.
 The maximum cycle can be specified with the command-line option `--max-mcycle=<number>`.
 
-```{.bash key=config_dump_nothing replace=null}
+```{.bash key=config_dump_nothing replace=null enabled=yes}
 cartesi-machine --max-mcycle=0 --store-config 2>&1 | tee >(grep -v Cycles > "$RECIPES_DIR/config/nothing-to-do.lua")
 ```
 
-```{.bash key=cycles_limit_exec depends=config_dump_nothing replace=null}
+```{.bash key=cycles_limit_exec depends=config_dump_nothing replace=null enabled=yes}
 lua $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
-```{.bash key=max_mcycle_arg depends=cycles_limit_exec replace=null}
+```{.bash key=max_mcycle_arg depends=cycles_limit_exec replace=null enabled=yes}
 printf -- '--max-mcycle=%s' "$(cat $cycles_limit_exec/stderr)"
 ```
-For example, adding the []{replace=max_mcycle_arg/stdout} command-line option
-```{.bash key=limit_exec depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr}
+For example, adding the []{replace=max_mcycle_arg/stdout enabled=yes} command-line option
+```{.bash key=limit_exec depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr enabled=yes}
 cycles=$(cat $cycles_limit_exec/stderr)
 # docs:begin
 cartesi-machine --max-mcycle=$cycles
 # docs:end
 ```
 produces the output
-```{replace=limit_exec/both}
+```{replace=limit_exec/both enabled=yes}
 ```
 Note the execution was interrupted before the splash screen was even completed.
 
@@ -555,7 +555,7 @@ To obtain the state hash right before execution starts, use the command-line opt
 Conversely, to obtain the state hash right after execution is done, use the option `--final-hash`.
 For example,
 
-```{.bash key=state_hashes_limit_exec depends=cycles_limit_exec replace=null}
+```{.bash key=state_hashes_limit_exec depends=cycles_limit_exec replace=null enabled=yes}
 cycles=$(cat $cycles_limit_exec/stderr)
 # docs:begin
 cartesi-machine \
@@ -564,27 +564,27 @@ cartesi-machine \
     --final-hash
 # docs:end
 ```
-```{.bash replace=state_hashes_limit_exec/source subst=cycles->cycles_limit_exec/stderr}
+```{.bash replace=state_hashes_limit_exec/source subst=cycles->cycles_limit_exec/stderr enabled=yes}
 ```
 produces the output
-```{replace=state_hashes_limit_exec/both}
+```{replace=state_hashes_limit_exec/both enabled=yes}
 ```
 
-```{.bash key=state_hashes_initial depends=state_hashes_limit_exec replace=null}
+```{.bash key=state_hashes_initial depends=state_hashes_limit_exec replace=null enabled=yes}
 cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh 0 \
     | $RECIPES_DIR/trunc8.sh
 ```
-The initial state hash [...]{replace=state_hashes_initial/stdout} is the Merkle tree root hash for the initial Cartesi Machine state.
+The initial state hash [...]{replace=state_hashes_initial/stdout enabled=yes} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
 
-```{.bash key=state_hashes_final_limit_exec depends=cycles_limit_exec,state_hashes_limit_exec replace=null}
+```{.bash key=state_hashes_final_limit_exec depends=cycles_limit_exec,state_hashes_limit_exec replace=null enabled=yes}
 cycles=$(cat $cycles_limit_exec/stderr)
 cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
-In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_limit_exec/stderr}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout}.
+In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_limit_exec/stderr enabled=yes}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout enabled=yes}.
 
 :::info
 The scare quotes around &ldquo;only&rdquo; are pedantic.
@@ -600,30 +600,30 @@ Cryptographic hash functions, such as Keccak-256, were designed *specifically* t
 
 Allowing the machine to run until it halts
 
-```{.bash key=state_hashes_no_limit replace=null}
+```{.bash key=state_hashes_no_limit replace=null enabled=yes}
 cartesi-machine \
     --initial-hash \
     --final-hash
 ```
-```{.bash replace=state_hashes_no_limit/source}
+```{.bash replace=state_hashes_no_limit/source enabled=yes}
 ```
 produces instead the output
-```{replace=state_hashes_no_limit/both}
+```{replace=state_hashes_no_limit/both enabled=yes}
 ```
 Naturally, the initial state hash is the same as before.
 
-```{.bash key=state_hashes_cycles_no_limit depends=state_hashes_no_limit replace=null}
+```{.bash key=state_hashes_cycles_no_limit depends=state_hashes_no_limit replace=null enabled=yes}
 cat $state_hashes_no_limit/both | $RECIPES_DIR/last-cycles.sh
 ```
 
-```{.bash key=state_hashes_final_no_limit depends=state_hashes_cycles_no_limit,state_hashes_no_limit replace=null}
+```{.bash key=state_hashes_final_no_limit depends=state_hashes_cycles_no_limit,state_hashes_no_limit replace=null enabled=yes}
 cycles=$(cat $state_hashes_cycles_no_limit/stdout)
 cat $state_hashes_no_limit/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
-However, the final state hash [...]{replace=state_hashes_final_no_limit/stdout} now pertains to cycle []{replace=state_hashes_cycles_no_limit/stdout}, where the machine is halted.
-This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{replace=state_hashes_initial/stdout}.
+However, the final state hash [...]{replace=state_hashes_final_no_limit/stdout enabled=yes} now pertains to cycle []{replace=state_hashes_cycles_no_limit/stdout enabled=yes}, where the machine is halted.
+This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{replace=state_hashes_initial/stdout enabled=yes}.
 
 ### Persistent Cartesi Machines
 
