@@ -697,21 +697,21 @@ produces the output
 
 Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` script runs the target application (or any initial command) as user `uid=1000(dapp)` group `gid=1000(dapp)`.
 This can be seen by running the command:
-```{.bash key=rarely_id replace=source}
+```{.bash key=rarely_id replace=source enabled=yes}
 cartesi-machine \
     -- id
 ```
 It shows the user and group are indeed `dapp`.
-```{replace=rarely_id/both}
+```{replace=rarely_id/both enabled=yes}
 ```
-To instead run your target application as `uid=0(root) gid=0(root)`, pass the parameter `single=yes`:
-```{.bash key=rarely_append_bootargs_single_id replace=source}
+To instead run your target application as `uid=0(root) gid=0(root)`, pass the `--user=root` command-line option, which init honors by running the entrypoint as `root`:
+```{.bash key=rarely_user_root replace=source enabled=yes}
 cartesi-machine \
-    --append-rom-bootargs="single=yes" \
+    --user=root \
     -- id
 ```
 This produces the output:
-```{replace=rarely_append_bootargs_single_id/both}
+```{replace=rarely_user_root/both enabled=yes}
 ```
 It shows the user and group are now `root`.
 
@@ -740,22 +740,24 @@ To simplify the examples in the documentation, we will simply run them as `root`
 
 The `bc` command-line utility is the perfect tool to evaluate the arithmetic expressions.
 The command passed to `cartesi-machine` below reads the contents of the raw input flash drive using the `dd` command-line utility, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result to `bc`, and finally uses `dd` again to write its results to the raw output flash drive.
+By default, init formats every flash drive that has no backing image as ext2 and mounts every flash drive under `/mnt/<label>`.
+Since the example accesses the raw block devices directly with `dd`, the `mke2fs:false,mount:false` options on each `--flash-drive` skip both steps.
 Here is the sample playground session
 
-```{.bash key=templates_run outputs=output.raw replace=null}
+```{.bash key=templates_run outputs=output.raw replace=null enabled=yes}
 trap 'rm -f input.raw' EXIT
 # docs:begin
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
-    --append-rom-bootargs="single=yes" \
-    --flash-drive="label:input,length:1<<12,filename:input.raw" \
-    --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
+    --user=root \
+    --flash-drive="label:input,length:1<<12,data_filename:input.raw,mke2fs:false,mount:false" \
+    --flash-drive="label:output,length:1<<12,data_filename:output.raw,shared,mke2fs:false,mount:false" \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z",  io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
 # docs:end
 ```
-```{.bash replace=templates_run/source}
+```{.bash replace=templates_run/source enabled=yes}
 ```
 
 Using the `truncate` command-line utility, the session creates a 4KiB file `output.raw` containing only zeros to serve as the output drive image.
@@ -763,18 +765,18 @@ Then, it creates the `input.raw` file for use as the input drive image containin
 This file is then padded with zeros to 4KiB in size by the `truncate` utility.
 The session then invokes the `cartesi-machine` command-line utility to evaluate the expression.
 The output of the `cartesi-machine` command is
-```{replace=templates_run/both}
+```{replace=templates_run/both enabled=yes}
 ```
-Once the emulator returns, a tiny Lua script, run by the playground's `lua5.3` Lua interpreter, prints the contents of the output drive
-```{.bash key=templates_run_result depends=templates_run/output.raw replace=source}
+Once the emulator returns, a tiny Lua script, run by the `lua5.4` Lua interpreter, prints the contents of the output drive
+```{.bash key=templates_run_result depends=templates_run/output.raw replace=source enabled=yes}
 trap 'rm -f output.raw' EXIT
 ln -sf "$templates_run/output.raw" output.raw
 # docs:begin
-lua5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
+lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
 ```
 which reads
-```{replace=templates_run_result/both}
+```{replace=templates_run_result/both enabled=yes}
 ```
 This is indeed the result of 6&times;2<sup>1024</sup>+3&times;2<sup>512</sup>.
 
@@ -783,13 +785,13 @@ This will cause the Cartesi Machine to assume both drives are filled with zeros.
 Then, limit the computation with `--max-mcycle=0`, to prevent the Cartesi Machine from running.
 Finally, use the `--store="calculator-template"` command-line option to store the Cartesi Machine template.
 The `--final-hash` command-line option prints the resulting template hash.
-```{.bash key=templates_store outputs=calculator-template replace=source}
+```{.bash key=templates_store outputs=calculator-template replace=source enabled=yes}
 rm -rf calculator-template
 # docs:begin
 cartesi-machine \
-    --append-rom-bootargs="single=yes" \
-    --flash-drive="label:input,length:1<<12" \
-    --flash-drive="label:output,length:1<<12" \
+    --user=root \
+    --flash-drive="label:input,length:1<<12,mke2fs:false,mount:false" \
+    --flash-drive="label:output,length:1<<12,mke2fs:false,mount:false" \
     --max-mcycle=0 \
     --final-hash \
     --store="calculator-template" \
@@ -797,41 +799,39 @@ cartesi-machine \
 # docs:end
 ```
 The result is as follows
-```{replace=templates_store/both}
+```{replace=templates_store/both enabled=yes}
 ```
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
 
-```{.bash key=templates_hash depends=templates_store/calculator-template replace=null}
+```{.bash key=templates_hash depends=templates_store/calculator-template replace=null enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
 cartesi-machine-stored-hash calculator-template/
 # docs:end
 ```
-```{.bash replace=templates_hash/source}
+```{.bash replace=templates_hash/source enabled=yes}
 ```
 we can see from the output
-```{replace=templates_hash/both}
+```{replace=templates_hash/both enabled=yes}
 ```
 
-```{.bash key=templates_trunc_hash depends=templates_hash replace=null}
+```{.bash key=templates_trunc_hash depends=templates_hash replace=null enabled=yes}
 cat $templates_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
-that the stored template hash is [...]{replace=templates_trunc_hash/stdout}.
+that the stored template hash is [...]{replace=templates_trunc_hash/stdout enabled=yes}.
 
-Templates are typically used by programs that control the emulator with the C++, Lua, or gRPC interfaces.
+Templates are typically used by programs that control the emulator with the C++, Lua, or JSON-RPC interfaces.
 
-The `--replace-flash-drive=start:<start>,length:<length>,filename:<filename>` command-line option of the `cartesi-machine` utility can be used to replace an existing flash drive right before a machine is run.
-(The `--replace-memory-range` command-line option is a synonym for `--replace-flash-drive`.)
-The flash drive to be replaced must be specified by its `start` and `length`.
-(Labels do not identify flash drives, they only provide convenient names for partitions.)
+The `--replace-memory-range=label:<label>,data_filename:<filename>` command-line option of the `cartesi-machine` utility can be used to replace an existing memory range right after a machine is loaded.
+The memory range can be identified by `label`, by `start` and `length`, or both.
 
 This functionality can be used to test templates.
 For example, the following command loads the calculator template, and replaces its pristine input drive with a drive containing the contents of the `input.raw` file.
 Then, it replaces the pristine output drive so the machine saves results in the file `output.raw`.
 
-```{.bash key=templates_replace_flash_drive depends=templates_store/calculator-template replace=source}
+```{.bash key=templates_replace_flash_drive depends=templates_store/calculator-template replace=source enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -841,13 +841,13 @@ echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
     --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
-    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared"
-lua5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
+    --replace-memory-range="label:input,data_filename:input.raw" \
+    --replace-memory-range="label:output,data_filename:output.raw,shared"
+lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
 ```
 The result of running the command is, as expected,
-```{replace=templates_replace_flash_drive/stdout}
+```{replace=templates_replace_flash_drive/stdout enabled=yes}
 ```
 
 ### State value proofs
@@ -5171,20 +5171,14 @@ This is where the entry point of the RAM image is expected to reside.
 
 The `dtc` command-line utility can be used to inspect the devicetree:
 
-```bash
+```{.bash key=dtc replace=source enabled=yes}
 cartesi-machine \
-    --append-rom-bootargs="single=yes" \
-    --rollup \
+    --user=root \
     -- "dtc -I dtb -O dts /sys/firmware/fdt"
 ```
 
 The result is
-
-```{key=dtc replace=both}
-cartesi-machine \
-    --append-rom-bootargs="single=yes" \
-    --rollup \
-    -- "dtc -I dtb -O dts /sys/firmware/fdt"
+```{.text replace=dtc/both enabled=yes}
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
