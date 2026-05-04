@@ -515,12 +515,12 @@ The progress feedback is accessed via the `automatic progress <permil>` command-
 For example, during the execution of the loop,
 ```bash
 cartesi-machine \
-    --htif-yield-automatic \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
 (The directory `/opt/cartesi/bin/` is in the default search path for executable setup by `/sbin/init`.)
-If the `--htif-yield-automatic` command-line option to `cartesi-machine` is omitted, the emulator essentially ignores such yield requests from the target.
+By default, the emulator honors automatic yield requests from the target.
+Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
 ```
 
@@ -536,12 +536,12 @@ Each time `cartesi-machine` receives control due to a yield, it prints a progres
 
 Progress:  44.00
 ```
-This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or gRPC interfaces, where Cartesi Machines typically run disconnected from the console.
+This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or JSON-RPC interfaces, where Cartesi Machines typically run disconnected from the console.
 In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
 Its handling by `cartesi-machine`, which does have access to the console, is simply to help with prototyping and debugging.
 
 The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](../target/architecture.md).
-In particular, the section explains the _manual_ yield commands (enabled by the `--htif-yield-manual` command-line option) needed for proper operation of Cartesi Rollups.
+In particular, the section explains the _manual_ yield commands needed for proper operation of Cartesi Rollups.
 
 ### State hashes
 
