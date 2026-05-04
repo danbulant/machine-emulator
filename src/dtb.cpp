@@ -106,6 +106,7 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.prop_u32("clock-frequency", RTC_CLOCK_FREQ);
                 { // interrupt-controller
                     fdt.begin_node("interrupt-controller");
+                    fdt.prop_u32("#address-cells", 0);
                     fdt.prop_u32("#interrupt-cells", 1);
                     fdt.prop_empty("interrupt-controller");
                     fdt.prop_string("compatible", "riscv,cpu-intc");

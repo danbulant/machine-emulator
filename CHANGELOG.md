@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
 
 ## Fixed
+- Fixed missing `#address-cells` on the per-CPU `interrupt-controller` node in the DTB, silencing a `dtc` interrupt-provider lint warning
 - Fixed firmware reserved region in the DTB being too small for OpenSBI built with GCC 14
 - Fixed missing validation of memory range labels and of `replace_memory_range` arguments
 - Fixed boolean merging in `merge_memory_range_opts` so options can be explicitly overridden to `false`
