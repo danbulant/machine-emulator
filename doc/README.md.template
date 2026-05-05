@@ -61,32 +61,26 @@ This is Cartesi's contribution to empowering application developers to express t
 
 ## What's in a machine
 
-All the components needed to create and run Cartesi Machines are distributed in the [Emulator SDK](http://www.github.com/cartesi/machine-emulator-sdk).
-
 Cartesi Machines are separated into a processor and a board.
 The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
-The board defines the surrounding environment with an assortment of memories (ROM, RAM, flash drives, memory ranges) and a number of devices.
+The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAM etc) and a number of devices.
 Memories and devices are mapped to the 64-bit physical address space of the Cartesi Machine.
-The amount of RAM, as well as the number, length, and position of the flash drives and memory ranges in the address space can be chosen according to the needs of each particular application.
+The amount of RAM, as well as the number, length, and position of the flash drives and NVRAMs in the address space can be chosen according to the needs of each particular application.
 The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its executions are reproducible.
-It can be built in the `/emulator` directory of the Emulator SDK.
+It can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
 
-The initialization of a Cartesi Machine loads a ROM image, a RAM image, and a root file-system (as a flash drive) from regular files in the host file-system.
-Execution starts from the ROM image, which contains a simple program that creates a description of the machine organization for the Linux kernel.
-The ROM image `rom.bin` can be built in the `rom/` directory in the Emulator SDK.
-The Linux kernel itself resides in the RAM image `linux.bin`, built in the `kernel/` directory in the Emulator SDK.
+The initialization of a Cartesi Machine typically loads the Linux kernel into RAM, and a Linux root file-system (as a flash drive) from regular files in the host file-system.
+The Linux kernel `linux.bin`, is built by the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository.
 After it is done with its own initialization, the Linux kernel cedes control to the `/sbin/init` program in the root file-system.
-The root file-system `rootfs.ext2` contains all the data files and programs that make up an embedded Linux distribution.
-It can be built in the `fs/` directory in the Emulator SDK.
+The root file-system `rootfs.ext2` contains all the data files and programs that make up Linux distribution.
+It is built by the [`cartesi/machine-rootfs-image`](https://github.com/cartesi/machine-rootfs-image) repository.
 The components of the target application can reside in the root file-system itself, or in their own, separate file-systems.
 The emulator can be instructed to execute whatever command is necessary to start the target application.
 For a complete description of the Cartesi Machine architecture and the boot process, see the documentation for [the target perspective](./target/index.md).
 
 There are two distinct modes of operation.
 In the first mode, a Cartesi Machine is initialized and tasked to run a target application until the machine _halts_.
-Inputs for the target application can be provided as additional flash drives.
-Likewise, outputs can be sent to their own flash drives.
-(These drives can contain entire file-systems or can contain raw data.)
+Inputs for the target application can be provided as additional flash drives with file-systems, or NVRAMs with raw data.
 Outputs are only available to the host after the machine halts.
 Once it halts, the machine cannot perform any additional computations.
 
@@ -104,7 +98,7 @@ We say that a Cartesi Machine operating in this mode is a _Rolling Cartesi Machi
 ### Rolling Cartesi Machines and Cartesi Rollups
 
 The stringent demands of reproducibility prevent a Cartesi Machine from communicating _directly_ with the outside world.
-Indeed, if two parties were to run the same Cartesi Machine and then disagree on the data each instance independently obtained from a network connection, there would be no way to settle their dispute.
+Indeed, if two parties were to run the same Cartesi Machine and then disagree on the data each instance independently obtained from a network connection, there would be no way to settle a dispute between them.
 Instead, Rolling Cartesi Machines communicate with the outside world under controlled conditions, through _Cartesi Rollups_.
 
 In a nutshell, Cartesi Rollups uses the blockchain to maintain a public record of requests made to advance the state of a Rolling Cartesi Machine.
@@ -116,7 +110,7 @@ _exceptions_.
 Vouchers allow a Rolling Cartesi Machine to interact back with the blockchain.
 A voucher issued by the target application may, for example, grant a user the right to withdraw tokens locked into a custodial smart contract.
 Notices are used to register noteworthy changes to the state of the target application.
-A notice may be issued, for example, announcing the demise of a character in a game.
+A notice may be issued, for example, announcing the demise of a character in a game or some other relevant state transition.
 Disputes over the fact that a voucher or notice has been generated while advancing the state of a Rolling Cartesi Machine can be settled by Cartesi Rollups.
 Reports, in contrast, are used to output any data that is irrelevant to the blockchain.
 A report may, for example, provide diagnostic information on the reasons why an input has been rejected.
@@ -132,12 +126,12 @@ Cartesi Machines can be seen from 3 different perspectives:
 - _The host perspective_ &mdash;
   This is the environment right outside the Cartesi Machine emulator.
   It is most relevant to developers setting up Cartesi Machines, running them, or manipulating their contents.
-  It includes the emulator's API in all its flavors: C, C++, Lua, gRPC, and the command-line interface;
+  It includes the emulator's API in all its flavors: C, C++, Lua, JSON-RPC, and the command-line interface;
 - _The target perspective_ &mdash;
   This is the environment inside the Cartesi Machine.
-  It encompasses Cartesi's particular flavor of the RISC-V architecture, as well as the organization of the embedded Linux Operating System that runs on top of it.
+  It encompasses Cartesi's particular flavor of the RISC-V architecture, as well as the organization of the Linux Operating System that runs on top of it.
   It is most relevant to programmers responsible for the application components that run off-chain but must be verifiable.
-  The cross-compiling toolchain, and the tools used to build the Linux kernel and the embedded Linux root file-systems are also important from this perspective, even though they are used in the host;
+  The cross-compiling toolchain, and the tools used to build the Linux kernel and the Linux root file-systems are also important from this perspective, even though they are used in the host;
 - _The blockchain perspective_ &mdash;
   This is the view smart contracts have of Cartesi Machines.
   It consists almost exclusively of the manipulation of cryptographic hashes of the state of Cartesi Machines and parts thereof.
@@ -147,84 +141,76 @@ As with every computer, the level of knowledge required to interact with Cartesi
 Simple applications will require target developers to code a few scripts invoking pre-installed software components, require host developers to simply fill out a configuration file specifying the location of the components needed to build a Cartesi Machine, and require blockchain developers to simply instantiate one of the high-level contracts provided by Cartesi.
 At the other extreme are the developers working inside Cartesi, who regularly write, build, and deploy custom software components to run in the target, or even change the Linux kernel to support Cartesi-specific devices. Additionally, these developers programmatically control the creation and execution of Cartesi Machines in the host, and must also understand and use the hash-based state manipulation primitives the blockchain needs.
 
-Although Cartesi's goal is to shield platform users from as much complexity as possible, there is value in making information available to the greatest feasible extent. To that end, this documentation of Cartesi Machines aims to provide enough information to cover all 3 perspectives, at all depths of understanding.
+Although Cartesi's goal is to shield platform users from as much complexity as possible, there is value in making information available to the greatest extent possible. To that end, this documentation of Cartesi Machines aims to provide enough information to cover all 3 perspectives, at all depths of understanding.
 
 # The host perspective
 
 Cartesi's reference off-chain implementation of a Cartesi Machine is based on software emulation.
 The emulator is written in C/C++ with POSIX dependencies restricted to the terminal, process, and memory-mapping facilities.
-The `emulator/` directory in the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) can be used to build and install the Cartesi Machine emulator.
+The [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator-sdk) repository can be used to build and install the Cartesi Machine emulator.
 It is written as a C++ class, but can be accessed in a variety of different ways.
 
 When linked to a C++ application, the emulator can be controlled directly via the interface of the `cartesi::machine` class.
-C applications can control the emulator in a similar way, by means of a matching C API.
+C applications can control the emulator in a similar way, by means of a matching C API defined in the include file `cm.h`.
 The emulator can also be accessed from the Lua programming language, via a `cartesi` module that exposes a `cartesi.machine` interface to Lua programs.
-Additionally, Cartesi provides a [gRPC](https://grpc.io) server that can run a Cartesi Machine instance that is controlled remotely.
+Additionally, Cartesi provides a JSON-RPC server that can run a Cartesi Machine instance that is controlled remotely.
 Finally, there is a command-line utility (written in Lua) that can configure and run Cartesi Machines for rapid prototyping.
-The C, C++, Lua APIs as well as the command-line utility can seamlessly instantiate local emulators or connect to remote gRPC servers.
+The C, C++, Lua APIs as well as the command-line utility can seamlessly instantiate local emulators or connect to remote JSON-RPC servers.
 
 The documentation starts from the command-line utility, `cartesi-machine`.
 This utility is used for most prototyping tasks.
 The documentation then covers the Lua interface of `cartesi.machine`.
-The C/C++/gRPC interfaces are very similar, and are covered only within their reference manuals.
+The C/C++/JSON-RPC interfaces are very similar, and are covered only within their reference manuals.
 
 ## Machine playground
 
 The setup of a new development environment is often a time-consuming task.
 This is particularly true in case of cross-development environments (i.e., when the development happens in a host platform but software runs in a different target platform).
-With this in mind, the Cartesi team provides the `cartesi/playground` Docker image for use while reading this documentation.
-The Docker image enables immediate experimentation with Cartesi Machines.
-It comes with a pre-built emulator and Lua interpreter accessible within the command-line, as well as a pre-built ROM image, RAM image, and root file-system.
+With this in mind, the Cartesi team provides the `cartesi/machine-emulator-docs` Docker image for use while reading this documentation.
+The Docker image enables immediate experimentation with Cartesi Machines, as well as the generation of the documentation itself.
+It comes with a pre-built emulator and Lua interpreter accessible within the command-line, as well as a pre-built RAM image and root file-system.
 It also comes with the cross-compiler for the RISC-V architecture on which the Cartesi Machine is based.
 
 To enter the playground, open a terminal, download the Docker image from Cartesi's repository, and run it adequately mapping the current user and group information, as well as making the host's current directory available inside the container:
 
-```bash
-docker pull cartesi/playground:0.5.0
+```{.bash replace=source subst=image->docs_image}
+docker pull $image
 ```
 
-```bash
-docker run -it --rm -h playground \
-    -e USER=$(id -u -n) \
-    -e GROUP=$(id -g -n) \
-    -e UID=$(id -u) \
-    -e GID=$(id -g) \
-    -v `pwd`:/home/$(id -u -n) \
-    -w /home/$(id -u -n) \
-    cartesi/playground:0.5.0 /bin/bash
+```{.bash replace=source subst=image->docs_image}
+docker run --hostname playground --rm \
+	-e USER=$$(id -u -n) \
+	-e GROUP=$$(id -g -n) \
+	-e UID=$$(id -u) \
+	-e GID=$$(id -g) \
+	-v $(CURDIR):/work \
+	-w /work \
+	-it \
+	$image \
+	/bin/bash
 ```
 
 Once inside, you can execute the `cartesi-machine` utility as follows:
 
-```
+```{.bash key=cli_help replace=source enabled=yes}
 cartesi-machine --help
 ```
 
-<!-- separate -->
-
-```{key=help replace=both enabled=yes}
+```{.text replace=cli_help/both enabled=yes}
 cartesi-machine --help
 ```
 
 A final check can also be performed to verify if the contents inside the container are as expected:
 
 ```{.bash key=linux_sha replace=source enabled=yes}
-rm -f linux.bin
-ln -s /usr/share/cartesi-machine/images/linux.bin .
-# docs:begin
-sha256sum linux.bin
-# docs:end
+sha256sum /usr/share/cartesi-machine/images/linux.bin
 ```
 
 ```{.text replace=linux_sha/both enabled=yes}
 ```
 
 ```{.bash key=rootfs_sha replace=source enabled=yes}
-rm -f rootfs.ext2
-ln -s /usr/share/cartesi-machine/images/rootfs.ext2 .
-# docs:begin
-sha256sum rootfs.ext2
-# docs:end
+sha256sum /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
 ```{.text replace=rootfs_sha/both enabled=yes}
@@ -242,23 +228,23 @@ It was designed to simplify the most common prototyping tasks.
 ### Initialization
 
 The following command instructs `cartesi-machine` to build a Cartesi Machine.
-The machine has 64MiB of RAM, uses `linux.bin` as the RAM image, and uses `rootfs.ext2` as the root file-system.
-(`linux.bin` is generated by [machine-linux-image](https://github.com/cartesi/machine-linux-image) and `rootfs.ext2` is generated by [machine-guest-tools](https://github.com/cartesi/machine-guest-tools). Sample files are available in the `cartesi/machine-emulator-docs` Docker image, which can be built from the `doc/` directory of the [machine-emulator](https://github.com/cartesi/machine-emulator) repository.)
+The machine has 128MiB of RAM, uses `linux.bin` as the RAM image, and uses `rootfs.ext2` as the root file-system.
+(`linux.bin` is generated by [machine-linux-image](https://github.com/cartesi/machine-linux-image) and `rootfs.ext2` is generated by [machine-rootfs-image](https://github.com/cartesi/machine-rootfs-image). Sample files are available in the `cartesi/machine-emulator-docs` Docker image, which can be built from the `doc/` directory of the [machine-emulator](https://github.com/cartesi/machine-emulator) repository.)
 Once initialization is complete, the machine executes the command `ls /bin` and exits.
 
 ```bash
 cartesi-machine \
-    --ram-length=64Mi \
+    --ram-length=128Mi \
     --ram-image="/usr/share/cartesi-machine/images/linux.bin" \
     --flash-drive="label:root,data_filename:/usr/share/cartesi-machine/images/rootfs.ext2" \
-    -- "ls /bin"
+    -- ls /bin
 ```
 The `--ram-image`, `--ram-length`, and `--flash-drive` command-line options have the values in the example as default, so these options can be omitted.
 To remove these default settings, use the command-line options `--no-ram-image` and `--no-root-flash-drive`, respectively.
 
 The simplified command-line is
 ```{.bash key=ls replace=source enabled=yes}
-cartesi-machine -- "ls /bin"
+cartesi-machine -- ls /bin
 ```
 The output is
 ```{replace=ls/both enabled=yes}
@@ -282,7 +268,7 @@ Nevertheless, during development, it is often convenient to directly interact wi
 
 The command-line option `-i` (short for `--htif-console-getchar`) instructs the emulator to monitor the console for input, and to make this input available to the Linux kernel.
 Typically, this option will be used in conjunction with the `--` separator and the command `sh`, causing the Cartesi-provided `/sbin/init` script to drop into an interactive shell.
-Interaction with the shell enables the exploration of the embedded Linux distribution from the inside.
+Interaction with the shell enables the exploration of the Linux distribution from the inside.
 Exiting the shell returns control back to `/sbin/init`, which then gracefully halts the machine.
 
 For example, if an interactive session is started with the following command
@@ -317,16 +303,16 @@ This dynamic balancing act is sure to vary between executions and across differe
 
 The command-line option `--flash-drive=label:<label>,data_filename:<filename>` can be used to add between 1 and 8 flash drives to the Cartesi Machine.
 Here, the string `<label>` is the *label* for the flash drive, and `<filename>` points to an *image file* with the initial contents of the flash drive.
-When the image file contains a valid file-system, the Cartesi-provided `/sbin/init` script will automatically mount this file-system at `/mnt/<label>`.
+When the image file contains a valid file-system, the cartesi-provided `/sbin/init` script will mount it at `/mnt/<label>`.
 
 To enable transparency, Cartesi Machine flash drives are mapped into the machine's 64-bit address space.
 The start and length are set, respectively, by the `start:<number>` and `length:<number>` parameters to `--flash-drive`.
 
-By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>63</sup>).
+By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>55</sup>).
 Additional flash drives are automatically spaced uniformly within that second half of the address space.
-They are therefore separated by 2<sup>60</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
+They are therefore separated by 2<sup>52</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
 (The machine will fail to instantiate if there is any overlap between the ranges occupied by multiple drives.)
-If the `start` of *any* drive is specified, then the starts for *all* drives must be specified.
+If you specify `start` of *any* drive, make sure to place it where it will not colide with the automatically assigned drives.
 
 When the `length` parameter is omitted, the `cartesi-machine` utility automatically sets the size of a flash drive to match the size of its image file.
 Because RISC-V uses 4KiB pages, image files must have a size multiple of 4KiB.
@@ -345,7 +331,7 @@ The preferred file-system type is `ext2`.
 This is because `ext2` image files can be easily created with the `genext2fs` command-line utility (available in Ubuntu as its own package), and manipulated with `e2ls`, `e2cp`, `e2rm`, etc (command-line utilities available in Ubuntu from the `e2tools` package).
 These utilities come pre-installed in the `cartesi/machine-emulator-docs` Docker image.
 Support for `ext4` is also enabled by default in the kernel.
-(Support for additional file-systems can be enabled by modifying the configuration the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) uses to produce `linux.bin` in the `kernel/` subdirectory.)
+(Support for additional file-systems can be enabled by modifying the configuration the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) uses to produce `linux.bin`.)
 
 For example,
 ```{.bash key=foo_ext2 outputs=foo.ext2 replace=source enabled=yes}
@@ -382,7 +368,7 @@ The `genext2fs` then takes the reproducible `tar` file and creates a reproducibl
 :::
 
 The image can be loaded as a flash drive:
-```{.bash key=flash depends=foo_ext2/foo.ext2 replace=source enabled=yes}
+```{.bash key=flash subst=foo_ext2->foo_ext2 replace=source enabled=yes}
 rm -f foo.ext2
 ln -s "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
@@ -413,14 +399,15 @@ The image files are never written to.
 
 :::note
 Commands started by the Cartesi-provided `/sbin/init` run as the unprivileged user `dapp`.
-By default, every flash drive is mounted with the ownership and permissions baked into its image file, which typically means the root directory is owned by `root`.
+By default, every flash drive is mounted with the ownership and permissions baked into its image file, which typically means its root directory is owned by `root`.
 As a result, `dapp` can read the drive but cannot write to it.
-To allow writes, pass `user:dapp` to `--flash-drive` so the emulator chowns the drive's mount point to `dapp` after mounting.
-Alternatively, the `--user=root` command-line option causes `/sbin/init` to run commands as `root`, which can write to the drive without any ownership changes, but running as `dapp` is preferred.
+To allow writes, pass `user:dapp` to the `--flash-drive` command-line option so the emulator changes the owner of the drive's mount point to `dapp` after mounting.
+Alternatively, the `--user=root` command-line option causes `/sbin/init` to run commands as `root`, which can write to the drive without any ownership changes.
+For safety, running as `dapp` is preferred.
 :::
 
 For example, running the machine
-```{.bash key=not_shared_flash depends=foo_ext2/foo.ext2 replace=source enabled=yes}
+```{.bash key=not_shared_flash subst=foo_ext2->foo_ext2 replace=source enabled=yes}
 rm -f foo.ext2
 ln -s "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
@@ -434,7 +421,7 @@ produces the output
 ```
 indicating that the file-system was modified, at least from the perspective of the target.
 However, inspecting the `foo.ext2` image file from outside the emulator shows it is unchanged.
-```{.bash key=e2ls_not_shared_foo_ext2 replace=source depends=foo_ext2/foo.ext2 enabled=yes}
+```{.bash key=e2ls_not_shared_foo_ext2 replace=source subst=foo_ext2->foo_ext2 enabled=yes}
 rm -f foo.ext2
 ln -s "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
@@ -449,7 +436,7 @@ This behavior is appropriate when the flash drives will only be used as inputs.
 For output flash drives, target changes to the drives must reflect on the associated image files.
 For that purpose, the parameter `shared` can be passed to command-line option `--flash-drive`, causing the imaged files to be mapped to host memory in a *shared* fashion.
 For example,
-```{.bash key=shared_flash replace=source depends=foo_ext2/foo.ext2 outputs=foo.ext2 enabled=yes}
+```{.bash key=shared_flash replace=source subst=foo_ext2->foo_ext2 outputs=foo.ext2 enabled=yes}
 rm -f foo.ext2
 cp "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
@@ -460,7 +447,7 @@ cartesi-machine \
 ```
 produces exactly the same output as before.
 However, `e2ls` now shows the image file `foo.ext2` has indeed been modified.
-```{.bash key=e2ls_shared_foo_ext2 replace=both depends=shared_flash/foo.ext2 enabled=yes}
+```{.bash key=e2ls_shared_foo_ext2 replace=both subst=shared_flash->shared_flash enabled=yes}
 rm -f foo.ext2
 ln -s "$shared_flash/foo.ext2" foo.ext2
 e2ls -al foo.ext2:*.txt
@@ -489,15 +476,12 @@ cartesi-machine --max-mcycle=0 --store-config 2>&1 | tee >(grep -v Cycles > "$RE
 lua $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
-```{.bash key=max_mcycle_arg depends=cycles_limit_exec replace=null enabled=yes}
+```{.bash key=max_mcycle_arg subst=cycles_limit_exec->cycles_limit_exec replace=null enabled=yes}
 printf -- '--max-mcycle=%s' "$(cat $cycles_limit_exec/stderr)"
 ```
 For example, adding the []{replace=max_mcycle_arg/stdout enabled=yes} command-line option
-```{.bash key=limit_exec depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr enabled=yes}
-cycles=$(cat $cycles_limit_exec/stderr)
-# docs:begin
+```{.bash key=limit_exec replace=source subst=cycles->cycles_limit_exec/stderr enabled=yes}
 cartesi-machine --max-mcycle=$cycles
-# docs:end
 ```
 produces the output
 ```{replace=limit_exec/both enabled=yes}
@@ -546,7 +530,7 @@ In particular, the section explains the _manual_ yield commands needed for prope
 ### State hashes
 
 The `cartesi-machine` utility can also be used to print Cartesi Machine state hashes.
-State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 64-bit words.
+State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
 (See the [Hash view of states](../blockchain/hash.md) for an explanation of Merkle trees.)
 Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM and ROM, of all flash drives, and of all other devices connected to the board.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
@@ -555,14 +539,11 @@ To obtain the state hash right before execution starts, use the command-line opt
 Conversely, to obtain the state hash right after execution is done, use the option `--final-hash`.
 For example,
 
-```{.bash key=state_hashes_limit_exec depends=cycles_limit_exec replace=null enabled=yes}
-cycles=$(cat $cycles_limit_exec/stderr)
-# docs:begin
+```{.bash key=state_hashes_limit_exec subst=cycles->cycles_limit_exec/stderr replace=null enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --initial-hash \
     --final-hash
-# docs:end
 ```
 ```{.bash replace=state_hashes_limit_exec/source subst=cycles->cycles_limit_exec/stderr enabled=yes}
 ```
@@ -570,7 +551,7 @@ produces the output
 ```{replace=state_hashes_limit_exec/both enabled=yes}
 ```
 
-```{.bash key=state_hashes_initial depends=state_hashes_limit_exec replace=null enabled=yes}
+```{.bash key=state_hashes_initial subst=state_hashes_limit_exec->state_hashes_limit_exec replace=null enabled=yes}
 cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh 0 \
     | $RECIPES_DIR/trunc8.sh
@@ -578,8 +559,7 @@ cat $state_hashes_limit_exec/both \
 The initial state hash [...]{replace=state_hashes_initial/stdout enabled=yes} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
 
-```{.bash key=state_hashes_final_limit_exec depends=cycles_limit_exec,state_hashes_limit_exec replace=null enabled=yes}
-cycles=$(cat $cycles_limit_exec/stderr)
+```{.bash key=state_hashes_final_limit_exec subst=cycles->cycles_limit_exec/stderr,state_hashes_limit_exec->state_hashes_limit_exec replace=null enabled=yes}
 cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
@@ -612,12 +592,11 @@ produces instead the output
 ```
 Naturally, the initial state hash is the same as before.
 
-```{.bash key=state_hashes_cycles_no_limit depends=state_hashes_no_limit replace=null enabled=yes}
+```{.bash key=state_hashes_cycles_no_limit subst=state_hashes_no_limit->state_hashes_no_limit replace=null enabled=yes}
 cat $state_hashes_no_limit/both | $RECIPES_DIR/last-cycles.sh
 ```
 
-```{.bash key=state_hashes_final_no_limit depends=state_hashes_cycles_no_limit,state_hashes_no_limit replace=null enabled=yes}
-cycles=$(cat $state_hashes_cycles_no_limit/stdout)
+```{.bash key=state_hashes_final_no_limit subst=cycles->state_hashes_cycles_no_limit/stdout,state_hashes_no_limit->state_hashes_no_limit replace=null enabled=yes}
 cat $state_hashes_no_limit/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
@@ -639,7 +618,7 @@ cartesi-machine \
     --store="machine-$hash"
 ```
 
-```{.bash key=machine_dirname depends=state_hashes_final_limit_exec replace=null enabled=yes}
+```{.bash key=machine_dirname subst=state_hashes_final_limit_exec->state_hashes_final_limit_exec replace=null enabled=yes}
 printf 'machine-%s/' "$(cat $state_hashes_final_limit_exec/stdout)"
 ```
 This command creates a directory []{replace=machine_dirname/stdout enabled=yes}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
@@ -655,10 +634,8 @@ If the directory already exists, the operation will fail.
 Once created, the directory can be compressed and transferred to other hosts.
 To restore the corresponding Cartesi Machine, use the command-line option `--load=<directory>`.
 For example,
-```{.bash key=persistent_machine depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout enabled=yes}
-hash=$(cat $state_hashes_final_limit_exec/stdout)
+```{.bash key=persistent_machine replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_limit_exec/stderr enabled=yes}
 trap 'rm -rf "machine-$hash"' EXIT
-cycles=$(cat $cycles_limit_exec/stderr)
 cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
 # docs:begin
 cartesi-machine \
@@ -680,10 +657,8 @@ After all, they are state hashes concerning the state of the same machine at the
 
 The `cartesi-machine-stored-hash` command-line utility can be used to extract the state hash from a stored Cartesi Machine.
 The command
-```{.bash key=persistent_stored_hash depends=cycles_limit_exec,state_hashes_final_limit_exec replace=source subst=hash->state_hashes_final_limit_exec/stdout enabled=yes}
-hash=$(cat $state_hashes_final_limit_exec/stdout)
+```{.bash key=persistent_stored_hash replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_limit_exec/stderr enabled=yes}
 trap 'rm -rf "machine-$hash"' EXIT
-cycles=$(cat $cycles_limit_exec/stderr)
 cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
 # docs:begin
 cartesi-machine-stored-hash machine-$hash
@@ -729,19 +704,18 @@ This is how a smart contract can specify a computation to be performed off-chain
 Starting from the template hash, and in possession of the flash drive hashes, it instantiates the template, generating the initial state hash for the corresponding Cartesi Machine.
 
 As an example, consider a Cartesi Machine that operates as an arbitrary-precision arithmetic expression evaluator.
-The machine will take the expression in text format, inside a raw input flash drive labelled `input`, and will copy the output in text format into a raw output flash drive, labelled `output` (`shared`, of course, so the output persists after the emulator is done).
+The machine will take the expression in text format from an input NVRAM labelled `input`, and will copy the output in text format into an output NVRAM labelled `output` (`shared`, of course, so the output persists after the emulator is done).
 
-Raw flash drives are flash drives that do not contain file-systems.
-Instead, they contain data in any application-specific format.
-Inside the Cartesi Machine, the `dd` or `devio` command-line utilities can be used to read data from or write data to
-raw flash drives, assuming they have permission to access the underlying block device.
-To simplify the examples in the documentation, we will simply run them as `root`.
-(Note that this is not recommended in deployed applications.)
+NVRAMs bind directly to a memory-backed UIO device exposed inside the guest as `/dev/uioN`.
+Unlike flash drives, they have no file-system layer and no page cache between the guest and the underlying memory range, so writes are immediately visible to the emulator and there is no need to flush a cache before snapshotting.
+This makes NVRAMs faster than flash drives for cases where the guest only needs raw access to a region of bytes.
+
+Because UIO devices do not support ordinary `read()` or `write()` against the device file, the `readmmap` and `writemmap` utilities ship with the guest tools to read and write UIO ranges by label.
+They resolve the label, `mmap()` the device, and copy bytes to/from standard input or standard output.
+Both also work on flash drives.
 
 The `bc` command-line utility is the perfect tool to evaluate the arithmetic expressions.
-The command passed to `cartesi-machine` below reads the contents of the raw input flash drive using the `dd` command-line utility, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result to `bc`, and finally uses `dd` again to write its results to the raw output flash drive.
-By default, init formats every flash drive that has no backing image as ext2 and mounts every flash drive under `/mnt/<label>`.
-Since the example accesses the raw block devices directly with `dd`, the `mke2fs:false,mount:false` options on each `--flash-drive` skip both steps.
+The command passed to `cartesi-machine` below uses `readmmap` to read the contents of the input NVRAM, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result through `bc`, and uses `writemmap` to copy the result back into the output NVRAM.
 Here is the sample playground session
 
 ```{.bash key=templates_run outputs=output.raw replace=null enabled=yes}
@@ -751,10 +725,9 @@ truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
-    --user=root \
-    --flash-drive="label:input,length:1<<12,data_filename:input.raw,mke2fs:false,mount:false" \
-    --flash-drive="label:output,length:1<<12,data_filename:output.raw,shared,mke2fs:false,mount:false" \
-    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z",  io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
+    --nvram="label:input,length:1<<12,data_filename:input.raw" \
+    --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
+    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
 # docs:end
 ```
 ```{.bash replace=templates_run/source enabled=yes}
@@ -768,7 +741,7 @@ The output of the `cartesi-machine` command is
 ```{replace=templates_run/both enabled=yes}
 ```
 Once the emulator returns, a tiny Lua script, run by the `lua5.4` Lua interpreter, prints the contents of the output drive
-```{.bash key=templates_run_result depends=templates_run/output.raw replace=source enabled=yes}
+```{.bash key=templates_run_result subst=templates_run->templates_run replace=source enabled=yes}
 trap 'rm -f output.raw' EXIT
 ln -sf "$templates_run/output.raw" output.raw
 # docs:begin
@@ -789,13 +762,12 @@ The `--final-hash` command-line option prints the resulting template hash.
 rm -rf calculator-template
 # docs:begin
 cartesi-machine \
-    --user=root \
-    --flash-drive="label:input,length:1<<12,mke2fs:false,mount:false" \
-    --flash-drive="label:output,length:1<<12,mke2fs:false,mount:false" \
+    --nvram="label:input,length:1<<12" \
+    --nvram="label:output,length:1<<12" \
     --max-mcycle=0 \
     --final-hash \
     --store="calculator-template" \
-    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
+    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
 # docs:end
 ```
 The result is as follows
@@ -804,7 +776,7 @@ The result is as follows
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
 
-```{.bash key=templates_hash depends=templates_store/calculator-template replace=null enabled=yes}
+```{.bash key=templates_hash subst=templates_store->templates_store replace=null enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -817,7 +789,7 @@ we can see from the output
 ```{replace=templates_hash/both enabled=yes}
 ```
 
-```{.bash key=templates_trunc_hash depends=templates_hash replace=null enabled=yes}
+```{.bash key=templates_trunc_hash subst=templates_hash->templates_hash replace=null enabled=yes}
 cat $templates_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 that the stored template hash is [...]{replace=templates_trunc_hash/stdout enabled=yes}.
@@ -828,10 +800,10 @@ The `--replace-memory-range=label:<label>,data_filename:<filename>` command-line
 The memory range can be identified by `label`, by `start` and `length`, or both.
 
 This functionality can be used to test templates.
-For example, the following command loads the calculator template, and replaces its pristine input drive with a drive containing the contents of the `input.raw` file.
-Then, it replaces the pristine output drive so the machine saves results in the file `output.raw`.
+For example, the following command loads the calculator template, and replaces its pristine input NVRAM with one containing the contents of the `input.raw` file.
+Then, it replaces the pristine output NVRAM so the machine saves results in the file `output.raw`.
 
-```{.bash key=templates_replace_flash_drive depends=templates_store/calculator-template replace=source enabled=yes}
+```{.bash key=templates_replace_nvram subst=templates_store->templates_store replace=source enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -847,7 +819,7 @@ lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
 ```
 The result of running the command is, as expected,
-```{replace=templates_replace_flash_drive/stdout enabled=yes}
+```{replace=templates_replace_nvram/stdout enabled=yes}
 ```
 
 ### State value proofs
@@ -866,7 +838,7 @@ Since the leaves have size 8 (for 64-bits), the valid values for `<log2_size>` a
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run depends=templates_store/calculator-template replace=source}
+```{.bash key=proofs_pristine_run subst=templates_store->templates_store replace=source}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -886,7 +858,7 @@ The output of the command is
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{key=proofs_pristine_json depends=templates_store/calculator-template replace=both}
+```{key=proofs_pristine_json subst=templates_store->templates_store replace=both}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 cartesi-machine \
@@ -911,7 +883,7 @@ For example, to quickly generate the hash for a pristine input with 4KiB size, r
 ```{.bash key=proofs_pristine_input_hash replace=source}
 head -c 0 | merkle-tree-hash --tree-log2-size=12
 ```
-```{.bash key=proofs_pristine_input_trunc_hash depends=proofs_pristine_input_hash replace=null}
+```{.bash key=proofs_pristine_input_trunc_hash subst=proofs_pristine_input_hash->proofs_pristine_input_hash replace=null}
 cat $proofs_pristine_input_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
@@ -929,7 +901,7 @@ To compute the hash for the desired `input.raw` file with contents `6*2^1024 + 3
 ```{.bash key=proofs_input_raw_hash replace=source}
 echo "6*2^1024 + 3*2^512" | merkle-tree-hash --tree-log2-size=12
 ```
-```{.bash key=proofs_input_raw_trunc_hash depends=proofs_input_raw_hash replace=null}
+```{.bash key=proofs_input_raw_trunc_hash subst=proofs_input_raw_hash->proofs_input_raw_hash replace=null}
 cat $proofs_input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
@@ -939,7 +911,7 @@ to obtain
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout} of the template's pristine drive.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
-```{.bash key=proofs_input_json depends=templates_store/calculator-template replace=null}
+```{.bash key=proofs_input_json subst=templates_store->templates_store replace=null}
 rm -f calculator-template
 rm -rf input-proof input.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -963,7 +935,7 @@ The contents of the `input-proof` are
 ```{replace=proofs_input_json/stdout}
 ```
 
-```{.bash key=proofs_input_roothash depends=proofs_input_json replace=null}
+```{.bash key=proofs_input_roothash subst=proofs_input_json->proofs_input_json replace=null}
 cat $proofs_input_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
@@ -974,7 +946,7 @@ Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in th
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=proofs_output_run outputs=output.raw depends=templates_store/calculator-template replace=null}
+```{.bash key=proofs_output_run outputs=output.raw subst=templates_store->templates_store replace=null}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -998,7 +970,7 @@ This produces the output
 ```{replace=proofs_output_run/both}
 ```
 The contents of the `output-proof` are
-```{key=proofs_output_json depends=templates_store/calculator-template replace=both}
+```{key=proofs_output_json subst=templates_store->templates_store replace=both}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -1015,7 +987,7 @@ cartesi-machine \
 cat output-proof
 ```
 
-```{.bash key=proofs_output_roothash depends=proofs_output_json replace=null}
+```{.bash key=proofs_output_roothash subst=proofs_output_json->proofs_output_json replace=null}
 cat $proofs_output_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
@@ -1023,7 +995,7 @@ cat $proofs_output_json/stdout \
 Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash/stdout} output by the `cartesi-machine` command-line utility.
 
 To see that the `target_hash` field matches the `output.raw` drive, use the `merkle-tree-hash` command-line utility
-```{.bash key=proofs_output_raw_hash depends=proofs_output_run/output.raw replace=source}
+```{.bash key=proofs_output_raw_hash subst=proofs_output_run->proofs_output_run replace=source}
 rm -f output.raw
 ln -s "$proofs_output_run/output.raw" output.raw
 # docs:begin
@@ -1188,7 +1160,7 @@ For example, the following commands create the input metadata and input files fo
 (saved as `epoch-0-input-metadata-0.bin`, `epoch-0-input-0.bin`, `epoch-0-input-metadata-1.bin`, and `epoch-0-input-1.bin`), and one query for an inspect state request (saved as `query.bin`):
 
 
-```{.bash key=rolling_ioctl_echo_loop depends=rolling_ioctl_echo_loop_encode outputs=server,client replace=null}
+```{.bash key=rolling_ioctl_echo_loop subst=rolling_ioctl_echo_loop_encode->rolling_ioctl_echo_loop_encode outputs=server,client replace=null}
 ln -s $rolling_ioctl_echo_loop_encode/*.bin .
 srv_tmp=$(mktemp)
 {
@@ -1239,7 +1211,7 @@ rollup-memory-range encode input > query.bin <<-EOF
 EOF
 ```
 Listing the files created
-```{.bash key=rolling_ioctl_echo_loop_encoded_bins depends=rolling_ioctl_echo_loop/client replace=source}
+```{.bash key=rolling_ioctl_echo_loop_encoded_bins subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=source}
 ln -s $rolling_ioctl_echo_loop/*.bin .
 # docs:begin
 ls *.bin
@@ -1279,7 +1251,7 @@ As a result of these commands, the server shell simply shows the splash screen a
 ```
 The client shell shows a lot more activity:
 
-```{key=rolling_ioctl_echo_loop_0client depends=rolling_ioctl_echo_loop/client replace=both}
+```{key=rolling_ioctl_echo_loop_0client subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=both}
 sed -n '1,5p' $rolling_ioctl_echo_loop/client; echo "..."
 ```
 The client starts by printing information about the remote server it connected to.
@@ -1288,33 +1260,33 @@ It then runs the machine in a loop, occasionally transferring information in and
 The first `manual yield rx-accepted` signals the point at which the target application attempted to obtain the first request.
 In other words, the application is _ready_.
 
-```{key=rolling_ioctl_echo_loop_1client depends=rolling_ioctl_echo_loop/client replace=both}
+```{key=rolling_ioctl_echo_loop_1client subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=both}
 echo "..."; sed -n '8,28p' $rolling_ioctl_echo_loop/client; echo "..."
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles0 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles0 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '1p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes0 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_hashes0 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '1p'     | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes1 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_hashes1 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '2p'     | $RECIPES_DIR/trunc8.sh
 ```
 Upon receiving control back from the machine at cycle []{replace=rolling_ioctl_echo_loop_cycles0/stdout}, the client prints the epoch index 0 and input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hashes0/stdout}, loads files `epoch-0-input-metadata-1.bin` and `epoch-0-input-1.bin` into the appropriate memory ranges, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hashes1/stdout}, and resumes the machine.
 The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
 
-```{.bash key=rolling_ioctl_echo_loop_cycles1 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles1 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '2p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles2 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles2 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '3p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles3 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles3 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '4p'
 ```
 These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-voucher` at cycle []{replace=rolling_ioctl_echo_loop_cycles1/stdout}, a `tx-notice` at cycle []{replace=rolling_ioctl_echo_loop_cycles2/stdout}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles3/stdout}.
@@ -1322,7 +1294,7 @@ For each of them, the client receives control back from the machine.
 It reads the appropriate memory range to store files `epoch-0-input-1-voucher-0.bin`, `epoch-0-input-1-notice-0.bin`, and `epoch-0-input-1-report-0.bin`, respectively.
 
 
-```{.bash key=rolling_ioctl_echo_loop_cycles4 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles4 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '5p'
 ```
 The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_cycles4/stdout} signals that the `ioctl-echo-loop` application is done processing input index 1 of epoch 0 (and rejected it!).
@@ -1336,35 +1308,35 @@ To make prototyping realistic, the `cartesi-machine` client also rolls the state
 This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_cycles0/stdout}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hashes0/stdout}) following the epoch 0 input 1 and epoch 0 input 2 are the same.
 (The files with the vouchers and notices issued before rejection, as well as the files with the arrays of hashes, are left in place for the developer's inspection.)
 
-```{key=rolling_ioctl_echo_loop_2client depends=rolling_ioctl_echo_loop/client replace=both}
+```{key=rolling_ioctl_echo_loop_2client subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=both}
 echo "..."; sed -n '31,52p' $rolling_ioctl_echo_loop/client; echo "..."
 ```
 A similar procedure is followed when processing the advance-state request with input index 2 of epoch index 0, except this time the input is accepted.
 
-```{.bash key=rolling_ioctl_echo_loop_cycles8 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles8 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '9p'
 ```
 Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_cycles8/stdout} is received by the client, it has run out of advance-state requests to return.
 
-```{key=rolling_ioctl_echo_loop_3client depends=rolling_ioctl_echo_loop/client replace=both}
+```{key=rolling_ioctl_echo_loop_3client subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=both}
 echo "..."; sed -n '54,63p' $rolling_ioctl_echo_loop/client
 ```
 The client now moves to the inspect-state request.
 It loads `query.bin`, copies it to the appropriate memory range, and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
 
-```{.bash key=rolling_ioctl_echo_loop_cycles9 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles9 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '10p'
 ```
 The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles9/stdout} signals the application issued a report, which the client then saves as `query-report-0.bin`.
 
 
-```{.bash key=rolling_ioctl_echo_loop_cycles10 depends=rolling_ioctl_echo_loop/client replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles10 subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=null}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '11p'
 ```
 Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_cycles10/stdout}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
-```{.bash key=rolling_ioctl_echo_loop_all_bins depends=rolling_ioctl_echo_loop replace=source}
+```{.bash key=rolling_ioctl_echo_loop_all_bins subst=rolling_ioctl_echo_loop->rolling_ioctl_echo_loop replace=source}
 ln -s $rolling_ioctl_echo_loop/*.bin .
 # docs:begin
 ls *.bin
@@ -1488,7 +1460,7 @@ The result is again fed to `jq`, which assembles the proper JSON object with a `
 We add the command line option `--assert-rolling-template` to help catch errors.
 When enabled, it will cause `cartesi-machine` to exit with a status-code reporting failure if the generated machine is not Rolling Cartesi Machine template compatible.
 
-To use `calc.sh` in a Rolling Cartesi Machine template, first create a filesystem with the program:
+To use `calc.sh` in a Rolling Cartesi Machine template, first create a file-system with the program:
 ```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
 trap 'rm -rf calc calc.tar' EXIT
 rm -rf calc
@@ -1514,7 +1486,7 @@ genext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client replace=source/template depends=calc_ext2/calc.ext2}
+```{.bash key=rolling_calc_template outputs=template,server,client replace=source/template subst=calc_ext2->calc_ext2}
 srv_tmp=$(mktemp)
 _cleanup() {
     rm -f "$srv_tmp" \
@@ -1693,15 +1665,14 @@ The `<number-period>` argument gives the distance between hashes in cycles. The 
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
-```{.bash key=rarely_periodic_initial_cycle depends=proofs_output_run replace=null}
+```{.bash key=rarely_periodic_initial_cycle subst=proofs_output_run->proofs_output_run replace=null}
 cycles=$(cat $proofs_output_run/both | $RECIPES_DIR/last-cycles.sh)
 printf '%d\n' "$((cycles - 10))"
 ```
-```{.bash key=rarely_periodic_hashes depends=rarely_periodic_initial_cycle,templates_store/calculator-template replace=source subst=initial_cycle->rarely_periodic_initial_cycle/stdout}
+```{.bash key=rarely_periodic_hashes subst=initial_cycle->rarely_periodic_initial_cycle/stdout,templates_store->templates_store replace=source}
 rm -f calculator-template
 rm -rf input.raw
 ln -s "$templates_store/calculator-template" calculator-template
-initial_cycle=$(cat $rarely_periodic_initial_cycle/stdout)
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -1743,13 +1714,10 @@ The `--step` command-line option instructs `cartesi-machine` to dump to screen a
 
 For the sake of completeness, consider the example in which the Cartesi Machine was stopped while it drew the splash screen.
 The example below shows the step it was about to execute
-```{.bash key=rarely_step depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr}
-cycles=$(cat $cycles_limit_exec/stderr)
-# docs:begin
+```{.bash key=rarely_step replace=source subst=cycles->cycles_limit_exec/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
     --step > /dev/null
-# docs:end
 ```
 and produces the log
 ```{replace=rarely_step/stderr}
@@ -1955,7 +1923,7 @@ Since flash drive image files are mapped, their sizes on disk must exactly match
 Field `shared` contains a Boolean value that specifies whether changes to the flash drive that happen inside the target reflect in the image file that resides in the host file-system as well.
 If set to `true`, the image file will be modified accordingly.
 This is useful when a flash drive will hold the result of a computation.
-If set to `false` (the default), target modifications to the flash drive are <i>not</i> propagated to the image file that resides in the host filesystem.
+If set to `false` (the default), target modifications to the flash drive are <i>not</i> propagated to the image file that resides in the host file-system.
 I.e., even though the flash drives may be read/write from the target perspective, the image file in the host is left unmodified.
 
 The <a href="#htif_config">`htif`</a> entry in `machine_config` has four fields, two of which are used only in rare occasions.
@@ -2025,18 +1993,18 @@ cartesi-machine \
 The resulting configuration includes a number of default values, conveniently marked as such by the `cartesi-machine` utility.
 It can be edited down to its essential, and stored into a file, for example as a Lua module:
 
-```{.bash key=config_marchid depends=config_dump_nothing replace=null}
+```{.bash key=config_marchid subst=config_dump_nothing->config_dump_nothing replace=null}
 cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh marchid
 ```
 
-```{.bash key=config_mimpid depends=config_dump_nothing replace=null}
+```{.bash key=config_mimpid subst=config_dump_nothing->config_dump_nothing replace=null}
 cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mimpid
 ```
 
-```{.bash key=config_mvendorid depends=config_dump_nothing replace=null}
+```{.bash key=config_mvendorid subst=config_dump_nothing->config_dump_nothing replace=null}
 cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mvendorid
 ```
-```{.lua key=config_ls_bin depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua"}
+```{.lua key=config_ls_bin replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua"}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2069,9 +2037,9 @@ In production code, they should be hard-coded to match the release of the emulat
 Note how the utility automatically sets the ROM `bootargs` to include several kernel parameters.
 The ones seen in the example have the following meaning:
 - `console=hsvc0` sets the device to be used as console;
-- `rootfstype=ext2` sets the root filesystem type;
-- `root=/dev/mtdblock0` sets the device where the root filesystem can be found;
-- `rw` instructs the kernel to mount the root filesystem read-write;
+- `rootfstype=ext2` sets the root file-system type;
+- `root=/dev/mtdblock0` sets the device where the root file-system can be found;
+- `rw` instructs the kernel to mount the root file-system read-write;
 - `quiet` stops the kernel from printing initialization messages;
 - `swiotlb=noforce` prevents the kernel from reserving memory for DMA bounce buffers.
 
@@ -2097,7 +2065,7 @@ cartesi-machine \
 ```
 produces the corresponding machine configuration.
 This can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua key=config_cat_foo_bar depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua"}
+```{.lua key=config_cat_foo_bar replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua"}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2140,7 +2108,7 @@ cartesi-machine \
     --max-mcycle=0 \
     --store-config
 ```
-```{.lua key=config_nothing_to_do depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua"}
+```{.lua key=config_nothing_to_do replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua"}
 return {
   processor = {
     mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
@@ -2173,7 +2141,7 @@ cartesi-machine \
     --store-config \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
-```{.lua key=config_progress depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua"}
+```{.lua key=config_progress replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua"}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2211,7 +2179,7 @@ cartesi-machine \
     --store-config \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
 ```
-```{.lua key=config_calculator depends=config_mvendorid,config_mimpid,config_marchid replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua"}
+```{.lua key=config_calculator replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua"}
 return {
   processor = {
     mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
@@ -2778,7 +2746,7 @@ print((string.unpack("z", machine:read_memory(output_drive.start, output_drive.l
 
 The script loads the `config` template from from its Lua module `./config/calculator.lua` and instantiates a Cartesi Machine from it.
 The pristine input and output flash drives are described in the configuration at `config.flash_drive[2]` and `config.flash_drive[3]`, respectively.
-(Entry `config.flash_drive[1]` describes the flash drive with the root file-system for the embedded Linux distribution.)
+(Entry `config.flash_drive[1]` describes the flash drive with the root file-system for the Linux distribution.)
 The script concatenates its command-line arguments, line-terminates them, and writes them at the start of the raw input flash drive.
 The script then runs the machine until it halts or yields manual.
 Finally, it reads the output drive contents and extracts the first null-terminated string from it, and prints the results.
@@ -3477,7 +3445,7 @@ If the log was generated with the `proofs = true` option, then the current state
 
 Running the `dump-step.lua` program:
 
-```{.lua key=dump_step_source depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr title="dump-step.lua"}
+```{.lua key=dump_step_source replace=source subst=cycles->cycles_limit_exec/stderr title="dump-step.lua"}
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3504,7 +3472,7 @@ with command:
 lua5.3 dump-step.lua
 ```
 produces the output:
-```{key=state_transition_dump_step depends=cycles_limit_exec,config_dump_nothing replace=both}
+```{key=state_transition_dump_step subst=cycles_limit_exec->cycles_limit_exec depends=config_dump_nothing replace=both}
 cycles=$(cat $cycles_limit_exec/stderr)
 lua $RECIPES_DIR/dump-step.lua config.nothing-to-do "$cycles"
 ```
@@ -3539,7 +3507,7 @@ All required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
-```{.lua key=verify_step_source depends=cycles_limit_exec replace=source subst=cycles->cycles_limit_exec/stderr title="verify-step.lua"}
+```{.lua key=verify_step_source replace=source subst=cycles->cycles_limit_exec/stderr title="verify-step.lua"}
 -- Load the Cartesi modules
 local cartesi = require"cartesi"
 local util = require"cartesi.util"
@@ -3688,7 +3656,7 @@ The documentation then moves towards the system architecture implemented by Cart
 This is what surrounds the Linux environment, and is the abstraction level at which target system-developers work.
 
 This is, of course, not the most natural order for presenting the material.
-After all, running the embedded Linux environment experienced by application-developers is only possible after successful initialization of the Linux kernel, which in turn depends on knowledge of the system architecture.
+After all, running the Linux environment experienced by application-developers is only possible after successful initialization of the Linux kernel, which in turn depends on knowledge of the system architecture.
 However, presenting the material in this order would quickly alienate application developers.
 Since there are many more application developers than system developers, we cater to the former.
 
@@ -3699,7 +3667,7 @@ Since there are many more application developers than system developers, we cate
 In order to avoid repetition, this section assumes familiarity with the material presented there.
 :::
 
-The most direct way for target developers to familiarize themselves with the embedded Linux environment is to run the Cartesi Machine emulator in interactive mode.
+The most direct way for target developers to familiarize themselves with the Linux environment is to run the Cartesi Machine emulator in interactive mode.
 The `cartesi/playground` Docker image comes pre-installed with the emulator and all its support files.
 Inside the playground, the following command instructs the emulator to load the default machine configuration and run a shell in interactive mode
 
@@ -3723,7 +3691,7 @@ The session shows a user changing the working directory to `/bin/` and listing i
 The user then does the same with directory `/usr/bin/`, before finally leaving the emulator with the `exit` command.
 The point of the exercise is that, from the inside, the environment will be familiar to any regular Unix user.
 
-One of the key differences is that, unlike stand-alone systems, most embedded systems are not self-hosting.
+One of the key differences is that, unlike stand-alone systems, most systems are not self-hosting.
 None of the utilities visible inside the `/usr/bin/` and `/bin/` directories were built with a compiler that ran inside a Cartesi Machine.
 They were built in a separate host system, on which a cross-compiling toolchain for the target architecture has been installed.
 In the case of Linux, the key elements in the toolchain are the GNU Compiler Collection and the GNU C Library.
@@ -3889,7 +3857,7 @@ The `fs/` submodule in the [Emulator SDK](https://github.com/cartesi/machine-emu
 Buildroot is a highly configurable tool, and an explanation of how to use it to its full potential is beyond the scope of this documentation.
 Please refer to its [manual](https://buildroot.org/downloads/manual/manual.html).
 
-Even relative to other embedded Linux root file-systems, the Cartesi-provided `rootfs.ext2` is very simple.
+Even relative to other Linux root file-systems, the Cartesi-provided `rootfs.ext2` is very simple.
 The only significant customization is the Cartesi-provided `/sbin/init` script, which performs a few initialization tasks before handing control to the application chosen by the developer to run inside the Cartesi Machine, and finally shuts down after the application exits.
 
 As is typical in the field, `rootfs.ext2` uses [BusyBox](https://busybox.net/) to consolidate tiny versions of many common UNIX utilities (`ls`, `cd`, `rm`, etc) into a single binary.
@@ -5202,7 +5170,7 @@ After installing the trap, BBL switches to supervisor mode and cedes control to 
 After completing its own initialization, the kernel mounts the root file-system and eventually cedes control to&nbsp;`/sbin/init`.
 Cartesi's root file-system `rootfs.ext2` can be generated from the `fs/` directory in the [Cartesi Machine SDK](https://github.com/cartesi/machine-emulator-sdk).
 The Cartesi-provided `/sbin/init` script scans all flash devices `/dev/mtdblock1`&ndash;`/dev/mtdblock7` for valid file-systems.
-When a file-system is found, the script obtains the corresponding `<label>` (set in the `mtdparts` kernel command-line parameter) by inspecting `/sys/block/mtdblock*/device/name` and mounts the filesystem at `/mnt/<label>`.
+When a file-system is found, the script obtains the corresponding `<label>` (set in the `mtdparts` kernel command-line parameter) by inspecting `/sys/block/mtdblock*/device/name` and mounts the file-system at `/mnt/<label>`.
 The kernel passes to `/sbin/init` as command-line parameters all arguments after the separator&nbsp;`--`&nbsp;in the `bootargs` string it found in the devicetree.
 The Cartesi-provided `/sbin/init` script concatenates all arguments into a string and executes the command in this string in a shell.
 When the shell returns, `/sbin/init` unmount all file-systems and gracefully halts the machine.

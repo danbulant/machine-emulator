@@ -3,69 +3,67 @@
 -- PURPOSE
 --
 -- Turns README.md.template into README.md. Code blocks annotated with key=
--- are hashed, compiled into runners, and executed by `make`. A second filter
--- pass reads the cached outputs and splices them into the rendered document.
--- The driving Makefile lives in recipes/Makefile; it calls this filter twice
--- with `make` in between.
+-- are written to cache/<key>/, executed by `make`, and their outputs spliced
+-- back into the rendered document. The driving Makefile lives in
+-- recipes/Makefile; it calls this filter twice with `make` in between.
 --
 -- LIFECYCLE (three invocations)
 --
 --   1. Dry-run: pass -M write-user-dependencies=<path> to pandoc. The filter
---      walks the template, hashes every key= block, writes each body to
---      cache/<hash>/body.<ext>, and emits a self-contained makefile fragment
---      to <path>. Pandoc's rendered output is discarded -- the .d file is the
---      deliverable. Cached outputs are not read; replace=K/both and similar
---      substitutions return "".
+--      walks the template, writes each block body to cache/<key>/body.<ext>
+--      (idempotently), writes cache/<key>/spec when contents-form subst=
+--      entries exist, and emits a self-contained makefile fragment to <path>.
+--      Pandoc's rendered output is discarded -- the .d file is the deliverable.
+--      Cached outputs are not read; replace=K/both and similar return "".
 --
 --   2. The outer Makefile includes the .d file. Its `all:` target lists every
 --      cache file referenced by the document; each rule says "to produce
---      cache/<hash>/stdout, depend on the runner, cache/<hash>/body.<ext>, and
---      each dep's cache/<hash_D>/<sub>, then exec the runner". Running `make`
---      executes every needed body in topological order, populating the cache.
+--      cache/<key>/stdout, depend on the runner, cache/<key>/body.<ext>, and
+--      each dep's output file, then exec the runner". Running `make` executes
+--      every needed body in topological order, populating the cache.
 --
 --   3. Real run: same filter, same template, -M write-user-dependencies absent.
---      Every cache/<hash>/<sub> the document needs now exists on disk. The
+--      Every cache/<key>/<sub> the document needs now exists on disk. The
 --      filter reads those files and splices their contents in place of the
 --      annotated blocks. Pandoc's output is the final rendered document.
 --
 -- TWO-PASS WALK (each invocation)
 --
---   Pass 1 (collect): pandoc.walk_block records every key= block body into
---   `pending` without resolving anything. Detects duplicate keys.
+--   Pass 1 (collect): pandoc.walk_block records every key= block body, parsed
+--   deps, and parsed subst into `pending` without resolving anything.
+--   Detects duplicate keys.
 --
 --   Pass 2 (render): walk in document order. When a replace=K/... is seen,
---   ensure_defined(K) lazily hashes K -- recursing depth-first through K's
---   depends= chain -- before reading its hash or output. This is what makes
---   replace= and depends= order-independent within the document.
+--   ensure_defined(K) lazily defines K -- recursing depth-first through K's
+--   depends= and subst= chains -- before reading its output. This is what
+--   makes replace= and depends= order-independent within the document.
 --
 -- REQUIRED ENVIRONMENT
 --
 --   CACHE_DIR  Absolute path to the cache directory (errors if unset).
---   FILTER_DIR Derived from debug.getinfo; runners must live alongside this
---              filter file. No extra env var needed for their location.
+--   FILTER_DIR Derived from debug.getinfo; runners and subst.lua live
+--              alongside this filter file.
 --
 -- CACHE LAYOUT
 --
---   cache/<hash>/body.<ext>   Source written at dry-run time.
---   cache/<hash>/stdout       Captured standard output (runner-produced).
---   cache/<hash>/stderr       Captured standard error (runner-produced).
---   cache/<hash>/both         stdout and stderr interleaved (runner-produced).
---   cache/<hash>/<artifact>   Any declared outputs= artifact. The runner cd's
---                             into cache/<hash>/ before running the body, so
---                             artifacts written to cwd land there automatically.
+--   cache/<key>/body.<ext>     Source written at dry-run time (idempotent).
+--   cache/<key>/spec           VAR=path lines for contents-form subst= entries
+--                              (written at dry-run time, idempotent).
+--   cache/<key>/body.run.<ext> Body with contents-form $VAR expanded (runner-produced).
+--   cache/<key>/stdout         Captured standard output (runner-produced).
+--   cache/<key>/stderr         Captured standard error (runner-produced).
+--   cache/<key>/both           stdout and stderr interleaved (runner-produced).
+--   cache/<key>/<artifact>     Any declared outputs= artifact. The runner cd's
+--                              into cache/<key>/ before running the body, so
+--                              artifacts written to cwd land there automatically.
 --
--- HASHING MODEL (cache invalidation)
+-- CACHE INVALIDATION
 --
---   hash = sha1(runner_content || resolved_body)
---
---   resolved_body is derived from the raw block body by:
---     - Substituting each $D (D from depends=) with the literal absolute path
---       CACHE_DIR/<hash_D>. Longest base-key match wins; safe in any language
---       because the path is absolute and needs no shell expansion.
---     - Substituting $_REPLACE_KEY with the key name K.
---
---   Because runner_content is mixed into the hash, editing a runner file
---   (run-bash.sh, run-lua.sh) invalidates every cache entry that uses it.
+--   Make drives invalidation via mtimes. body.<ext> and spec are written
+--   idempotently (skipped when content is unchanged) to avoid spurious rebuilds.
+--   The runner (run-bash.sh / run-lua.sh) and subst.lua are listed as make
+--   prereqs for every rule that uses them, so editing those files triggers
+--   a rebuild of all affected blocks.
 --
 -- LANGUAGES
 --
@@ -81,16 +79,24 @@
 --
 --   key=K               Defines block K. Body is its source.
 --                       K must match [a-zA-Z_][a-zA-Z0-9_]*; duplicates error.
---                       $D (D in depends=) is replaced with CACHE_DIR/<hash_D>
---                       before hashing. $_REPLACE_KEY is replaced with K.
---                       Longest-base match wins for $D substitution.
+--                       $_REPLACE_KEY is replaced with K before writing body.
 --
---   depends=A,B/sub,..  Only on key= blocks. Bare A means A/stdout.
---                       sub must be stdout|stderr|both or a name in A's outputs=.
---                       Adds a make prereq and licenses $A in the body.
+--   depends=A,B,...     Only on key= blocks. Bare keys only (no K/sub).
+--                       Each K adds a make prereq on cache/<K>/stdout.
+--                       Reserved for ordering-only cases (e.g., two blocks that
+--                       bind the same port). Use subst= when $K is in the body.
+--
+--   subst=VAR->REF,...  Path injection and contents substitution. REF forms:
+--                         VAR->K          path-form: $VAR -> CACHE_DIR/K
+--                         VAR->K/SUB      contents-form: $VAR -> bytes of cache/<K>/SUB
+--                         VAR->K/SUB/path path-form: $VAR -> CACHE_DIR/K/SUB
+--                       Path-form entries are substituted in body.<ext> at dry-run
+--                       time. Contents-form entries are written to cache/<K>/spec
+--                       and expanded by subst.lua at runner time (producing
+--                       body.run.<ext>). Both forms also add make prereqs.
 --
 --   outputs=a,b,c       Only on key= blocks. Declares artifact filenames the body
---                       writes to its cwd (= cache/<hash>/). Reserved names
+--                       writes to its cwd (= cache/<key>/). Reserved names
 --                       (stdout, stderr, both, source, null) are rejected.
 --                       The runner verifies each artifact exists after the body
 --                       exits and fails if it does not.
@@ -108,12 +114,6 @@
 --
 --   replace=<value>     Required on every annotated block. See taxonomy below.
 --
---   subst=VAR->K[/thing],...
---                       Only meaningful when the rendered content is a source
---                       (own block or cross-block). Substitutes $VAR in the
---                       rendered source after region extraction. thing defaults
---                       to both. Render-time only; not folded into the hash.
---
 -- REPLACE= TAXONOMY
 --
 --   null                Drop the block from output. Body still runs when key=
@@ -129,8 +129,10 @@
 --                       artifact name must appear in outputs=.
 --
 --   K                   Cross-block: render K's "both" output (default thing).
+--   K/path              Cross-block: absolute path of cache/<K>/ directory.
 --   K/<thing>           Cross-block: render K's thing.
 --                       thing is stdout|stderr|both|source[/<region>]|<artifact>.
+--   K/<thing>/path      Cross-block: absolute path of cache/<K>/<thing>.
 --                       Forces lazy definition of K via ensure_defined.
 --
 --   Inline Code:        Only cross-block forms (K or K/<thing>) are allowed.
@@ -170,10 +172,12 @@
 --
 -- MAKE-FRAGMENT SHAPE (dry-run)
 --
---   Primary target:  cache/<hash>/stdout  (depends on runner + body.<ext> + dep stdouts)
---   Sibling targets: cache/<hash>/stderr, cache/<hash>/both, each declared artifact.
---   Siblings depend on the primary with an empty recipe (portable to GNU Make 3.81,
---   which predates `&:` grouped-target syntax).
+--   Primary target:  cache/<key>/stdout
+--     prereqs: runner, body.<ext>, [subst.lua, spec] (iff contents-form subst=
+--              exists), depends= stdouts, subst= file prereqs
+--   Sibling targets: cache/<key>/stderr, cache/<key>/both, each declared artifact.
+--   Siblings depend on the primary with an empty recipe (portable to GNU Make
+--   3.81, which predates `&:` grouped-target syntax).
 --
 -- PANDOC RENDERING QUIRK
 --
@@ -185,9 +189,11 @@
 --   - Duplicate key= definitions error during pass 1.
 --   - Dependency cycles error during ensure_defined.
 --   - outputs= artifacts not written by the body cause the runner to fail.
---   - subst= is render-time only; changing a subst source does not re-run scripts.
---   - $D substitution requires a non-word boundary after D so $foo does not
---     consume the start of $foobar; longest base wins for disambiguation.
+--   - subst= path-form rewrites happen at dry-run time (before execution).
+--     Contents-form $VAR stays literal in body.<ext>; subst.lua expands it
+--     at runner time. Editing subst.lua or the spec file triggers a rebuild.
+--   - $VAR substitution requires a non-word boundary after VAR so $foo does
+--     not consume the start of $foobar; longest var wins for disambiguation.
 
 local deps_file
 local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
@@ -195,35 +201,24 @@ local CACHE_DIR = os.getenv("CACHE_DIR") or error("CACHE_DIR not set")
 
 -- Locate the directory containing this filter file; runners live alongside it.
 local FILTER_DIR = (debug.getinfo(1, "S").source:match("^@(.+)$") or "replace.lua"):match("(.+)/[^/]+$") or "."
+local subst = require "subst"
 
--- Map language class to {ext, runner-path}. The runner's content is read once
--- and mixed into the per-block hash so runner edits invalidate old cache entries.
 local LANG_INFO = {
     bash = { ext = "sh",  runner = FILTER_DIR .. "/run-bash.sh" },
     lua  = { ext = "lua", runner = FILTER_DIR .. "/run-lua.sh"  },
 }
 local DEFAULT_LANG = "bash"
 
-local runner_content_cache = {}
-local function get_runner_content(lang)
-    if runner_content_cache[lang] then return runner_content_cache[lang] end
-    local info = LANG_INFO[lang] or LANG_INFO[DEFAULT_LANG]
-    local f = assert(io.open(info.runner, "r"), "runner not found: " .. info.runner)
-    local c = f:read("a"); f:close()
-    runner_content_cache[lang] = c
-    return c
-end
-
 local RESERVED = { stdout = true, stderr = true, both = true, source = true, null = true }
 
 -- State accumulated as the document is walked.
-local pending   = {}  -- key -> { attr, body, lang }  (pass 1: raw collection)
+local pending   = {}  -- key -> { attr, body, classes, deps, subst }  (pass 1: raw collection)
 local defining  = {}  -- key -> true  (cycle detection during ensure_defined)
-local keys      = {}  -- key -> hash
+local defined   = {}  -- key -> true  (set after define_script completes)
 local outputs_t = {}  -- key -> { artifact_name -> true }
 local sources   = {}  -- key -> resolved body (for replace=source)
 local rules     = {}  -- list of make rule strings (dry-run only)
-local consumed  = {}  -- "<hash>/<file>" -> true (referenced cache files)
+local consumed  = {}  -- "<key>/<file>" -> true (referenced cache files)
 
 local function assertf(cond, fmt, ...)
     if not cond then error(string.format(fmt, ...)) end
@@ -254,10 +249,10 @@ end
 local function parse_depends(s)
     local r = {}
     for _, tok in ipairs(parse_list(s)) do
-        local base, sub = tok:match("^([%w._%-]+)/([%w._%-]+)$")
-        if not base then base, sub = tok, "stdout" end
-        check_identifier(base, "depends=" .. tok)
-        r[#r + 1] = {base = base, sub = sub, raw = tok}
+        assertf(not tok:find("/"),
+            "depends=%s: depends= takes bare keys only; use subst=VAR->%s/<sub> for substitution", tok, tok)
+        check_identifier(tok, "depends=" .. tok)
+        r[#r + 1] = {base = tok}
     end
     return r
 end
@@ -266,40 +261,47 @@ local function parse_subst(s)
     local r = {}
     if not s then return r end
     for var, ref in s:gmatch("([%w_]+)%->([%w._%-/]+)") do
-        local base, sub = ref:match("^([%w._%-]+)/(.+)$")
-        if not base then base, sub = ref, "both" end
+        local base, sub, kind
+        -- Try K/SUB/path
+        base, sub = ref:match("^([%w_][%w_%-%.]*)/(.+)/path$")
+        if base then
+            assertf(not sub:match("^source/"),
+                "subst=%s->%s: K/source/REGION/path is not allowed", var, ref)
+            kind = "path"
+        else
+            -- Try K/SUB
+            base, sub = ref:match("^([%w_][%w_%-%.]*)/(.+)$")
+            if base then
+                kind = "contents"
+            else
+                base, sub = ref, nil
+                kind = "dirpath"
+            end
+        end
         check_identifier(base, "subst=" .. var .. "->" .. ref)
-        r[#r + 1] = {var = var, base = base, sub = sub, raw = ref}
+        r[#r + 1] = {var = var, base = base, sub = sub, kind = kind, raw = ref}
     end
     return r
 end
 
--- Substitute $K in body for K in deps' unique base keys, longest first.
--- A match must be followed by end-of-string or a non-key character so $foo
--- doesn't match the start of $foobar.
--- Emits the literal absolute path CACHE_DIR/hash so non-bash bodies can use
--- it directly without shell expansion. Bash bodies are unaffected (absolute
--- paths expand to themselves in any shell context).
-local function substitute(body, deps)
-    local seen, bases = {}, {}
-    for _, d in ipairs(deps) do
-        if not seen[d.base] then
-            seen[d.base] = true
-            bases[#bases + 1] = d.base
-        end
-    end
-    table.sort(bases, function(a, b) return #a > #b end)
+-- Substitute $VAR in body with abs_path for each {var, abs_path} pair.
+-- Longest var wins; match requires a non-word character (or end) after the var
+-- so $foo does not consume the start of $foobar.
+local function substitute(body, var_pairs)
+    local sorted_pairs = {}
+    for _, p in ipairs(var_pairs) do sorted_pairs[#sorted_pairs + 1] = p end
+    table.sort(sorted_pairs, function(a, b) return #a.var > #b.var end)
     local out, i, n = {}, 1, #body
     while i <= n do
         local c = body:sub(i, i)
         if c == "$" then
             local matched = false
-            for _, base in ipairs(bases) do
-                local len = #base
-                if body:sub(i + 1, i + len) == base then
+            for _, p in ipairs(sorted_pairs) do
+                local len = #p.var
+                if body:sub(i + 1, i + len) == p.var then
                     local nextc = body:sub(i + 1 + len, i + 1 + len)
                     if nextc == "" or not nextc:match("[%w._%-]") then
-                        out[#out + 1] = CACHE_DIR .. "/" .. keys[base]
+                        out[#out + 1] = p.abs_path
                         i = i + 1 + len
                         matched = true
                         break
@@ -380,10 +382,10 @@ local function extract_region(body, name, label)
     return (scan:sub(r.first, r.last):gsub("\n$", ""))
 end
 
-local function read_output(hash, sub, label)
-    consumed[hash .. "/" .. sub] = true
+local function read_output(key, sub, label)
+    consumed[key .. "/" .. sub] = true
     if deps_file then return "" end
-    local path = CACHE_DIR .. "/" .. hash .. "/" .. sub
+    local path = CACHE_DIR .. "/" .. key .. "/" .. sub
     local f = assert(io.open(path, "r"), label .. ": cannot open " .. path)
     local txt = f:read("a")
     f:close()
@@ -399,80 +401,123 @@ local function lang_from_classes(classes)
     return DEFAULT_LANG
 end
 
--- Ensure cache/<hash>/body.<ext> exists with the given content.
-local function write_body(hash, ext, content)
-    local dir = CACHE_DIR .. "/" .. hash
-    local path = dir .. "/body." .. ext
+local function write_idempotent(path, content)
     local f = io.open(path, "r")
-    if f then f:close(); return end
-    os.execute("mkdir -p '" .. dir .. "'")
+    if f then
+        local existing = f:read("a")
+        f:close()
+        if existing == content then return end
+    end
+    os.execute("mkdir -p '" .. path:match("(.*)/") .. "'")
     f = assert(io.open(path, "w"))
     f:write(content)
     f:close()
 end
 
-local function define_script(key, attr, body, classes)
-    assertf(not keys[key], "key=%s: duplicate definition", key)
+local function define_script(key, attr, body, classes, deps, subst)
+    assertf(not defined[key], "key=%s: duplicate definition", key)
     local out_list = parse_list(attr.outputs)
     for _, n in ipairs(out_list) do
         assertf(not RESERVED[n], "key=%s: outputs= cannot contain reserved name '%s'", key, n)
     end
-    local deps = parse_depends(attr.depends)
     for _, d in ipairs(deps) do
-        assertf(keys[d.base], "key=%s: depends=%s: '%s' not yet defined", key, d.raw, d.base)
-        local valid = (d.sub == "stdout" or d.sub == "stderr" or d.sub == "both")
-            or (outputs_t[d.base] and outputs_t[d.base][d.sub])
-        assertf(valid, "key=%s: depends=%s: '%s' has no output '%s'", key, d.raw, d.base, d.sub)
+        assertf(defined[d.base], "key=%s: depends=%s: '%s' not yet defined", key, d.base, d.base)
     end
-    -- Substitute dep paths and $_REPLACE_KEY before hashing and writing.
-    local resolved = substitute(body, deps)
+    -- Build path_pairs from path-form subst entries (kind == "dirpath" or "path").
+    -- Contents-form entries stay literal in the body; the runner will expand them at run time.
+    local path_pairs = {}
+    for _, p in ipairs(subst) do
+        if p.kind == "dirpath" then
+            assertf(defined[p.base], "key=%s: subst=%s->%s: '%s' not yet defined", key, p.var, p.raw, p.base)
+            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = CACHE_DIR .. "/" .. p.base }
+        elseif p.kind == "path" then
+            assertf(defined[p.base], "key=%s: subst=%s->%s: '%s' not yet defined", key, p.var, p.raw, p.base)
+            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = CACHE_DIR .. "/" .. p.base .. "/" .. p.sub }
+        end
+    end
+    local resolved = substitute(body, path_pairs)
     resolved = resolved:gsub("%$_REPLACE_KEY%f[%W]", function() return key end)
     local lang = lang_from_classes(classes)
     local info = LANG_INFO[lang]
-    local runner_content = get_runner_content(lang)
-    -- Hash includes both the resolved body and the runner so that runner
-    -- changes invalidate all cache entries that depend on it.
-    local hash = pandoc.utils.sha1(runner_content .. resolved)
-    keys[key] = hash
+    defined[key] = true
     outputs_t[key] = {}
     for _, n in ipairs(out_list) do outputs_t[key][n] = true end
     sources[key] = resolved
-    write_body(hash, info.ext, resolved)
-    if deps_file then emit_rule(key, hash, info, out_list, deps) end
+    write_idempotent(CACHE_DIR .. "/" .. key .. "/body." .. info.ext, resolved)
+    -- Write spec file for contents-form subst entries so the runner can expand them.
+    local contents_entries = {}
+    for _, p in ipairs(subst) do
+        if p.kind == "contents" then
+            contents_entries[#contents_entries + 1] = p
+        end
+    end
+    if #contents_entries > 0 then
+        table.sort(contents_entries, function(a, b) return a.var < b.var end)
+        local lines = {}
+        for _, p in ipairs(contents_entries) do
+            lines[#lines + 1] = p.var .. "=" .. CACHE_DIR .. "/" .. p.base .. "/" .. p.sub
+        end
+        write_idempotent(CACHE_DIR .. "/" .. key .. "/spec", table.concat(lines, "\n") .. "\n")
+    end
+    if deps_file then emit_rule(key, info, out_list, deps, subst, #contents_entries > 0) end
     return resolved
 end
 
 -- Emit a make rule. stdout is the primary target; stderr, both, and any
 -- declared artifacts are sibling targets that depend on the primary.
 -- (GNU Make 3.81 predates `&:` grouped-target syntax.)
-function emit_rule(key, hash, info, out_list, deps)
+function emit_rule(key, info, out_list, deps, subst, has_contents)
     local runner_path = info.runner
-    local body_path = "$(CACHE_DIR)/" .. hash .. "/body." .. info.ext
+    local body_path = "$(CACHE_DIR)/" .. key .. "/body." .. info.ext
     local prereqs = {runner_path, body_path}
-    for _, d in ipairs(deps) do
-        prereqs[#prereqs + 1] = "$(CACHE_DIR)/" .. keys[d.base] .. "/" .. d.sub
+    if has_contents then
+        prereqs[#prereqs + 1] = FILTER_DIR .. "/subst.lua"
+        prereqs[#prereqs + 1] = "$(CACHE_DIR)/" .. key .. "/spec"
     end
-    local primary = "$(CACHE_DIR)/" .. hash .. "/stdout"
+    -- Collect prereqs from depends= and subst=, deduplicating by path.
+    local seen_prereqs = {}
+    local function add_prereq(path)
+        if not seen_prereqs[path] then
+            seen_prereqs[path] = true
+            prereqs[#prereqs + 1] = path
+        end
+    end
+    for _, d in ipairs(deps) do
+        add_prereq("$(CACHE_DIR)/" .. d.base .. "/stdout")
+    end
+    for _, p in ipairs(subst) do
+        if p.kind == "dirpath" then
+            add_prereq("$(CACHE_DIR)/" .. p.base .. "/stdout")
+        elseif p.kind == "path" or p.kind == "contents" then
+            add_prereq("$(CACHE_DIR)/" .. p.base .. "/" .. p.sub)
+        end
+    end
+    local primary = "$(CACHE_DIR)/" .. key .. "/stdout"
     local siblings = {"stderr", "both"}
     for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
     local cmd = string.format("\t@_REPLACE_KEY=%s bash %s %s", key, runner_path, body_path)
     rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n" .. cmd
     for _, s in ipairs(siblings) do
-        rules[#rules + 1] = "$(CACHE_DIR)/" .. hash .. "/" .. s .. ": " .. primary
+        rules[#rules + 1] = "$(CACHE_DIR)/" .. key .. "/" .. s .. ": " .. primary
     end
 end
 
 -- Lazily define key and all its transitive depends= in DFS order.
 local function ensure_defined(key)
-    if keys[key] then return end
+    if defined[key] then return end
     assertf(not defining[key], "key=%s: dependency cycle", key)
     local p = pending[key]
     assertf(p, "key=%s: not defined", key)
     defining[key] = true
-    for _, d in ipairs(parse_depends(p.attr.depends)) do
+    for _, d in ipairs(p.deps) do
         ensure_defined(d.base)
     end
-    define_script(key, p.attr, p.body, p.classes)
+    for _, s in ipairs(p.subst) do
+        if s.kind ~= "contents" then
+            ensure_defined(s.base)
+        end
+    end
+    define_script(key, p.attr, p.body, p.classes, p.deps, p.subst)
     defining[key] = nil
 end
 
@@ -513,7 +558,14 @@ local render_source  -- forward declaration (render_source <-> cross_read mutual
 
 local function cross_read(K, thing, subst_spec, label)
     ensure_defined(K)
-    assertf(keys[K], "%s: key '%s' not defined", label, K)
+    assertf(defined[K], "%s: key '%s' not defined", label, K)
+    if thing == "path" then
+        return CACHE_DIR .. "/" .. K
+    end
+    local sub_path = thing:match("^(.+)/path$")
+    if sub_path then
+        return CACHE_DIR .. "/" .. K .. "/" .. sub_path
+    end
     if thing == "source" then
         assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
         return render_source(sources[K], nil, subst_spec, label)
@@ -524,11 +576,11 @@ local function cross_read(K, thing, subst_spec, label)
         return render_source(sources[K], region, subst_spec, label)
     end
     if thing == "stdout" or thing == "stderr" or thing == "both" then
-        return read_output(keys[K], thing, label)
+        return read_output(K, thing, label)
     end
     assertf(outputs_t[K] and outputs_t[K][thing],
         "%s: key '%s' has no artifact '%s'", label, K, thing)
-    return read_output(keys[K], thing, label)
+    return read_output(K, thing, label)
 end
 
 render_source = function(text, region, subst_spec, label)
@@ -536,20 +588,23 @@ render_source = function(text, region, subst_spec, label)
     if region or text:find("[#%-/]+%s*docs:begin") then
         text = extract_region(text, region, label)
     end
+    local pairs_list = {}
     for _, p in ipairs(subst_spec or {}) do
-        ensure_defined(p.base)
-        local val
-        if p.sub == "source" then
-            val = render_source(sources[p.base], nil, nil, label .. ": subst=" .. p.var)
-        elseif p.sub:sub(1, 7) == "source/" then
-            local r = p.sub:sub(8)
-            val = render_source(sources[p.base], r, nil, label .. ": subst=" .. p.var)
-        else
-            val = read_output(keys[p.base], p.sub, label .. ": subst=" .. p.var .. "->" .. p.raw)
+        if p.kind == "contents" then
+            ensure_defined(p.base)
+            local val
+            if p.sub == "source" then
+                val = render_source(sources[p.base], nil, nil, label .. ": subst=" .. p.var)
+            elseif p.sub:sub(1, 7) == "source/" then
+                local r = p.sub:sub(8)
+                val = render_source(sources[p.base], r, nil, label .. ": subst=" .. p.var)
+            else
+                val = read_output(p.base, p.sub, label .. ": subst=" .. p.var .. "->" .. p.raw)
+            end
+            pairs_list[#pairs_list + 1] = { var = p.var, value = val }
         end
-        text = text:gsub('%$' .. p.var .. '%f[%W]', function() return val end)
     end
-    return text
+    return subst.apply(text, pairs_list)
 end
 
 -- The filter uses two passes. Pass 1 (collect) uses pandoc.walk_block to
@@ -598,7 +653,7 @@ local function process_codeblock(el)
     end
     if kind == "stream" or kind == "artifact" then
         assertf(key, "%s: replace=%s requires key=", label, a)
-        el.text = read_output(keys[key], a, label)
+        el.text = read_output(key, a, label)
         force_fenced(el)
         return el
     end
@@ -703,7 +758,13 @@ local function collect_codeblock(b)
     if not is_enabled(b.attr.attributes) then return end
     check_identifier(key, "key=" .. key)
     assertf(not pending[key], "key=%s: duplicate definition", key)
-    pending[key] = { attr = b.attr.attributes, body = b.text, classes = b.classes }
+    pending[key] = {
+        attr    = b.attr.attributes,
+        body    = b.text,
+        classes = b.classes,
+        deps    = parse_depends(b.attr.attributes.depends),
+        subst   = parse_subst(b.attr.attributes.subst),
+    }
 end
 
 local function collect(blocks)

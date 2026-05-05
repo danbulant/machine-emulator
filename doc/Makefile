@@ -18,6 +18,7 @@ DEV_ENV_HAS_DOCGEN ?= no
 RECIPES_DIR ?= $(CURDIR)/recipes
 CACHE_DIR := $(RECIPES_DIR)/cache
 export RECIPES_DIR CACHE_DIR
+export LUA_PATH := $(CURDIR)/?.lua;$(LUA_PATH);;
 
 .PHONY: build-docs-image clean
 
