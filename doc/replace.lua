@@ -90,6 +90,7 @@
 --                         VAR->K          path-form: $VAR -> REPLACE_CACHE_DIR/K
 --                         VAR->K/SUB      contents-form: $VAR -> bytes of cache/<K>/SUB
 --                         VAR->K/SUB/path path-form: $VAR -> REPLACE_CACHE_DIR/K/SUB
+--                         K               shortcut for K->K (path-form)
 --                       Path-form entries are substituted in body.<ext> at dry-run
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by subst.lua at runner time (producing
@@ -260,7 +261,14 @@ end
 local function parse_subst(s)
     local r = {}
     if not s then return r end
-    for var, ref in s:gmatch("([%w_]+)%->([%w._%-/]+)") do
+    for tok in s:gmatch("[^,%s]+") do
+        local var, ref = tok:match("^([%w_]+)%->(.+)$")
+        if not var then
+            check_identifier(tok, "subst=" .. tok)
+            var, ref = tok, tok
+        end
+        assertf(ref:match("^[%w._%-/]+$"),
+            "subst=%s->%s: invalid characters in ref", var, ref)
         local base, sub, kind
         -- Try K/SUB/path
         base, sub = ref:match("^([%w_][%w_%-%.]*)/(.+)/path$")
