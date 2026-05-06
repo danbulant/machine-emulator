@@ -1003,42 +1003,43 @@ To read more about proofs, refer to [the blockchain perspective](../blockchain/h
 
 The `cartesi-machine` command-line utility, as used until now, has always instantiated its own local Cartesi Machine.
 However, it can also be used to control a remote Cartesi Machine.
-Remote Cartesi Machines are managed by the `remote-cartesi-machine` server.
-The server exposes a gRPC interface through which the `cartesi-machine` command-line utility (or any other software) can control the machine remotely.
+Remote Cartesi Machines are managed by the `cartesi-jsonrpc-machine` server.
+The server exposes a JSON-RPC interface through which the `cartesi-machine` command-line utility (or any other software) can control the machine remotely.
 
 To avoid confusion, it is best to run the server and client in separate shells in the playground container.
 Leaving the existing shell for the client, open a separate shell for the server (For example, by running `docker exec -it <container-name> /bin/bash`), then run
 ```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 ```
 The `--server-address=<address>` command-line option specifies the address and port the server will listen to.
 
 :::note
-In this case, since we selected `localhost:8080`, the client must run in the same container in order to communicate with the server.
+In this case, since we selected `127.0.0.1:8080`, the client must run in the same container in order to communicate with the server.
 To be accessible from outside the container, the `--server-address` option would have to refer to an address and port that were _exposed_ by the container.
 :::
 
-To instruct the `cartesi-machine` command-line utility to connect with the server, add the command-line option
-`--remote-address=<address>` to specify the remote server to connect to, and the `--checkin-address=<address>` option to specify an address the server will use to notify the client when it is ready.
+To instruct the `cartesi-machine` command-line utility to connect with the server, add the command-line option `--remote-address=<address>` to specify the remote server to connect to.
 The option `--remote-shutdown` causes the server to be shutdown by the client when the client exits.
 (Otherwise, the server will remain available for the next client.)
+The option `--remote-health-check` causes the client to connect to the server, confirm it is responsive, and exit without instantiating a machine.
 All other options work as before.
-Keep in mind that any image files referred to by an option passed to the command-line utility `cartesi-machine` must be accessible to the `remote-cartesi-machine` server (and not necessarily to the client).
+Keep in mind that any image files referred to by an option passed to the command-line utility `cartesi-machine` must be accessible to the `cartesi-jsonrpc-machine` server (and not necessarily to the client).
 Additionally, terminal output for the Cartesi Machine instantiated by the server will appear in the remote shell where the server was run (not the client's shell).
 Terminal input, when enabled, must also happen via the remote shell.
 
 With this in mind, running the command in the client shell
-```{.bash key=cmdline_remote outputs=server,client replace=source/client}
+```{.bash key=cmdline_remote outputs=server,client replace=source/client enabled=yes}
 srv_tmp=$(mktemp)
-remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 {
 # docs:begin client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8080 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
+    --remote-address=127.0.0.1:8080 \
     --remote-shutdown
 # docs:end client
 } > client 2>&1
@@ -1046,13 +1047,13 @@ wait "$srv_pid"
 mv "$srv_tmp" server
 ```
 produces the following output on the client shell
-```{replace=cmdline_remote/client}
+```{replace=cmdline_remote/client enabled=yes}
 ```
 and the following output on the server shell
-```{replace=cmdline_remote/server}
+```{replace=cmdline_remote/server enabled=yes}
 ```
 
-The client first binds to the check-in address, connects to the remote address, and prints out the version returned by the server.
+The client first connects to the remote address and prints out the version returned by the server.
 It then asks the server to instantiate a machine (by sending the configuration over) and run it.
 The machine that runs in the server prints out the splash screen, boots Linux, and cedes control to the
 Cartesi-provided `/sbin/init` script.
@@ -1063,20 +1064,21 @@ When it is desirable to leave the server running and preserve the instantiated m
 command-line option and add the `--no-remote-destroy`.
 For example, assuming the remote server has just been run:
 ```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 ```
 use the `cartesi-machine` command-line utility to instantiate and run a Cartesi Machine for 2^2O cycles:
-```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/begin-client}
+```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/begin-client enabled=yes depends=cmdline_remote}
 srv_tmp=$(mktemp)
-remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 {
 # docs:begin begin-client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8080 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
+    --remote-address=127.0.0.1:8080 \
     --no-remote-destroy \
     --max-mcycle=1Mi \
     -- echo "Still here!"
@@ -1085,8 +1087,7 @@ cartesi-machine \
 {
 # docs:begin end-client
 cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
+    --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
     --no-remote-create
 # docs:end end-client
@@ -1095,22 +1096,21 @@ wait "$srv_pid"
 mv "$srv_tmp" begin-end-server
 ```
 The client shell shows:
-```{replace=cmdline_remote_end/begin-client}
+```{replace=cmdline_remote_end/begin-client enabled=yes}
 ```
 To continue execution of the same Cartesi Machine until it ends, rather than instantiating a new one, use the `cartesi-machine` command-line utility with the option `--no-remote-create`:
-```{.bash replace=cmdline_remote_end/source/end-client}
+```{.bash replace=cmdline_remote_end/source/end-client enabled=yes}
 ```
 The client shell now shows:
-```{replace=cmdline_remote_end/end-client}
+```{replace=cmdline_remote_end/end-client enabled=yes}
 ```
 The server shell shows the execution of both sessions:
-```{replace=cmdline_remote_end/begin-end-server}
+```{replace=cmdline_remote_end/begin-end-server enabled=yes}
 ```
 
-Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can create a state _snapshot_ they can later _rollback_ to.
-Snapshots and rollbacks are the foundation on which the state inspection mechanism of Rolling Cartesi Machines is based, as well as the feature that enables the rejection of inputs to state advances.
-Both situations require the state of the Rolling Cartesi Machine to remain unchanged.
-Before Rolling Cartesi Machines were introduced, snapshots and rollbacks were used exclusively to enable efficient dispute resolution.
+Remote Cartesi Machines have one ability that local Cartesi Machines lack: they can be _forked_, producing a copy that runs forward independently in a child server while the original is preserved in the parent.
+Forks are the foundation on which the state inspection mechanism of Rolling Cartesi Machines is based, as well as the feature that enables the rejection of inputs to state advances.
+Both situations require the state of the Rolling Cartesi Machine to remain unchanged: the host runs the inspect or advance against a fork, then discards it.
 
 ### Rolling Cartesi Machines
 
