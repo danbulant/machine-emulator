@@ -830,7 +830,7 @@ Since the leaves have size 8 (for 64-bits), the valid values for `<log2_size>` a
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run subst=templates_store replace=source}
+```{.bash key=proofs_pristine_run subst=templates_store replace=source enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -838,48 +838,48 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof"
+    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof"
 # docs:end
 ```
-Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address `0x8000000000000000`.
-The input flash drive is therefore the second drive.
-It is automatically spaced by 2<sup>60</sup> bytes relative to the first drive, so that its starting address is `0x9000000000000000`.
+Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address `0x80000000000000`.
+The input NVRAM is therefore in the second slot.
+It is automatically spaced by 2<sup>52</sup> bytes relative to the first drive, so that its starting address is `0x90000000000000`.
 
 The output of the command is
-```{replace=proofs_pristine_run/both}
+```{replace=proofs_pristine_run/both enabled=yes}
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{key=proofs_pristine_json subst=templates_store replace=both}
+```{key=proofs_pristine_json subst=templates_store replace=both enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:0x9000000000000000,log2_size:12,filename:pristine-input-proof" \
+    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof" \
     > /dev/null 2>&1
 cat pristine-input-proof
 ```
-The `root_hash` value [...]{replace=templates_trunc_hash/stdout} is the expected initial state hash seen in the output of the `cartesi-machine` command.
-The `address` value `10376293541461622784` is the same as `0x9000000000000000` in decimal.
-The `log2_size` value `12` refers to the size of the 4KiB input drive.
-The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash/stdout} in the proof gives the hash of the input drive.
+The `root_hash` value [...]{replace=templates_trunc_hash/stdout enabled=yes} is the expected initial state hash seen in the output of the `cartesi-machine` command.
+The `address` value `40532396646334464` is the same as `0x90000000000000` in decimal.
+The `log2_size` value `12` refers to the size of the 4KiB input NVRAM.
+The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash/stdout enabled=yes} in the proof gives the hash of the input NVRAM.
 
-The hash of the input drive can be also computed externally with the `merkle-tree-hash` command-line utility.
+The hash of the input NVRAM can be also computed externally with the `cartesi-hash-tree-hash` command-line utility.
 The utility can produce the hash of any file with a power-of-2 size.
-The `--tree-log2-size=<log2_size>` option specifies the size.
+The `--log2-root-size=<log2_size>` option specifies the size.
 If an input file is smaller than the specified size, the utility assumes the missing data is composed entirely of bytes 0.
 The utility deals efficiently with zero paddings of any size because pristine hashes for all power-of-2 sizes can be precomputed.
 For example, to quickly generate the hash for a pristine input with 4KiB size, run
-```{.bash key=proofs_pristine_input_hash replace=source}
-head -c 0 | merkle-tree-hash --tree-log2-size=12
+```{.bash key=proofs_pristine_input_hash replace=source enabled=yes}
+head -c 0 | cartesi-hash-tree-hash --log2-root-size=12
 ```
-```{.bash key=proofs_pristine_input_trunc_hash subst=proofs_pristine_input_hash replace=null}
+```{.bash key=proofs_pristine_input_trunc_hash subst=proofs_pristine_input_hash replace=null enabled=yes}
 cat $proofs_pristine_input_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
-```{replace=proofs_pristine_input_hash/stdout}
+```{replace=proofs_pristine_input_hash/stdout enabled=yes}
 ```
 As expected, the hash values match.
 
@@ -890,20 +890,20 @@ Otherwise, something is amiss.
 (Incidentally, from the hash of its sibling, the last entry in `sibling_hashes`, it is possible to ascertain that the neighboring range to the input drive also contains 4KiB of bytes 0.)
 
 To compute the hash for the desired `input.raw` file with contents `6*2^1024 + 3*2^512\n`, padded with zeros, run
-```{.bash key=proofs_input_raw_hash replace=source}
-echo "6*2^1024 + 3*2^512" | merkle-tree-hash --tree-log2-size=12
+```{.bash key=proofs_input_raw_hash replace=source enabled=yes}
+echo "6*2^1024 + 3*2^512" | cartesi-hash-tree-hash --log2-root-size=12
 ```
-```{.bash key=proofs_input_raw_trunc_hash subst=proofs_input_raw_hash replace=null}
+```{.bash key=proofs_input_raw_trunc_hash subst=proofs_input_raw_hash replace=null enabled=yes}
 cat $proofs_input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
-```{replace=proofs_input_raw_hash/stdout}
+```{replace=proofs_input_raw_hash/stdout enabled=yes}
 ```
 
-Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout} of the template's pristine drive.
+Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout enabled=yes} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout enabled=yes} of the template's pristine NVRAM.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
-```{.bash key=proofs_input_json subst=templates_store replace=source}
+```{.bash key=proofs_input_json subst=templates_store replace=source enabled=yes}
 rm -f calculator-template
 rm -rf input-proof input.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -912,9 +912,9 @@ echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
     --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --initial-hash \
-    --initial-proof="address:0x9000000000000000,log2_size:12,filename:input-proof" \
+    --initial-proof="address:0x90000000000000,log2_size:12,filename:input-proof" \
     --max-mcycle=0
 # docs:end
 cat input-proof
@@ -922,21 +922,21 @@ cat input-proof
 
 The contents of the `input-proof` are
 
-```{replace=proofs_input_json/stdout}
+```{replace=proofs_input_json/stdout enabled=yes}
 ```
 
-```{.bash key=proofs_input_roothash subst=proofs_input_json replace=null}
+```{.bash key=proofs_input_roothash subst=proofs_input_json replace=null enabled=yes}
 cat $proofs_input_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
 ```
-The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout} differs from [...]{replace=templates_trunc_hash/stdout} obtained for template, as expected.
+The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout enabled=yes} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout enabled=yes} differs from [...]{replace=templates_trunc_hash/stdout enabled=yes} obtained for template, as expected.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=proofs_output_run outputs=output.raw subst=templates_store replace=source}
+```{.bash key=proofs_output_run outputs=output.raw subst=templates_store replace=source enabled=yes}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -946,19 +946,19 @@ echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
     --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
-    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
+    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof"
+    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof"
 # docs:end
 ```
 
 This produces the output
 
-```{replace=proofs_output_run/both}
+```{replace=proofs_output_run/both enabled=yes}
 ```
 The contents of the `output-proof` are
-```{key=proofs_output_json subst=templates_store replace=both}
+```{key=proofs_output_json subst=templates_store replace=both enabled=yes}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -967,31 +967,31 @@ echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
     --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
-    --replace-flash-drive="start:0xa000000000000000,length:1<<12,filename:output.raw,shared" \
+    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof" \
+    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof" \
     > /dev/null 2>&1
 cat output-proof
 ```
 
-```{.bash key=proofs_output_roothash subst=proofs_output_json replace=null}
+```{.bash key=proofs_output_roothash subst=proofs_output_json replace=null enabled=yes}
 cat $proofs_output_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
 ```
-Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash/stdout} output by the `cartesi-machine` command-line utility.
+Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash/stdout enabled=yes} output by the `cartesi-machine` command-line utility.
 
-To see that the `target_hash` field matches the `output.raw` drive, use the `merkle-tree-hash` command-line utility
-```{.bash key=proofs_output_raw_hash subst=proofs_output_run replace=source}
+To see that the `target_hash` field matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
+```{.bash key=proofs_output_raw_hash subst=proofs_output_run replace=source enabled=yes}
 rm -f output.raw
 ln -s "$proofs_output_run/output.raw" output.raw
 # docs:begin
-merkle-tree-hash --tree-log2-size=12 < output.raw
+cartesi-hash-tree-hash --log2-root-size=12 < output.raw
 # docs:end
 ```
 to obtain
-```{replace=proofs_output_raw_hash/stdout}
+```{replace=proofs_output_raw_hash/stdout enabled=yes}
 ```
 
 The `cartesi-machine` command-line utility accepts an arbitrary number of `--initial-proof` and `--final-proof` parameters.
@@ -5138,12 +5138,12 @@ The result is
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
-The `flash@8000000000000000` describes flash drive 0: a memory region of 60MiB, starting at address `0x8000000000000000`, under the control of the `mtd-ram` driver, with name `flash.0`.
-This will eventually become available as block device `/dev/mtdblock0`.
-The `rollup` section specifies the starts and lengths of all rollup memory ranges.
+The `pmem@80000000000000` describes flash drive 0: a memory region starting at address `0x80000000000000`, with compatible string `pmem-region`.
+This will eventually become available as `/dev/pmem0`.
+The `cmio` section specifies the starts and lengths of the CMIO memory ranges.
 The `yield` section specifies that the machine will process automatic and manual yields.
 Finally, section `chosen` includes the `bootargs` string that will be used as the kernel command-line parameters.
-Notice the specification of the root file-system pointing to `/dev/mtdblock0`, i.e., `flash.0`, and the `mtdparts` giving it the label `root`.
+Notice the specification of the root file-system as `root=/dev/pmem0` in the bootargs, and the `root` alias in `aliases` pointing to the `pmem` node.
 Also notice the command `dtc -I dtb -O dts /sys/firmware/fdt` coming directly from the `cartesi-machine` command line.
 
 Linux support for RISC-V is upstream in the [Linux kernel archives](https://www.kernel.org/).
