@@ -40,9 +40,9 @@
 --
 -- REQUIRED ENVIRONMENT
 --
---   CACHE_DIR  Absolute path to the cache directory (errors if unset).
---   FILTER_DIR Derived from debug.getinfo; runners and subst.lua live
---              alongside this filter file.
+--   REPLACE_CACHE_DIR  Absolute path to the cache directory (errors if unset).
+--   REPLACE_DIR Derived from PANDOC_SCRIPT_FILE; runners and subst.lua
+--              live alongside this filter file.
 --
 -- CACHE LAYOUT
 --
@@ -79,7 +79,7 @@
 --
 --   key=K               Defines block K. Body is its source.
 --                       K must match [a-zA-Z_][a-zA-Z0-9_]*; duplicates error.
---                       $_REPLACE_KEY is replaced with K before writing body.
+--                       $REPLACE_KEY is replaced with K before writing body.
 --
 --   depends=A,B,...     Only on key= blocks. Bare keys only (no K/sub).
 --                       Each K adds a make prereq on cache/<K>/stdout.
@@ -87,9 +87,9 @@
 --                       bind the same port). Use subst= when $K is in the body.
 --
 --   subst=VAR->REF,...  Path injection and contents substitution. REF forms:
---                         VAR->K          path-form: $VAR -> CACHE_DIR/K
+--                         VAR->K          path-form: $VAR -> REPLACE_CACHE_DIR/K
 --                         VAR->K/SUB      contents-form: $VAR -> bytes of cache/<K>/SUB
---                         VAR->K/SUB/path path-form: $VAR -> CACHE_DIR/K/SUB
+--                         VAR->K/SUB/path path-form: $VAR -> REPLACE_CACHE_DIR/K/SUB
 --                       Path-form entries are substituted in body.<ext> at dry-run
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by subst.lua at runner time (producing
@@ -197,15 +197,15 @@
 
 local deps_file
 local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
-local CACHE_DIR = os.getenv("CACHE_DIR") or error("CACHE_DIR not set")
+local REPLACE_CACHE_DIR = os.getenv("REPLACE_CACHE_DIR") or error("REPLACE_CACHE_DIR not set")
 
 -- Locate the directory containing this filter file; runners live alongside it.
-local FILTER_DIR = (debug.getinfo(1, "S").source:match("^@(.+)$") or "replace.lua"):match("(.+)/[^/]+$") or "."
+local REPLACE_DIR = PANDOC_SCRIPT_FILE:match("(.+)/[^/]+$") or "."
 local subst = require "subst"
 
 local LANG_INFO = {
-    bash = { ext = "sh",  runner = FILTER_DIR .. "/run-bash.sh" },
-    lua  = { ext = "lua", runner = FILTER_DIR .. "/run-lua.sh"  },
+    bash = { ext = "sh",  runner = REPLACE_DIR .. "/run-bash.sh" },
+    lua  = { ext = "lua", runner = REPLACE_DIR .. "/run-lua.sh"  },
 }
 local DEFAULT_LANG = "bash"
 
@@ -385,7 +385,7 @@ end
 local function read_output(key, sub, label)
     consumed[key .. "/" .. sub] = true
     if deps_file then return "" end
-    local path = CACHE_DIR .. "/" .. key .. "/" .. sub
+    local path = REPLACE_CACHE_DIR .. "/" .. key .. "/" .. sub
     local f = assert(io.open(path, "r"), label .. ": cannot open " .. path)
     local txt = f:read("a")
     f:close()
@@ -429,21 +429,21 @@ local function define_script(key, attr, body, classes, deps, subst)
     for _, p in ipairs(subst) do
         if p.kind == "dirpath" then
             assertf(defined[p.base], "key=%s: subst=%s->%s: '%s' not yet defined", key, p.var, p.raw, p.base)
-            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = CACHE_DIR .. "/" .. p.base }
+            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = REPLACE_CACHE_DIR .. "/" .. p.base }
         elseif p.kind == "path" then
             assertf(defined[p.base], "key=%s: subst=%s->%s: '%s' not yet defined", key, p.var, p.raw, p.base)
-            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = CACHE_DIR .. "/" .. p.base .. "/" .. p.sub }
+            path_pairs[#path_pairs + 1] = { var = p.var, abs_path = REPLACE_CACHE_DIR .. "/" .. p.base .. "/" .. p.sub }
         end
     end
     local resolved = substitute(body, path_pairs)
-    resolved = resolved:gsub("%$_REPLACE_KEY%f[%W]", function() return key end)
+    resolved = resolved:gsub("%$REPLACE_KEY%f[%W]", function() return key end)
     local lang = lang_from_classes(classes)
     local info = LANG_INFO[lang]
     defined[key] = true
     outputs_t[key] = {}
     for _, n in ipairs(out_list) do outputs_t[key][n] = true end
     sources[key] = resolved
-    write_idempotent(CACHE_DIR .. "/" .. key .. "/body." .. info.ext, resolved)
+    write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/body." .. info.ext, resolved)
     -- Write spec file for contents-form subst entries so the runner can expand them.
     local contents_entries = {}
     for _, p in ipairs(subst) do
@@ -455,9 +455,9 @@ local function define_script(key, attr, body, classes, deps, subst)
         table.sort(contents_entries, function(a, b) return a.var < b.var end)
         local lines = {}
         for _, p in ipairs(contents_entries) do
-            lines[#lines + 1] = p.var .. "=" .. CACHE_DIR .. "/" .. p.base .. "/" .. p.sub
+            lines[#lines + 1] = p.var .. "=" .. REPLACE_CACHE_DIR .. "/" .. p.base .. "/" .. p.sub
         end
-        write_idempotent(CACHE_DIR .. "/" .. key .. "/spec", table.concat(lines, "\n") .. "\n")
+        write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/spec", table.concat(lines, "\n") .. "\n")
     end
     if deps_file then emit_rule(key, info, out_list, deps, subst, #contents_entries > 0) end
     return resolved
@@ -468,11 +468,11 @@ end
 -- (GNU Make 3.81 predates `&:` grouped-target syntax.)
 function emit_rule(key, info, out_list, deps, subst, has_contents)
     local runner_path = info.runner
-    local body_path = "$(CACHE_DIR)/" .. key .. "/body." .. info.ext
+    local body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
     local prereqs = {runner_path, body_path}
     if has_contents then
-        prereqs[#prereqs + 1] = FILTER_DIR .. "/subst.lua"
-        prereqs[#prereqs + 1] = "$(CACHE_DIR)/" .. key .. "/spec"
+        prereqs[#prereqs + 1] = REPLACE_DIR .. "/subst.lua"
+        prereqs[#prereqs + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/spec"
     end
     -- Collect prereqs from depends= and subst=, deduplicating by path.
     local seen_prereqs = {}
@@ -483,22 +483,22 @@ function emit_rule(key, info, out_list, deps, subst, has_contents)
         end
     end
     for _, d in ipairs(deps) do
-        add_prereq("$(CACHE_DIR)/" .. d.base .. "/stdout")
+        add_prereq("$(REPLACE_CACHE_DIR)/" .. d.base .. "/stdout")
     end
     for _, p in ipairs(subst) do
         if p.kind == "dirpath" then
-            add_prereq("$(CACHE_DIR)/" .. p.base .. "/stdout")
+            add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/stdout")
         elseif p.kind == "path" or p.kind == "contents" then
-            add_prereq("$(CACHE_DIR)/" .. p.base .. "/" .. p.sub)
+            add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/" .. p.sub)
         end
     end
-    local primary = "$(CACHE_DIR)/" .. key .. "/stdout"
+    local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
     local siblings = {"stderr", "both"}
     for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
-    local cmd = string.format("\t@_REPLACE_KEY=%s bash %s %s", key, runner_path, body_path)
+    local cmd = string.format("\t@REPLACE_KEY=%s bash %s", key, runner_path)
     rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n" .. cmd
     for _, s in ipairs(siblings) do
-        rules[#rules + 1] = "$(CACHE_DIR)/" .. key .. "/" .. s .. ": " .. primary
+        rules[#rules + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/" .. s .. ": " .. primary
     end
 end
 
@@ -560,11 +560,11 @@ local function cross_read(K, thing, subst_spec, label)
     ensure_defined(K)
     assertf(defined[K], "%s: key '%s' not defined", label, K)
     if thing == "path" then
-        return CACHE_DIR .. "/" .. K
+        return REPLACE_CACHE_DIR .. "/" .. K
     end
     local sub_path = thing:match("^(.+)/path$")
     if sub_path then
-        return CACHE_DIR .. "/" .. K .. "/" .. sub_path
+        return REPLACE_CACHE_DIR .. "/" .. K .. "/" .. sub_path
     end
     if thing == "source" then
         assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)
@@ -743,7 +743,7 @@ local function emit_deps()
     local f = assert(io.open(deps_file, "w"))
     f:write("all:")
     for _, c in ipairs(sorted(consumed)) do
-        f:write(" $(CACHE_DIR)/" .. c)
+        f:write(" $(REPLACE_CACHE_DIR)/" .. c)
     end
     f:write("\n")
     for _, r in ipairs(rules) do

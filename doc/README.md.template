@@ -539,13 +539,11 @@ To obtain the state hash right before execution starts, use the command-line opt
 Conversely, to obtain the state hash right after execution is done, use the option `--final-hash`.
 For example,
 
-```{.bash key=state_hashes_limit_exec subst=cycles->cycles_limit_exec/stderr replace=null enabled=yes}
+```{.bash key=state_hashes_limit_exec subst=cycles->cycles_limit_exec/stderr replace=source enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --initial-hash \
     --final-hash
-```
-```{.bash replace=state_hashes_limit_exec/source subst=cycles->cycles_limit_exec/stderr enabled=yes}
 ```
 produces the output
 ```{replace=state_hashes_limit_exec/both enabled=yes}
@@ -580,12 +578,10 @@ Cryptographic hash functions, such as Keccak-256, were designed *specifically* t
 
 Allowing the machine to run until it halts
 
-```{.bash key=state_hashes_no_limit replace=null enabled=yes}
+```{.bash key=state_hashes_no_limit replace=source enabled=yes}
 cartesi-machine \
     --initial-hash \
     --final-hash
-```
-```{.bash replace=state_hashes_no_limit/source enabled=yes}
 ```
 produces instead the output
 ```{replace=state_hashes_no_limit/both enabled=yes}
@@ -718,7 +714,7 @@ The `bc` command-line utility is the perfect tool to evaluate the arithmetic exp
 The command passed to `cartesi-machine` below uses `readmmap` to read the contents of the input NVRAM, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result through `bc`, and uses `writemmap` to copy the result back into the output NVRAM.
 Here is the sample playground session
 
-```{.bash key=templates_run outputs=output.raw replace=null enabled=yes}
+```{.bash key=templates_run outputs=output.raw replace=source enabled=yes}
 trap 'rm -f input.raw' EXIT
 # docs:begin
 truncate -s 4K output.raw
@@ -729,8 +725,6 @@ cartesi-machine \
     --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
     -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
 # docs:end
-```
-```{.bash replace=templates_run/source enabled=yes}
 ```
 
 Using the `truncate` command-line utility, the session creates a 4KiB file `output.raw` containing only zeros to serve as the output drive image.
@@ -776,14 +770,12 @@ The result is as follows
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
 
-```{.bash key=templates_hash subst=templates_store->templates_store replace=null enabled=yes}
+```{.bash key=templates_hash subst=templates_store->templates_store replace=source enabled=yes}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
 cartesi-machine-stored-hash calculator-template/
 # docs:end
-```
-```{.bash replace=templates_hash/source enabled=yes}
 ```
 we can see from the output
 ```{replace=templates_hash/both enabled=yes}
@@ -911,7 +903,7 @@ to obtain
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout} of the template's pristine drive.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
-```{.bash key=proofs_input_json subst=templates_store->templates_store replace=null}
+```{.bash key=proofs_input_json subst=templates_store->templates_store replace=source}
 rm -f calculator-template
 rm -rf input-proof input.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -926,8 +918,6 @@ cartesi-machine \
     --max-mcycle=0
 # docs:end
 cat input-proof
-```
-```{.bash replace=proofs_input_json/source}
 ```
 
 The contents of the `input-proof` are
@@ -946,7 +936,7 @@ Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in th
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=proofs_output_run outputs=output.raw subst=templates_store->templates_store replace=null}
+```{.bash key=proofs_output_run outputs=output.raw subst=templates_store->templates_store replace=source}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -961,8 +951,6 @@ cartesi-machine \
     --final-hash \
     --final-proof="address:0xa000000000000000,log2_size:12,filename:output-proof"
 # docs:end
-```
-```{.bash replace=proofs_output_run/source}
 ```
 
 This produces the output

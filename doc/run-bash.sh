@@ -1,13 +1,14 @@
 #!/bin/bash
 set -euo pipefail
-FILTER_DIR="$(dirname "$(realpath "$0")")"
-cd "$(dirname "$1")"
-echo "$_REPLACE_KEY"
+: "${REPLACE_KEY:?}" "${REPLACE_CACHE_DIR:?}"
+REPLACE_DIR="$(dirname "$(realpath "$0")")"
+cd "$REPLACE_CACHE_DIR/$REPLACE_KEY"
+echo "$REPLACE_KEY"
 exec > >(tee stdout >> both) 2> >(tee stderr >> both)
 trap 'exec >&- 2>&-; wait' EXIT
 if [ -f spec ]; then
-    lua5.4 "$FILTER_DIR/subst.lua" "$(basename "$1")" body.run.sh
+    lua5.4 "$REPLACE_DIR/subst.lua" body.sh body.run.sh
     exec bash body.run.sh
 else
-    exec bash "$1"
+    exec bash body.sh
 fi

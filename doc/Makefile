@@ -16,8 +16,8 @@ endif
 
 DEV_ENV_HAS_DOCGEN ?= no
 RECIPES_DIR ?= $(CURDIR)/recipes
-CACHE_DIR := $(RECIPES_DIR)/cache
-export RECIPES_DIR CACHE_DIR
+REPLACE_CACHE_DIR := $(RECIPES_DIR)/cache
+export RECIPES_DIR REPLACE_CACHE_DIR
 export LUA_PATH := $(CURDIR)/?.lua;$(LUA_PATH);;
 
 .PHONY: build-docs-image clean
@@ -61,7 +61,7 @@ build-docs-image:
 README.md: README.md.template replace.lua alerts.lua
 	@if [ "$(DEV_ENV_HAS_DOCGEN)" = "yes" ]; then \
 		$(MAKE) -C recipes/ && \
-		CACHE_DIR=$(CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter replace.lua --lua-filter alerts.lua -M default-replace=false README.md.template -o README.md; \
+		REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) pandoc -f markdown -s -t gfm --toc --lua-filter replace.lua --lua-filter alerts.lua -M default-replace=false README.md.template -o README.md; \
 	else \
 		$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"; \
 	fi
