@@ -1533,7 +1533,7 @@ local options = {
             r.input_index_end = r.input_index_end or 0
             r.output = r.output or "input-%i-output-%o.bin"
             r.report = r.report or "input-%i-report-%o.bin"
-            r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hahes-root-hash.bin"
+            r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hashes-root-hash.bin"
             r.next_input_index = r.input_index_begin
             cmio_advance = r
             return true
