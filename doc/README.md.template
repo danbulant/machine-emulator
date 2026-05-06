@@ -76,7 +76,7 @@ The root file-system `rootfs.ext2` contains all the data files and programs that
 It is built by the [`cartesi/machine-rootfs-image`](https://github.com/cartesi/machine-rootfs-image) repository.
 The components of the target application can reside in the root file-system itself, or in their own, separate file-systems.
 The emulator can be instructed to execute whatever command is necessary to start the target application.
-For a complete description of the Cartesi Machine architecture and the boot process, see the documentation for [the target perspective](./target/index.md).
+For a complete description of the Cartesi Machine architecture and the boot process, see the documentation for [the target perspective](#the-target-perspective).
 
 There are two distinct modes of operation.
 In the first mode, a Cartesi Machine is initialized and tasked to run a target application until the machine _halts_.
@@ -325,7 +325,7 @@ When the `length` of a drive is specified, the `data_filename` parameter can be 
 In that case, the drive starts in a *pristine* state: i.e., filled with zeros.
 If, however, both `length` and `data_filename` are specified, then the `length` must exactly match the size of image file referred to by the `data_filename` parameter.
 
-The positioning of flash drives in the machine's address space has implications on certain operations, discussed in detail under [the blockchain perspective](../blockchain/hash.md), that involve the manipulation of hashes of the Cartesi Machine state.
+The positioning of flash drives in the machine's address space has implications on certain operations, discussed in detail under [the blockchain perspective](#hash-view-of-state), that involve the manipulation of hashes of the Cartesi Machine state.
 
 The preferred file-system type is `ext2`.
 This is because `ext2` image files can be easily created with the `genext2fs` command-line utility (available in Ubuntu as its own package), and manipulated with `e2ls`, `e2cp`, `e2rm`, etc (command-line utilities available in Ubuntu from the `e2tools` package).
@@ -488,7 +488,7 @@ produces the output
 ```
 Note the execution was interrupted before the splash screen was even completed.
 
-The ability to limit computation to an arbitrary number of cycles is fundamental to the verifiability of Cartesi Machines, as is explained in detail under the [blockchain perspective](../blockchain/vg.md).
+The ability to limit computation to an arbitrary number of cycles is fundamental to the verifiability of Cartesi Machines, as is explained in detail under the [blockchain perspective](#verification-game).
 
 ### Progress feedback
 
@@ -524,14 +524,14 @@ This feature is most useful when the emulator is controlled programmatically, vi
 In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
 Its handling by `cartesi-machine`, which does have access to the console, is simply to help with prototyping and debugging.
 
-The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](../target/architecture.md).
+The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](#system-architecture).
 In particular, the section explains the _manual_ yield commands needed for proper operation of Cartesi Rollups.
 
 ### State hashes
 
 The `cartesi-machine` utility can also be used to print Cartesi Machine state hashes.
 State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
-(See the [Hash view of states](../blockchain/hash.md) for an explanation of Merkle trees.)
+(See the [Hash view of states](#hash-view-of-state) for an explanation of Merkle trees.)
 Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM and ROM, of all flash drives, and of all other devices connected to the board.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
@@ -695,7 +695,7 @@ elevated permissions.
 Cartesi Machine templates are machines in which the contents of one or more flash drives are still unknown.
 To put it another way, Cartesi Machine templates behave like functions whose parameters are the yet-to-be-defined contents of one or more flash drives.
 
-As discussed in detail under [the blockchain perspective](../blockchain/hash.md), starting from template hashes, the hashes of the flash drives, and a small amount of [additional information](#sibling-hashes), it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
+As discussed in detail under [the blockchain perspective](#hash-view-of-state), starting from template hashes, the hashes of the flash drives, and a small amount of [additional information](#sibling-hashes), it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
 This is how a smart contract can specify a computation to be performed off-chain over arbitrary input.
 Starting from the template hash, and in possession of the flash drive hashes, it instantiates the template, generating the initial state hash for the corresponding Cartesi Machine.
 
@@ -884,7 +884,7 @@ to obtain
 As expected, the hash values match.
 
 The <a name="sibling-hashes"> `sibling_hashes` </a> array contains the hashes of the siblings to all nodes in the path from the root all the way down to the target node (excluding the root, which has no sibling).
-In a process explained in the [blockchain perspective](../blockchain/hash.md), using the `address` field, the `target_hash` hash, and the `sibling_hashes` array, it is possible to go up the tree computing the hashes along the path, until the root hash is produced.
+In a process explained in the [blockchain perspective](#hash-view-of-state), using the `address` field, the `target_hash` hash, and the `sibling_hashes` array, it is possible to go up the tree computing the hashes along the path, until the root hash is produced.
 If the root hash obtained by this process matches the expected root hash, the proof is valid.
 Otherwise, something is amiss.
 (Incidentally, from the hash of its sibling, the last entry in `sibling_hashes`, it is possible to ascertain that the neighboring range to the input drive also contains 4KiB of bytes 0.)
@@ -997,7 +997,7 @@ to obtain
 The `cartesi-machine` command-line utility accepts an arbitrary number of `--initial-proof` and `--final-proof` parameters.
 They are computed one-by-one, and either printed or stored in the specified files, as requested.
 
-To read more about proofs, refer to [the blockchain perspective](../blockchain/hash.md).
+To read more about proofs, refer to [the blockchain perspective](#hash-view-of-state).
 
 ### Remote Cartesi Machines
 
@@ -1632,7 +1632,7 @@ The output is
 
 To clear the kernel command-line, use the option `--no-rom-bootargs`.
 Notice that, without any options, the machine will not operate properly.
-In particular, as explained under the [Lua interface](../host/lua.md), flash-drives use kernel command-line arguments.
+In particular, as explained under the [Lua interface](#lua-interface), flash-drives use kernel command-line arguments.
 For example, running the `cartesi-machine` command-line utility with no arguments produces a kernel command-line
 equivalent to running the command
 
@@ -1681,7 +1681,7 @@ Every other byte in the address space has value 0.
 This is useful to inspect the entire state of the machine from outside the emulator.
 
 The command-line options `--store-config` and `--load-config` store or load a file with information that can be used to initialize the exact same Cartesi Machine that the `cartesi-machine` command-line utility will use.
-The format of these configuration files is explained in detail under the [Lua interface](../host/lua.md) to Cartesi Machines.
+The format of these configuration files is explained in detail under the [Lua interface](#lua-interface) to Cartesi Machines.
 In particular,  the `--store-config` option, without arguments, dumps to screen all the options used to define the Cartesi Machine.
 This information can be very useful when debugging problems.
 
@@ -1689,7 +1689,7 @@ The remaining options in the command-line utility `cartesi-machine` are mostly u
 As such, they require some context.
 
 During verification, the blockchain mediates a *verification game* between the disputing parties.
-This process is explained in detail under the [the blockchain perspective](../blockchain/vg.md).
+This process is explained in detail under the [the blockchain perspective](#verification-game).
 In a nutshell, both parties started from a Cartesi Machine that has a known and agreed upon initial state hash.
 (E.g., an agreed upon template that was instantiated with an agreed upon input drive.)
 At the end of the computation, these parties now disagree on the state hash for the halted machine.
@@ -1725,7 +1725,7 @@ It is used by internal integration tests that verify the consistency between the
 Needless to say, even for brief computations, the resulting log files can be *very* large.
 
 The `--rollup` command-line option sets the `--htif-yield-automatic` and `--htif-yield-manual` options for the `/dev/yield` device.
-See the [target perspective](../target/architecture.md) for details on automatic and manual yield commands and how they are used by Cartesi Rollups.
+See the [target perspective](#system-architecture) for details on automatic and manual yield commands and how they are used by Cartesi Rollups.
 The `--rollup` option also configures a variety of memory ranges used by the `/dev/rollup` device.
 There are five memory ranges: _rollup-rx-buffer_, _rollup-input-metadata_, _rollup-tx-buffer_, _rollup-voucher-hashes_, and _rollup-notice-hashes_.
 The values implied by the `--rollup` command-line option are `--rollup-rx-buffer=start:0x60000000,length:2<<20`, `--rollup-tx-buffer=start:0x60200000,length:2<<20`, `--rollup-input-metadata=start:0x60400000,length:4096`, `--rollup-voucher-hashes=start:0x60600000,length:2<<20`, and `--rollup-notice-hashes=start:0x60800000,length:2<<20`.
@@ -1935,12 +1935,12 @@ For example, the input payload to an advance-state request and the query payload
 Conversely, vouchers, notices, reports, and exceptions are written to the `tx_buffer` memory range.
 The input metadata for advance-state requests are written to the `input_metadata` memory range.
 The `voucher_hashes` and `notice_hashes` memory ranges are arrays on which the hash of each voucher or notice emitted during processing of an advance-state are appended, respectively.
-For more details on how exactly these memory ranges are used, please read the [architecture section](../target/architecture.md) under the target perspective.
+For more details on how exactly these memory ranges are used, please read the [architecture section](#system-architecture) under the target perspective.
 
 The remaining entries in the `machine_config` are used only in rare occasions.
 The devices and processor have a variety of control and status registers (CSRs), in addition to processor's general-purpose registers.
 Most of these are defined in volumes [1 and 2](https://riscv.org/technical/specifications/) of the  ISA specification.
-The Cartesi-specific additions are described under the [architecture section](../target/architecture.md) under the target perspective.
+The Cartesi-specific additions are described under the [architecture section](#system-architecture) under the target perspective.
 
 The <a href="#clint_config">`clint`</a> entry has a single field, `mtimecmp`, which allows for the overriding of the default initial value of this CSR.
 Similarly, the fields in the <a href="#processor_config">`processor`</a> entry allow for the overriding of the default initial value of all general-purpose registers and CSRs in the processor.
@@ -1948,7 +1948,7 @@ Similarly, the fields in the <a href="#processor_config">`processor`</a> entry a
 ### Configuration from command-line
 
 The `cartesi-machine` command-line utility can be used to output machine configurations for Cartesi Machines that can be used directly by the Lua `cartesi.machine` constructor.
-Recall from an [earlier example](./cmdline.md#initialization) that the `cartesi-machine` command
+Recall from an [earlier example](#initialization) that the `cartesi-machine` command
 
 ```bash
 cartesi-machine \
@@ -2041,7 +2041,7 @@ The Cartesi-provided `/sbin/init` then uses this information to run the desired 
 
 Recall the command-line utility can also run Cartesi Machines with additional drives.
 In that case, the resulting configuration automatically includes an entry for them in the `mtdparts` kernel command-line argument.
-Repeating another [earlier example](./cmdline.md#flash-drives)
+Repeating another [earlier example](#flash-drives)
 ```{.bash replace=foo_ext2/source}
 ```
 ```bash
@@ -2341,7 +2341,7 @@ However, it needs a mechanism to communicate its progress back to the program co
 
 The command-line utility `/opt/cartesi/bin/yield` can be used for this purpose.
 Internally, the tool uses an `ioctl` system-call on the Cartesi-specific `/dev/yield` device.
-The protocols followed by the `/opt/cartesi/bin/yield` utility to interact with the `/dev/yield` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [target perspective](../target/architecture.md).
+The protocols followed by the `/opt/cartesi/bin/yield` utility to interact with the `/dev/yield` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [target perspective](#system-architecture).
 The focus here is on its effect on the host program controlling the emulator.
 
 A Cartesi Machine can be configured to accept HTIF yield automatic commands by means of the `htif.yield_automatic` Boolean field in the machine configuration.
@@ -2426,7 +2426,7 @@ which uses an equivalent mechanism for progress reports.
 
 ### Cartesi Machine templates
 
-Recall that, to instantiate a [Cartesi Machine template](./cmdline.md#cartesi-machine-templates), we first replace its flash drive place-holders with their actual content.
+Recall that, to instantiate a [Cartesi Machine template](#cartesi-machine-templates), we first replace its flash drive place-holders with their actual content.
 After that, we can run the resulting machine.
 To save the simple calculator template into directory `"calculator-template"`, we ran:
 ```bash
@@ -2608,7 +2608,7 @@ The selected data *must* reside entirely inside a single memory range (i.e., it 
 
 There are also methods for reading individual registers.
 Most registers are part of the [RISC-V ISA](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf), and its [privileged architecture](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf).
-Cartesi-specific registers are described under the target perspective sections that cover the [processor](../target/architecture.md#the-processor) and [board](../target/architecture.md#the-board) of the Cartesi Machine architecture.
+Cartesi-specific registers are described under the target perspective sections that cover the [processor](#the-processor) and [board](#the-board) of the Cartesi Machine architecture.
 
 The method `machine:read_x(<index>)`, where `<index>` is in 0&hellip;31 returns the value of one of the 32 general-purpose processor registers.
 
@@ -3055,14 +3055,14 @@ Finally, hashes for vouchers and notices produced in response to advance-state r
 Data in the input-metadata memory range consists of the following fields: a _message sender_ (an EVM address), a _block-number_, a _timestamp_ (seconds since the _Unix epoch_), the rollup _epoch index_, and the rollup _input index_.
 All entries are 256-bit big-endian unsigned integers.
 In practice, only the least-significant 20 bytes are used for the message sender address, and only the least-significant 8 bytes, or 64-bits, are used for the remaining number entries.
-(See the table in the target perspective [architecture](../target/architecture.md#rollup-format).)
+(See the table in the target perspective [architecture](#rollup-format).)
 
 Data for the input to an advance-state request, the query to an inspect-state request, exceptions, notices, and reports are all encoded in the same way: a 256-bit _offset_ field (with value 32), then a 256-bit _length_ field, directly followed by payload with _length_ bytes.
 The offset and length fields are encoded as 256-bit big-endian unsigned integers.
 Data for vouchers start with an _address_ field (an EVM address, again as the least-significant 20 bytes in a 256-bit big-endian unsigned integer) and then continue just like the others: and _offset_ field (this time with value 64), then a 256-bit _length_ field, directly followed by payload with _length_ bytes.
-(See the table in the target perspective [architecture](../target/architecture.md#rollup-format).)
+(See the table in the target perspective [architecture](#rollup-format).)
 
-The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (We will use the server calculator [example](./cmdline.md#rolling-cartesi-machine-templates):
+The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (We will use the server calculator [example](#rolling-cartesi-machine-templates):
 
 ```{.lua title="run-rolling-calculator.lua"}
 -- No need to load the Cartesi module
@@ -3261,7 +3261,7 @@ input; expected '[', '{', or a literal
 ### State transition proofs
 
 During verification, the blockchain mediates a *verification game* between the disputing parties.
-This process is explained in detail under [the blockchain perspective](../blockchain/vg.md).
+This process is explained in detail under [the blockchain perspective](#verification-game).
 In a nutshell, both parties started from a Cartesi Machine that has a known and agreed upon initial state hash.
 (E.g., an agreed upon template that was instantiated with an agreed upon input drive.)
 At the end of the computation, these parties now disagree on the state hash for the halted machine.
@@ -3651,7 +3651,7 @@ Since there are many more application developers than system developers, we cate
 ## Linux environment
 
 :::note
-[The host perspective](../host/index.md) section describes in detail the `cartesi-machine` command-line utility and the general structure of Cartesi Machines.
+[The host perspective](#the-host-perspective) section describes in detail the `cartesi-machine` command-line utility and the general structure of Cartesi Machines.
 In order to avoid repetition, this section assumes familiarity with the material presented there.
 :::
 
@@ -4891,7 +4891,7 @@ When an application identifies an inspect-state request, it obtains the query fr
 While processing inspect-state requests, the application can emit vouchers, or exceptions.
 It writes data for all these to the Rollup TX buffer memory range and sends the appropriate command to the HTIF yield device.
 
-The format for all these request and response data are as follows: <a title="#rollup-format"></a>
+The format for all these request and response data are as follows: <a name="rollup-format"></a>
 
 <center>
 <table>
@@ -5191,7 +5191,7 @@ The key to solving these seemingly contradictory goals is the clever use of cryp
 Cartesi Machines are transparent in the sense that their entire state is exposed for external inspection.
 This includes the ROM, the RAM, all flash drives, general purpose registers, control and status registers, and even the internal state of all devices.
 In fact, the entire machine state is mapped into the 64-bit physical memory address space of the Cartesi Machine.
-(The exact mapping is given in the [system architecture](../target/architecture.md) section of the target perspective.)
+(The exact mapping is given in the [system architecture](#system-architecture) section of the target perspective.)
 This means that, right before a machine is executed, a cryptographic hash of its entire state can be generated.
 A cryptographic hash of the state of a Cartesi Machine &ldquo;completely&rdquo; specifies the computation it is about to perform.
 This is because a given state always evolve in exactly the same way (because Cartesi Machines are self-contained and reproducible) and it is infeasible to find a different machine state that produces the same cryptographic state hash.
@@ -5216,7 +5216,7 @@ In the command-line, the options `--initial-hash` and `--final-hash` of the `car
 
 The `cartesi.keccak(<word>)` function of the `cartesi` Lua module returns the hash of a 64-bit `<word>`.
 The `cartesi.keccak(<hash1>, <hash2>)` overload returns the hash of the concatenation of `<hash1>` and `<hash2>`.
-In theory, the Merkle tree of the entire machine state could be built from these primitives and [external state access](../host/lua.md#external-state-access) to the machine instance.
+In theory, the Merkle tree of the entire machine state could be built from these primitives and [external state access](#external-state-access) to the machine instance.
 In practice, most of the state is unused and implicitly filled with zeros, and this allows the Merkle tree computation to skip large swaths of the state by using precomputed pristine hashes of all power-of-2 sizes.
 The computation is also smart enough to only update the parts of the tree that changed between invocations.
 
@@ -5244,7 +5244,7 @@ This must match the value *M* known to the smart contract.
 In fact, due to the properties of cryptographic hashes, it is infeasible for the label so obtained to match *M* *unless all the data provided is true*.
 
 The data needed for the proofs can be produced by the `machine:get_proof(<address>, <log2-size>)` method of a Cartesi Machine instance.
-The contents of the proof returned are described in the [host perspective](../host/lua.md#state-value-proofs).
+The contents of the proof returned are described in the [host perspective](#state-value-proofs-1).
 The same section gives the source-code for a simple function, `roll_hash_up(<proof>, <target-hash>)`,  that implements the process described above.
 Here, `<proof>` is the structure returned by the `machine:get_proof()` method.
 The source-code is repeated below for convenience.
@@ -5312,7 +5312,7 @@ The resulting root hash is the hash of a tree with the old node replaced by the 
 #### Template instantiation
 
 The most important use for the splicing operation is template instantiation.
-From the blockchain perspective, a [Cartesi Machine template](../host/cmdline.md#cartesi-machine-templates) is simply a state hash *M*.
+From the blockchain perspective, a [Cartesi Machine template](#cartesi-machine-templates) is simply a state hash *M*.
 Instantiating the Cartesi Machine with a given input is simply the process of obtaining the state hash *M'* that results from replacing one or more of its input flash drives.
 Each replacement is the result of a splicing operation as described above.
 The splicing operation is particularly convenient if the flash drive length is a power of 2, and its start is aligned according to its length.
