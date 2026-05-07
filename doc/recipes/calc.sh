@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+set -o pipefail
 
 reqfile=$(mktemp /tmp/calc.XXXXXX)
 status="accept"
@@ -10,11 +11,14 @@ do
   if [ "$request_type" = "advance_state" ];
   then
     jq -j '.data.payload' < "$reqfile" | \
-      bc | \
-        tr -d '\\\n' | \
-          jq -R '{ payload: . }' | \
-            rollup notice > /dev/null && \
-              status="accept"
+      hex --decode | \
+        bc | \
+          grep . | \
+            tr -d '\\\n' | \
+              hex --encode | \
+                jq -R '{ payload: . }' | \
+                  rollup notice > /dev/null && \
+                    status="accept"
   fi
 done
 rm "$reqfile"

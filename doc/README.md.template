@@ -1121,53 +1121,51 @@ Nevertheless, in debugging or prototyping tasks, the `cartesi-machine` command-l
 To use this functionality, the developer creates a sequence of advance-state requests as numbered files, or a single inspect-state request as a file, and instructs the `cartesi-machine` command-line utility to feed them to the target application.
 As each request is processed, the utility stores the responses as separate files.
 
-An advance-state request is composed by _input metadata_ and an _input_.
-The input metadata include a variety of fields that are important for the operation of Cartesi Rollups (_message sender_, _block number_, _timestamp_, _epoch index_, _input index_).
-The input contains only an application-specific payload.
+An advance-state request is a single ABI-encoded `EvmAdvance` payload carrying the fields important for the operation of Cartesi Rollups (_chain id_, _application contract_, _message sender_, _block number_, _block timestamp_, _previous randao_, _input index_, and _input payload_).
 Recall that, as responses, the target application can issue _vouchers_, _notices_, _reports_, and _exceptions_.
-In contrast, an inspect state request carries only a _query_ and, as response, produces only reports and exceptions.
-Like the input to an advance-state request, the query in an inspect-state request consists of an application-specific payload.
+In contrast, an inspect-state request carries only a _query_ and, as response, produces only reports and exceptions.
+The query in an inspect-state request consists of an application-specific payload.
 
-Target applications running inside Rolling Cartesi Machines communicate with the outside world using the Cartesi-specific `/dev/rollup` Linux device.
+Target applications running inside Rolling Cartesi Machines communicate with the outside world using the Cartesi-specific `/dev/cmio` Linux device.
 The device can be accessed directly, via `ioctl` calls to the driver, via the `/opt/cartesi/bin/rollup` command-line utility, or by means of an HTTP service.
-The `/dev/rollup` device owns a number of memory ranges that are used to pass data in and out of the machine, and uses the `/dev/yield` device to return control to the host and notify it of important events.
+The `/dev/cmio` device owns an rx buffer and a tx buffer that are used to pass data in and out of the machine, and uses the `/dev/yield` device to return control to the host and notify it of important events.
 
 In a nutshell, the process is as follows.
-When the target application attempts to obtain the next request from the device, the `/dev/rollup` device uses the `/dev/yield` device to issue a _manual_ yield command returns control to the host (in our case, the `cartesi-machine` command-line utility).
-The host then copies the next request to the appropriate memory ranges and resumes the machine, so the device can pass the request over to the target application for processing.
-When the target application asks the device to output data (a voucher, notice, report, or exception), the `/dev/rollup` device copies the data to the appropriate memory ranges, then uses the `/dev/yield` device to issue an _automatic_ yield command that notifies the host that a new output is available.
+When the target application attempts to obtain the next request from the device, the `/dev/cmio` device uses the `/dev/yield` device to issue a _manual_ yield command that returns control to the host (in our case, the `cartesi-machine` command-line utility).
+The host then copies the next request to the rx buffer and resumes the machine, so the device can pass the request over to the target application for processing.
+When the target application asks the device to output data (a voucher, notice, report, or exception), the `/dev/cmio` device copies the data to the tx buffer, then uses the `/dev/yield` device to issue an _automatic_ yield command that notifies the host that a new output is available.
 The host can then collect the output (in our case, saving it to files or printing it to the terminal) and resume the machine so the target application can continue processing the request.
 
-When debugging production code, developers can obtain from Cartesi Rollups, as files, the input metadata and input associated to each advance-state request, so the sequence can be replayed locally in the command line.
+To help debugging applications, developers can obtain from Cartesi Rollups, as files, the inputs associated to each advance-state request, so the sequence can be replayed locally in the command line.
 When prototyping, developers can create their own files simulating requests that test the behavior of their target application under customized conditions.
 
 #### Encoding requests
 
-The `rollup-memory-range` command-line utility can encode input metadata, inputs, queries, vouchers, notices, and reports to files.
-For example, the following commands create the input metadata and input files for two distinct advance-state requests
-(saved as `epoch-0-input-metadata-0.bin`, `epoch-0-input-0.bin`, `epoch-0-input-metadata-1.bin`, and `epoch-0-input-1.bin`), and one query for an inspect state request (saved as `query.bin`):
+The `cartesi-rollup-data.lua` command-line utility, available in the `cartesi/machine-emulator-docs` Docker image, can encode advance-state requests and inspect-state queries to files, and decode vouchers, notices, reports, exceptions, and delegate-call vouchers from files.
+For example, the following commands create the input files for two distinct advance-state requests
+(saved as `input-1.bin` and `input-2.bin`), and one query for an inspect-state request (saved as `query.bin`):
 
 
-```{.bash key=rolling_ioctl_echo_loop subst=rolling_ioctl_echo_loop_encode outputs=server,client replace=null}
+```{.bash key=rolling_ioctl_echo_loop subst=rolling_ioctl_echo_loop_encode outputs=server,client replace=null enabled=yes}
 ln -s $rolling_ioctl_echo_loop_encode/*.bin .
 srv_tmp=$(mktemp)
 {
 # docs:begin server
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 # docs:end server
 } > "$srv_tmp" 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 {
 # docs:begin client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8080 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
+    --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
-    --rollup \
-    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
-    --rollup-inspect-state \
+    --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
+    --cmio-inspect-state \
     -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1
 # docs:end client
 } > client 2>&1
@@ -1175,38 +1173,36 @@ wait "$srv_pid"
 mv "$srv_tmp" server
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_encode replace=source}
+```{.bash key=rolling_ioctl_echo_loop_encode replace=source enabled=yes}
 for i in 1 2; do
-    rollup-memory-range encode input-metadata > epoch-0-input-metadata-$i.bin <<-EOF
-    {
-        "msg_sender": $(printf '"0x%040d"' $i),
-        "block_number": 0,
-        "time_stamp": 0,
-        "epoch_index": 0,
-        "input_index": $i
-    }
-EOF
-    rollup-memory-range encode input > epoch-0-input-$i.bin <<-EOF
-    {
-        "payload": "hello from input $i!"
-    }
+    cartesi-rollup-data.lua encode advance > input-$i.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' $i)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": $i,
+  "payload": "$(printf 'hello from input %d!' $i | hex --encode)"
+}
 EOF
 done
-rollup-memory-range encode input > query.bin <<-EOF
+cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 {
-    "payload": "hello from query!"
+  "payload": "$(printf 'hello from query!' | hex --encode)"
 }
 EOF
 ```
 Listing the files created
-```{.bash key=rolling_ioctl_echo_loop_encoded_bins subst=rolling_ioctl_echo_loop replace=source}
+```{.bash key=rolling_ioctl_echo_loop_encoded_bins subst=rolling_ioctl_echo_loop replace=source enabled=yes}
 ln -s $rolling_ioctl_echo_loop/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
 ```
 We see
-```{.bash key=encoded_bins_ls replace=rolling_ioctl_echo_loop_encoded_bins/stdout}
+```{.bash key=encoded_bins_ls replace=rolling_ioctl_echo_loop_encoded_bins/stdout enabled=yes}
 ```
 
 #### Running a simple target application
@@ -1214,160 +1210,138 @@ We see
 The command-line utility `/opt/cartesi/bin/ioctl-echo-loop`, pre-installed in the root file-system `rootfs.ext2`, is a simple Rolling Cartesi Machine application that merely outputs (as vouchers, notices, or reports) the payload it receives as the input to advance-state or query to inspect-state.
 It is perfect to showcase the input-output mechanism.
 
-Since Rolling Cartesi Machines rely on the snapshot/rollback functionality of Remote Cartesi Machines, running a Rolling Cartesi Machine in the command line requires using the `remote-cartesi-machine` server in combination with the `cartesi-machine` client.
-With the files just created by `rollup-memory-ranges` in the working directory, run the remote server with the command
-```{.bash replace=rolling_ioctl_echo_loop/source/server}
+Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
+The server provides the fork functionality the client uses to roll the machine state back when an input is rejected.
+With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
+```{.bash replace=rolling_ioctl_echo_loop/source/server enabled=yes}
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```{.bash replace=rolling_ioctl_echo_loop/source/client}
+```{.bash replace=rolling_ioctl_echo_loop/source/client enabled=yes}
 ```
 
-The command-line option `--rollup` is a shortcut that combines a variety of settings needed by the Rolling Cartesi Machine functionality.
-The command-line option `--rollup-advance-state` instructs the utility to look for input metadata and input files to use in a sequence of advance-state requests.
-By default, the name of the input metadata and input files are `epoch-%e-input-metadata-%i.bin` and `epoch-%e-input-%i.bin`, respectively, where `%e` is replaced by the epoch index and `%i` by the input index.
-The epoch index is given by the parameter `epoch_index=<number>`, and the input index progressively takes the values in the (open ended) range given by parameters `input_index_begin=<number>` and `input_index_end=<number>`.
-In the example, two advance-state requests will be performed for epoch 0: one for input 1 and one for input 2.
+The command-line option `--cmio-advance-state` instructs the utility to look for input files to use in a sequence of advance-state requests.
+By default, the input file name is `input-%i.bin`, where `%i` is replaced by the input index.
+The input index progressively takes the values in the (open ended) range given by parameters `input_index_begin=<number>` and `input_index_end=<number>`.
+In the example, two advance-state requests will be performed: one for input 1 and one for input 2.
 The file names therefore match those of the encoded files present in the working directory.
-The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it writes the request data to the appropriate memory ranges in the machine state.
-The command-line option `--rollup-inspect-state` causes the utility to create an inspect-state request right after all advance-state requests have been carried out (if any).
+The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it loads the request data into the rx buffer.
+The command-line option `--cmio-inspect-state` causes the utility to create an inspect-state request right after all advance-state requests have been carried out (if any).
 By default, the query is loaded from a file `query.bin`.
 Finally, the command-line for `ioctl-echo-loop` instructs it to echo each payload as one voucher, one notice, and one report, and to reject the input with index 1.
 
 As a result of these commands, the server shell simply shows the splash screen and a message from `ioctl-echo-loop` declaring what will be echoed:
-```{replace=rolling_ioctl_echo_loop/server}
+```{replace=rolling_ioctl_echo_loop/server enabled=yes}
 ```
 The client shell shows a lot more activity:
-
-```{key=rolling_ioctl_echo_loop_0client subst=rolling_ioctl_echo_loop replace=both}
-sed -n '1,5p' $rolling_ioctl_echo_loop/client; echo "..."
-```
-The client starts by printing information about the remote server it connected to.
-It then runs the machine in a loop, occasionally transferring information in and out.
-
-The first `manual yield rx-accepted` signals the point at which the target application attempted to obtain the first request.
-In other words, the application is _ready_.
-
-```{key=rolling_ioctl_echo_loop_1client subst=rolling_ioctl_echo_loop replace=both}
-echo "..."; sed -n '8,28p' $rolling_ioctl_echo_loop/client; echo "..."
+```{replace=rolling_ioctl_echo_loop/client enabled=yes}
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles0 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles0 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '1p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes0 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_hashes0 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '1p'     | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes1 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_hashes1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '2p'     | $RECIPES_DIR/trunc8.sh
 ```
-Upon receiving control back from the machine at cycle []{replace=rolling_ioctl_echo_loop_cycles0/stdout}, the client prints the epoch index 0 and input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hashes0/stdout}, loads files `epoch-0-input-metadata-1.bin` and `epoch-0-input-1.bin` into the appropriate memory ranges, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hashes1/stdout}, and resumes the machine.
-The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
 
-```{.bash key=rolling_ioctl_echo_loop_cycles1 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '2p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles2 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles2 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '3p'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles3 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles3 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '4p'
 ```
-These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-voucher` at cycle []{replace=rolling_ioctl_echo_loop_cycles1/stdout}, a `tx-notice` at cycle []{replace=rolling_ioctl_echo_loop_cycles2/stdout}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles3/stdout}.
-For each of them, the client receives control back from the machine.
-It reads the appropriate memory range to store files `epoch-0-input-1-voucher-0.bin`, `epoch-0-input-1-notice-0.bin`, and `epoch-0-input-1-report-0.bin`, respectively.
 
-
-```{.bash key=rolling_ioctl_echo_loop_cycles4 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles4 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '5p'
 ```
-The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_cycles4/stdout} signals that the `ioctl-echo-loop` application is done processing input index 1 of epoch 0 (and rejected it!).
-During the processing of an advance-state request, when the `/dev/rollup` Linux device receives a voucher, it appends its hash into a memory array.
-It does the same for the notices it receives.
-Since there will be no more vouchers or notices generated for the input (it was, after all, rejected), the client saves the hash arrays into files `epoch-0-index-1-voucher-hashes.bin` and `epoch-0-index-1-notice-hashes.bin`, respectively.
 
-In production, when an input to an advance state request is rejected, the Server Manager will rollback the Rolling Cartesi Machine to the state it was before the input was processed.
-Moreover, all vouchers and notices are deleted (the reports are preserved).
-To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
-This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_cycles0/stdout}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hashes0/stdout}) following the epoch 0 input 1 and epoch 0 input 2 are the same.
-(The files with the vouchers and notices issued before rejection, as well as the files with the arrays of hashes, are left in place for the developer's inspection.)
-
-```{key=rolling_ioctl_echo_loop_2client subst=rolling_ioctl_echo_loop replace=both}
-echo "..."; sed -n '31,52p' $rolling_ioctl_echo_loop/client; echo "..."
-```
-A similar procedure is followed when processing the advance-state request with input index 2 of epoch index 0, except this time the input is accepted.
-
-```{.bash key=rolling_ioctl_echo_loop_cycles8 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles8 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '9p'
 ```
-Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_cycles8/stdout} is received by the client, it has run out of advance-state requests to return.
 
-```{key=rolling_ioctl_echo_loop_3client subst=rolling_ioctl_echo_loop replace=both}
-echo "..."; sed -n '54,63p' $rolling_ioctl_echo_loop/client
-```
-The client now moves to the inspect-state request.
-It loads `query.bin`, copies it to the appropriate memory range, and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
-
-```{.bash key=rolling_ioctl_echo_loop_cycles9 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles9 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '10p'
 ```
-The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles9/stdout} signals the application issued a report, which the client then saves as `query-report-0.bin`.
 
-
-```{.bash key=rolling_ioctl_echo_loop_cycles10 subst=rolling_ioctl_echo_loop replace=null}
+```{.bash key=rolling_ioctl_echo_loop_cycles10 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
 cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '11p'
 ```
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_cycles10/stdout}, the client simply shuts down the remote Cartesi Machine server and exits.
+The client starts by printing information about the remote server it connected to.
+It then runs the machine in a loop, occasionally transferring information in and out.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_ioctl_echo_loop_cycles0/stdout enabled=yes}) signals the point at which the target application attempted to obtain the first request.
+In other words, the application is _ready_.
+
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hashes0/stdout enabled=yes}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hashes1/stdout enabled=yes}, and resumes the machine.
+The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
+These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_cycles1/stdout enabled=yes}, another `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_cycles2/stdout enabled=yes}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles3/stdout enabled=yes}.
+For each of them, the client receives control back from the machine.
+It reads the tx buffer to store files `input-1-output-0.bin`, `input-1-output-1.bin`, and `input-1-report-0.bin`, respectively.
+
+The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_cycles4/stdout enabled=yes} signals that the `ioctl-echo-loop` application is done processing input index 1 (and rejected it!).
+In production, when an input to an advance-state request is rejected, the Cartesi Node rolls back the Rolling Cartesi Machine to the state it was before the input was processed.
+Moreover, all vouchers and notices are deleted (the reports are preserved).
+To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
+This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_cycles0/stdout enabled=yes}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hashes0/stdout enabled=yes}) following input 1 and input 2 are the same.
+(The output and report files issued before rejection are left in place for the developer's inspection.)
+
+A similar procedure is followed when processing the advance-state request with input index 2, except this time the input is accepted.
+Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_cycles8/stdout enabled=yes} is received by the client, it has run out of advance-state requests to return.
+The client now moves to the inspect-state request.
+It loads `query.bin` into the rx buffer and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
+The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles9/stdout enabled=yes} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_cycles10/stdout enabled=yes}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
-```{.bash key=rolling_ioctl_echo_loop_all_bins subst=rolling_ioctl_echo_loop replace=source}
+```{.bash key=rolling_ioctl_echo_loop_all_bins subst=rolling_ioctl_echo_loop replace=source enabled=yes}
 ln -s $rolling_ioctl_echo_loop/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
 ```
-```{.bash replace=rolling_ioctl_echo_loop_all_bins/stdout}
+```{.bash replace=rolling_ioctl_echo_loop_all_bins/stdout enabled=yes}
 ```
 
 #### Decoding responses
 
-The `rollup-memory-range` command-line utility can decode input metadata, inputs, queries, vouchers, notices, reports, and hashes.
+The `cartesi-rollup-data.lua` command-line utility can also decode the binary records produced by the target application.
 
-For example, we can decode the files we encoded for the first advance-state request we created above with the commands:
+For example, we can decode the advance-state request file we encoded for the second input above with the command:
 ```bash
-rollup-memory-range decode input-metadata < epoch-0-input-metadata-2.bin
+cartesi-rollup-data.lua decode advance < input-2.bin
 ```
 ```
 {
-  "msg_sender":"0x0000000000000000000000000000000000000002",
-  "block_number":0,
-  "time_stamp":0,
-  "epoch_index":0,
-  "input_index":2
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "0x0000000000000000000000000000000000000002",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 2,
+  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
 }
 ```
+A voucher carries a _destination_, a _value_, and a _payload_.
+The `ioctl-echo-loop` utility copies the _msg_sender_ field from the advance-state request to the _destination_ field of the voucher, and the input payload to the voucher payload.
+We can see this by decoding the voucher `input-2-output-0.bin` file with the command
 ```bash
-rollup-memory-range decode input < epoch-0-input-2.bin
+cartesi-rollup-data.lua decode voucher < input-2-output-0.bin
 ```
 ```
 {
-  "payload":"hello from input 2!"
-}
-```
-A voucher carries an _address_ and a _payload_.
-The `ioctl-echo-loop` utility copies the _msg-sender_ field from the input metadata to the _address_ field of the voucher, and the payload from the input to the payload of the voucher.
-We can see this by decoding the voucher `epoch-0-input-2-voucher-0.bin` file with the commands
-```bash
-rollup-memory-range decode voucher < epoch-0-input-2-voucher-0.bin
-```
-```
-{
-  "address":"0x0000000000000000000000000000000000000002",
-  "payload":"hello from input 2!"
+  "destination": "0x0000000000000000000000000000000000000002",
+  "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
 }
 ```
 The results match what was expected from the `ioctl-echo-loop` utility.
@@ -1375,34 +1349,35 @@ The results match what was expected from the `ioctl-echo-loop` utility.
 Notices and reports carry only a payload.
 To decode them, run, for example:
 ```bash
-rollup-memory-range decode notice < epoch-0-input-2-notice-0.bin
+cartesi-rollup-data.lua decode notice < input-2-output-1.bin
 ```
 ```
 {
-  "payload":"hello from input 2!"
+  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
 }
 ```
 ```bash
-rollup-memory-range decode report < query-report-0.bin
+cartesi-rollup-data.lua decode report < query-report-0.bin
 ```
 ```
 {
-  "payload":"hello from query!"
+  "payload": "0x68656c6c6f2066726f6d207175657279210a"
 }
 ```
+Payloads are 0x-prefixed hex. Pipe through `jq -r .payload | hex --decode` to recover the original bytes.
 Once again, the echo program does its job as expected.
 
 ### Rolling Cartesi Machine templates
 
 A Rolling Cartesi Machine template is a machine that has been configured to support Cartesi Rollups, is running a target application in a request-processing loop, is ready to process the next request, and has been stored.
 
-As an example, we will create a Rolling Cartesi Machine template for an arbitrary-precision arithmetic expression evaluator that outputs, as a notices, the result of computation it receives as inputs to advance-state requests.
+As an example, we will create a Rolling Cartesi Machine template for an arbitrary-precision arithmetic expression evaluator that outputs, as notices, the result of computation it receives as inputs to advance-state requests.
 We will, once again, rely on the `bc` command-line utility to perform the computations.
-To interact with the `/dev/rollup` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/opt/cartesi/bin/rollup` command-line utility.
+To interact with the `/dev/cmio` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/opt/cartesi/bin/rollup` command-line utility.
 
-Shell scripts become surprisingly powerful with the help of the `rollup` and `jq` command-line utilities.
+Shell scripts become surprisingly powerful with the help of the `rollup`, `hex`, and `jq` command-line utilities.
 A `bc`-based arbitrary precision application, for example, might look like this:
-```{key=rolling_calc_sh replace=both}
+```{key=rolling_calc_sh replace=both enabled=yes}
 cat "$RECIPES_DIR/calc.sh"
 ```
 
@@ -1412,24 +1387,24 @@ The `accept` and `reject` commands accept or reject the previous request and out
 For advance-state requests, the output is in the format
 ```js
 {
-  "request_type": "advance_state"
+  "request_type": "advance_state",
   "data": {
-    "metadata": {
-      "msg_sender": <hash>,
-      "timestamp": <number>,
-      "block_number": <number>,
-      "epoch_index": <number>,
-      "input_index": <number>
-    },
-    "payload": <string>
-  },
+    "chain_id": <number>,
+    "app_contract": <address>,
+    "msg_sender": <address>,
+    "block_number": <number>,
+    "block_timestamp": <number>,
+    "prev_randao": <hex-uint256>,
+    "index": <number>,
+    "payload": <hex-data>
+  }
 }
 ```
 Appropriately, the `notice` command generates a notice.
 The input format is as follows
 ```js
 {
-  "payload": <string>
+  "payload": <hex-data>
 }
 ```
 and the output (not used by `calc.sh`) gives the index of the just-output notice as follows
@@ -1441,15 +1416,15 @@ and the output (not used by `calc.sh`) gives the index of the just-output notice
 
 The loop in the `calc.sh` script calls `rollup finish` to obtain the next request (and accept or reject the previous).
 It uses `jq` to extract the `request_type` field and, if it is an `"advance_state"` request, it uses `jq` again to extract the `"payload"` field inside the `"data"` field.
-This is passed to the `bc` utility, which outputs the result split into lines terminated by `\`.
+The hex-encoded payload is decoded back to bytes by `hex --decode` and passed to `bc`, which outputs the result split into lines terminated by `\`.
 The `tr` utility joins the lines back together.
-The result is again fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice`.
+The joined result is hex-encoded by `hex --encode` and fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice`.
 
 We add the command line option `--assert-rolling-template` to help catch errors.
 When enabled, it will cause `cartesi-machine` to exit with a status-code reporting failure if the generated machine is not Rolling Cartesi Machine template compatible.
 
 To use `calc.sh` in a Rolling Cartesi Machine template, first create a file-system with the program:
-```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
+```{.bash key=calc_ext2 outputs=calc.ext2 replace=source enabled=yes}
 trap 'rm -rf calc calc.tar' EXIT
 rm -rf calc
 cp "$RECIPES_DIR/calc.sh" .
@@ -1474,50 +1449,64 @@ genext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client replace=source/template subst=calc_ext2}
+```{.bash key=rolling_calc_template outputs=template,server,client replace=source/template subst=calc_ext2 enabled=yes}
 srv_tmp=$(mktemp)
 _cleanup() {
     rm -f "$srv_tmp" \
-        epoch-0-input-metadata-1.bin epoch-0-input-1.bin \
-        epoch-0-input-metadata-2.bin epoch-0-input-2.bin \
-        epoch-0-input-1-notice-hashes.bin epoch-0-input-1-voucher-hashes.bin \
-        epoch-0-input-2-notice-0.bin epoch-0-input-2-notice-hashes.bin \
-        epoch-0-input-2-voucher-hashes.bin \
+        input-1.bin input-2.bin \
+        input-1-output-hashes-root-hash.bin \
+        input-2-output-hashes-root-hash.bin \
         calc.ext2
     rm -rf rolling-calculator-template
 }
 trap _cleanup EXIT
-rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin \
-    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 1\n}\n' 1)
-rollup-memory-range encode input > epoch-0-input-1.bin \
-    < <(printf '{\n    "payload": "invalid input"\n}\n')
-rollup-memory-range encode input-metadata > epoch-0-input-metadata-2.bin \
-    < <(printf '{\n    "msg_sender": "0x%040d",\n    "block_number": 0,\n    "time_stamp": 0,\n    "epoch_index": 0,\n    "input_index": 2\n}\n' 2)
-rollup-memory-range encode input > epoch-0-input-2.bin \
-    < <(printf '{\n    "payload": "6*2^1024 + 3*2^512"\n}\n')
+cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 1)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 1,
+  "payload": "$(printf 'invalid input' | hex --encode)"
+}
+EOF
+cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 2)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 2,
+  "payload": "$(printf '6*2^1024 + 3*2^512\n' | hex --encode)"
+}
+EOF
 rm -f calc.ext2
 ln -sf "$calc_ext2/calc.ext2" calc.ext2
 rm -rf rolling-calculator-template
 {
 # docs:begin template
 cartesi-machine \
-    --rollup \
-    --flash-drive=label:calc,filename:calc.ext2 \
+    --assert-rolling-template \
+    --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --store="rolling-calculator-template" \
     -- /mnt/calc/calc.sh
 # docs:end template
 } > template 2>&1
-remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
 {
 # docs:begin client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8080 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=localhost:8080 \
-    --checkin-address=localhost:8081 \
+    --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
-    --rollup \
-    --rollup-advance-state=epoch_index:0,input_index_begin:1,input_index_end:3,hashes \
+    --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
     --load="rolling-calculator-template"
 # docs:end client
 } > client 2>&1
@@ -1526,7 +1515,7 @@ mv "$srv_tmp" server
 ```
 
 The result is as follows
-```{replace=rolling_calc_template/template}
+```{replace=rolling_calc_template/template enabled=yes}
 ```
 The machine execution stops when the first call to `rollup finish` yields, and the machine at that state is stored in directory `"rolling-calculator-template"`.
 
@@ -1535,79 +1524,76 @@ In production, if the target application finds an irrecoverable error during ini
 In that case, the `cartesi-machine` command-line utility will detect the exception, print it to the console, and exit with a status-code reporting failure.
 :::
 
-To test the template, create a couple advance-state requests (input and input metadata):
+To test the template, create a couple advance-state requests:
 ```bash
-rollup-memory-range encode input-metadata > epoch-0-input-metadata-1.bin <<-EOF
+cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
-    "msg_sender": $(printf '"0x%040d"' 1),
-    "block_number": 0,
-    "time_stamp": 0,
-    "epoch_index": 0,
-    "input_index": 1
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 1)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 1,
+  "payload": "$(printf 'invalid input' | hex --encode)"
 }
 EOF
-rollup-memory-range encode input > epoch-0-input-1.bin <<-EOF
+cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
 {
-    "payload": "invalid input"
-}
-EOF
-rollup-memory-range encode input-metadata > epoch-0-input-metadata-2.bin <<-EOF
-{
-    "msg_sender": $(printf '"0x%040d"' 2),
-    "block_number": 0,
-    "time_stamp": 0,
-    "epoch_index": 0,
-    "input_index": 2
-}
-EOF
-rollup-memory-range encode input  > epoch-0-input-2.bin <<-EOF
-{
-    "payload": "6*2^1024 + 3*2^512"
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 2)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 2,
+  "payload": "$(printf '6*2^1024 + 3*2^512\n' | hex --encode)"
 }
 EOF
 ```
 
-With the files just created by `rollup-memory-ranges` in the working directory, run the remote server with the command
+With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
 ```bash
 ls *.bin
 ```
 ```
-epoch-0-input-1.bin  epoch-0-input-metadata-1.bin
-epoch-0-input-2.bin  epoch-0-input-metadata-2.bin
+input-1.bin  input-2.bin
 ```
 ```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```{.bash replace=rolling_calc_template/source/client}
+```{.bash replace=rolling_calc_template/source/client enabled=yes}
 ```
 
 The client shell shows
-```{replace=rolling_calc_template/client}
+```{replace=rolling_calc_template/client enabled=yes}
 ```
 It starts by loading the machine from directory `"rolling-calculator-template"` and printing again the same yielded state that held when the server template was created.
 Then, the first input is rejected, as the payload `"invalid input"` is not an expression that `bc` can understand.
+Note that an empty notice is still emitted before the rejection: shell pipelines run concurrently, so by the time `bc`'s failure is detected (via `grep` and `pipefail`), `rollup notice` has already run with the empty payload that `hex --encode` produces from no input.
+The empty notice is harmless because the rejection that follows discards all outputs for that input.
 Finally, the second input, with payload `"6*2^1024 + 3*2^512"`, is accepted.
 
 Indeed, to see the result of the computation specified in the second input, run
-```bash
-rollup-memory-range decode notice < epoch-0-input-2-notice-0.bin | \
-    jq -r .payload | \
+```{.bash key=rolling_calc_decode subst=rolling_calc_template replace=source enabled=yes}
+rm -f input-2-output-0.bin
+ln -s $rolling_calc_template/input-2-output-0.bin .
+# docs:begin
+cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
+    jq -j .payload | \
+    hex --decode | \
     fold -w 68
+# docs:end
 ```
 to produce
-```
-10786158809173895446375831144734148401707861873653839436405804869463
-96054833005778796250863934445216126720683279228360145952738612886499
-73495708458383684478649003115037698421037988831222501494715481595948
-96901677837132352593468675094844090688678579236903861342030923488978
-36036892526733668721977278692363075584
+```{replace=rolling_calc_decode/stdout enabled=yes}
 ```
 The server shell shows only the error message output by `bc` and `rollup`.
 In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
-```{replace=rolling_calc_template/server}
+```{replace=rolling_calc_template/server enabled=yes}
 ```
 
 ### Rarely used options
