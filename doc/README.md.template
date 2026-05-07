@@ -1602,36 +1602,36 @@ In production, these error messages should have been captured and output as a re
 This is an advanced section, not needed by regular users of the Cartesi platform.
 :::
 
-The command-line option `--append-rom-bootargs=<string>` can be used to append any `<string>` to the kernel command-line.
+The command-line option `--append-bootargs=<string>` can be used to append any `<string>` to the kernel command-line.
 A detailed description of all kernel command-line parameters is beyond the scope of this document.
 Please refer to the appropriate [section of the kernel documentation](https://www.kernel.org/doc/html/v5.5/admin-guide/kernel-parameters.html).
 
 For example, to prevent clutter in the console, the `cartesi-machine` utility automatically adds the `quiet` option to the kernel command-line, disabling most log messages.
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
-```{.bash key=rarely_append_bootargs_loglevel replace=source}
+```{.bash key=rarely_append_bootargs_loglevel replace=source enabled=yes}
 cartesi-machine \
-    --append-rom-bootargs="loglevel=8"
+    --append-bootargs="loglevel=8"
 ```
 The output is
-```{replace=rarely_append_bootargs_loglevel/both}
+```{replace=rarely_append_bootargs_loglevel/both enabled=yes}
 ```
 
-To clear the kernel command-line, use the option `--no-rom-bootargs`.
+To clear the kernel command-line, use the option `--no-bootargs`.
 Notice that, without any options, the machine will not operate properly.
 In particular, as explained under the [Lua interface](#lua-interface), flash-drives use kernel command-line arguments.
 For example, running the `cartesi-machine` command-line utility with no arguments produces a kernel command-line
 equivalent to running the command
 
-```{.bash key=default_rom_bootargs replace=null}
+```{.bash key=default_bootargs replace=null enabled=yes}
 cartesi-machine --store-config 2>&1 \
     | grep bootargs \
     | sed 's/.* = //' \
     | sed 's/,$//'
 ```
-```{.bash key=no_rom_bootargs_equiv replace=source subst=bootargs->default_rom_bootargs/stdout}
+```{.bash key=no_bootargs_equiv replace=source subst=bootargs->default_bootargs/stdout enabled=yes}
 cartesi-machine \
-    --no-rom-bootargs \
-    --append-rom-bootargs=$bootargs
+    --no-bootargs \
+    --append-bootargs=$bootargs
 ```
 
 The command-line option `--periodic-hashes=<number-period>[,<number-start>]` causes the command-line utility to periodically obtain and print the state hash.
@@ -1639,11 +1639,11 @@ The `<number-period>` argument gives the distance between hashes in cycles. The 
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
-```{.bash key=rarely_periodic_initial_cycle subst=proofs_output_run replace=null}
+```{.bash key=rarely_periodic_initial_cycle subst=proofs_output_run replace=null enabled=yes}
 cycles=$(cat $proofs_output_run/both | $RECIPES_DIR/last-cycles.sh)
 printf '%d\n' "$((cycles - 10))"
 ```
-```{.bash key=rarely_periodic_hashes subst=initial_cycle->rarely_periodic_initial_cycle/stdout,templates_store replace=source}
+```{.bash key=rarely_periodic_hashes subst=initial_cycle->rarely_periodic_initial_cycle/stdout,templates_store replace=source enabled=yes}
 rm -f calculator-template
 rm -rf input.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -1652,16 +1652,17 @@ echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
     --load="calculator-template" \
-    --replace-flash-drive="start:0x9000000000000000,length:1<<12,filename:input.raw" \
+    --replace-memory-range="label:input,data_filename:input.raw" \
     --periodic-hashes=1,$initial_cycle
 # docs:end
 ```
 The output is
 
-```{replace=rarely_periodic_hashes/both}
+```{replace=rarely_periodic_hashes/both enabled=yes}
 ```
 
-The command-line option `--dump-pmas` causes the emulator to dump the contents of all mapped spans in the address space to files.
+The command-line option `--dump-address-ranges[=<dir>]` causes the emulator to dump the contents of all mapped spans in the address space to files under `<dir>`.
+If `<dir>` is omitted, files are written to the current working directory.
 Each span produces a file `<start>--<length>.bin`.
 Every other byte in the address space has value 0.
 This is useful to inspect the entire state of the machine from outside the emulator.
@@ -1684,37 +1685,48 @@ The first stage of the verification game therefore searches for the *step of dis
 Once this step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the step, including cryptographic proofs for every value read from or written to the state.
 This log proves to the blockchain that the execution of the step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
 
-The `--step` command-line option instructs `cartesi-machine` to dump to screen an abridged, user-friendly version of this state access log.
+The `--log-step-uarch` command-line option instructs `cartesi-machine` to dump to screen a user-friendly version of the access log produced by a single uarch step.
+When the microarchitecture is in use, every big-machine instruction is implemented by a sequence of uarch instructions in the uarch interpreter, and a single uarch step is one of those micro-instructions.
 
-For the sake of completeness, consider the example in which the Cartesi Machine was stopped while it drew the splash screen.
-The example below shows the step it was about to execute
-```{.bash key=rarely_step replace=source subst=cycles->cycles_limit_exec/stderr}
+For the sake of completeness, consider again the example in which the Cartesi Machine was stopped while it drew the splash screen.
+The big-machine instruction about to execute is the `sd` that writes a putchar command to HTIF's `tohost` CSR.
+That single big-machine instruction expands into many uarch instructions.
+The one that actually triggers the host to emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and `a0 = 0x0a`.
+The recipe `find-uarch-putchar-ecall.lua` (under `doc/recipes/`) takes the big-machine mcycle just before the splash-screen newline and advances the uarch one cycle at a time until the next uarch instruction is that putchar `ecall`, writing the matching uarch_cycle to its stderr.
+```{.bash key=cycles_uarch_putchar_ecall subst=cycles_limit_exec replace=null enabled=yes}
+lua $RECIPES_DIR/find-uarch-putchar-ecall.lua $(cat $cycles_limit_exec/stderr) > /dev/null
+```
+The mcycle from `find-htif-putchar.lua` and the uarch_cycle from `find-uarch-putchar-ecall.lua` are then enough to tell `cartesi-machine` to stop just before the putchar `ecall` and log that single uarch step
+```{.bash key=rarely_log_uarch_putchar replace=source subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
-    --step > /dev/null
+    --max-uarch-cycle=$ucycles \
+    --log-step-uarch > /dev/null
 ```
-and produces the log
-```{replace=rarely_step/stderr}
+producing the log
+```{replace=rarely_log_uarch_putchar/stderr enabled=yes}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
-It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
+It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's uarch interpreter implements the big-machine fetch-execute loop.
 The material is therefore beyond the scope of this document.
 
 This particular example, however, was hand-picked for illustration purposes.
-The RISC-V instruction being executed, `sd`, writes the 64-bit word `0x010100000000000a` to address `0x40008000` (access&nbsp;#23).
-This is the memory-mapped address of HTIF's `tohost` CSR.
-The value refers to the console subdevice (`DEV=0x01`) , command `putchar` (`CMD=0x01`), and causes the device to output a line-feed (`DATA=0x0a`) to the emulator's console.
-I.e., the instruction is completing the row `       \    / CARTESI` in the splash screen.
+The uarch instruction logged is the `ecall` that asks the host to emit one character.
+At this point, register `a7` (i.e., `uarch_x17`) holds the value `2` (`UARCH_ECALL_FN_PUTCHAR`) and register `a0` (i.e., `uarch_x10`) holds the character `0x0a` (a line-feed).
+When the host processes this `ecall`, it emits the line-feed to the console, completing the row `       \    / CARTESI` in the splash screen.
 
-The command-line option `--json-steps=<filename>` outputs a machine-readable version of the step log *for each cycle* executed by the emulator.
-It is used by internal integration tests that verify the consistency between the Cartesi Machine as implemented by the off-chain emulator and as implemented by the on-chain step verification function.
-Needless to say, even for brief computations, the resulting log files can be *very* large.
-
-The `--rollup` command-line option sets the `--htif-yield-automatic` and `--htif-yield-manual` options for the `/dev/yield` device.
-See the [target perspective](#system-architecture) for details on automatic and manual yield commands and how they are used by Cartesi Rollups.
-The `--rollup` option also configures a variety of memory ranges used by the `/dev/rollup` device.
-There are five memory ranges: _rollup-rx-buffer_, _rollup-input-metadata_, _rollup-tx-buffer_, _rollup-voucher-hashes_, and _rollup-notice-hashes_.
-The values implied by the `--rollup` command-line option are `--rollup-rx-buffer=start:0x60000000,length:2<<20`, `--rollup-tx-buffer=start:0x60200000,length:2<<20`, `--rollup-input-metadata=start:0x60400000,length:4096`, `--rollup-voucher-hashes=start:0x60600000,length:2<<20`, and `--rollup-notice-hashes=start:0x60800000,length:2<<20`.
+```{.bash key=cmio_rx_buffer_range replace=null enabled=yes}
+lua5.4 -e 'local c = require "cartesi"; io.write(string.format("start:0x%x,length:2<<%d", c.AR_CMIO_RX_BUFFER_START, c.AR_CMIO_RX_BUFFER_LOG2_SIZE - 1))'
+```
+```{.bash key=cmio_tx_buffer_range replace=null enabled=yes}
+lua5.4 -e 'local c = require "cartesi"; io.write(string.format("start:0x%x,length:2<<%d", c.AR_CMIO_TX_BUFFER_START, c.AR_CMIO_TX_BUFFER_LOG2_SIZE - 1))'
+```
+The command-line options `--cmio-rx-buffer=<key>:<value>...` and `--cmio-tx-buffer=<key>:<value>...` configure backing-store options for the two memory ranges used by the `/dev/cmio` device.
+The RX buffer occupies []{replace=cmio_rx_buffer_range/stdout enabled=yes} and the TX buffer occupies []{replace=cmio_tx_buffer_range/stdout enabled=yes}.
+Their addresses and lengths are fixed and cannot be overridden.
+See the [target perspective](#system-architecture) for details on how these buffers are used by Cartesi Rollups, and the section on [Rolling Cartesi Machines](#rolling-cartesi-machines) for the request/response data flow.
+Automatic and manual yields are enabled by default.
+Opt out with `--no-htif-yield-automatic` or `--no-htif-yield-manual` (note that disabling automatic yield prevents Rolling Cartesi Machines from generating outputs).
 
 ## Lua interface
 
