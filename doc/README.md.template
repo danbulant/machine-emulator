@@ -3084,17 +3084,10 @@ The first stage of the verification game therefore searches for the *step of dis
 Once this step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the step, including cryptographic proofs for every value read from or written to the state.
 This log proves to the blockchain that the execution of the step transitions the state in such a way that it finally reaches the state hash claimed by the submitting party.
 
-To obtain the access log for the next step in the execution of a Cartesi Machine instance, use the `machine:step(<log_type>)` function.
-Note that the function indeed performs the step, and therefore advances the state, in addition to collecting the access log.
-The `<log_type>` argument specifies if the access log should include annotations and cryptographic proofs, or only the accesses themselves.
-It is a table in the format
-
-```lua
-log_type ::= {
-  proofs ::= boolean,
-  annotations ::= boolean
-}
-```
+To obtain the access log for the next uarch step in the execution of a Cartesi Machine instance, use the `machine:log_step_uarch(<log_type>)` function.
+Note that the function indeed performs the step, and therefore advances the microarchitecture state, in addition to collecting the access log.
+The `<log_type>` argument is an integer bitfield formed by OR-ing `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets metadata consumed by `util.dump_log`) and `cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of large accesses, not just their hashes).
+Cryptographic proofs are always included in the log.
 
 The format of the access log returned is as follows:
 
@@ -3103,24 +3096,26 @@ The format of the access log returned is as follows:
 
 ```lua
 access_log ::= {
+  log_type ::= {
+    annotations ::= boolean,
+    large_data  ::= boolean
+  },
   accesses ::= {
-    [1] ::= word_access,
-    [2] ::= word_access,
+    [1] ::= access,
+    [2] ::= access,
     ...
-    [n] ::= word_access
+    [n] ::= access
   },
   notes ::= {
     [1] ::= string,
-    [2] ::= string,
     ...
-    [n] ::= string,
+    [n] ::= string
   },
   brackets ::= {
     [1] ::= bracket,
-    [2] ::= bracket,
     ...
     [m] ::= bracket
-  },
+  }
 }
 ```
 
@@ -3128,325 +3123,171 @@ access_log ::= {
 
 <div>
 
-``` lua
-word_access ::= {
-  type ::= "read" | "write",
-  address ::= number,
-  read ::= number,
-  written ::= number
-  proof ::= proof
+```lua
+access ::= {
+  type         ::= "read" | "write",
+  address      ::= number,
+  log2_size    ::= number,
+  read_hash    ::= string,
+  read         ::= string,
+  written_hash ::= string,
+  written      ::= string,
+  proof        ::= proof
+}
+
+proof ::= {
+  target_address   ::= number,
+  log2_target_size ::= number,
+  log2_root_size   ::= number,
+  target_hash      ::= string,
+  root_hash        ::= string,
+  sibling_hashes   ::= {
+    [1] ::= string,
+    ...
+    [k] ::= string
+  }
 }
 
 bracket ::= {
-  type ::= "begin" | "end",
+  type  ::= "begin" | "end",
   where ::= number,
-  text ::= string
+  text  ::= string
 }
-
 ```
-</div>
 
 </div>
 
-The word `accesses` array records, in order, all accesses to the machine state performed during the execution of the next step in the evolution of the Cartesi Machine state.
-Word accesses can be of `type` either `"read"` or `"write"`.
-The `address` field specifies the physical address of the corresponding (aligned) 64-bit word accessed.
-Read accesses contain the value `read` for the word.
-Write accesses contain, in the `read` field, the value that was in the state before it was overwritten by the value in the `written` field.
+</div>
+
+The `accesses` array records, in order, all accesses to the machine state performed during the execution of the uarch step.
+Accesses can be of `type` either `"read"` or `"write"`.
+The `address` field gives the physical address of the accessed region and `log2_size` gives its size as a power of two.
+The `read_hash` field contains the hash of the data as read before the access; for `"write"` accesses, `written_hash` contains the hash of the written data.
+The `read` and `written` fields carry the data itself.
+For accesses at or above the 32-byte hash-tree leaf granularity (`log2_size >= 5`), each field is exactly `2^log2_size` bytes long.
+For sub-leaf accesses (`log2_size < 5`, typically `log2_size = 3` for an 8-byte word), the field contains the entire enclosing 32-byte tree leaf.
 The `proof` field is used when [verifying state transitions](#verifying-state-transitions).
 
 #### Inspecting access logs
 
-When the `log_type` includes the field `annotations = true`, the access log includes annotations that help put each access into a larger context.
+When `log_type` includes `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS`, the access log includes annotations that help put each access into a larger context.
 
 The `notes` array contains a string corresponding to each entry in the `accesses` array, describing the word access.
 The `brackets` contain information that groups ranges of word accesses into *scopes*.
 Each bracket entry `type` field tells if the entry marks the `"begin"` or `"end"` of a scope.
 The `where` field gives the position in the `accesses` array where the bracket should be &ldquo;inserted&rdquo;.
 
-The `dump_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into file `<out>`:
-
-```{.lua title="cartesi/util.lua (excerpt)"}
--- Output formatted string with indentation
-local function indentout(f, indent, fmt, ...)
-    f:write(string.rep("  ", indent), string.format(fmt, ...))
-end
-
--- Convert string to hex
-local function hexstring(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
-end
-
--- Take first 8 characters in hexadecimal hash
-local function hexhash8(hash)
-    return string.sub(hexstring(hash), 1, 8)
-end
-
--- Convert binary data to number or to start and end as hexdecimal
-local function accessdatastring(data, log2_size)
-    if log2_size == 3 then
-        data = string.unpack("<I8", data)
-        return string.format("0x%x(%u)", data, data)
-    else
-        return string.format("%s...%s(2^%d bytes)",
-            hexstring(string.sub(data, 1, 3)),
-            hexstring(string.sub(data, -3, -1)), log2_size)
-    end
-end
-
--- Dump formatted log to file
-function _M.dump_log(log, out)
-    local indent = 0
-    local j = 1 -- Bracket index
-    local i = 1 -- Access index
-    local brackets = log.brackets or {}
-    local notes = log.notes or {}
-    local accesses = log.accesses
-    -- Loop until accesses and brackets are exhausted
-    while true do
-        local bj = brackets[j]
-        local ai = accesses[i]
-        if not bj and not ai then break end
-        -- If bracket points before current access, output bracket
-        if bj and bj.where <= i then
-            if bj.type == "begin" then
-                indentout(out, indent, "begin %s\n", bj.text)
-                indent = indent + 1 -- Increase indentation before bracket
-            elseif bj.type == "end" then
-                indent = indent - 1 -- Decrease indentation after bracket
-                indentout(out, indent, "end %s\n", bj.text)
-            end
-            j = j + 1
-        -- Otherwise, output access
-        elseif ai then
-            if ai.proof then
-                indentout(out, indent, "hash %s\n",
-                    hexhash8(ai.proof.root_hash))
-            end
-            local read = accessdatastring(ai.read, ai.log2_size)
-            if ai.type == "read" then
-                indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i,
-                    notes[i] or "", ai.address, ai.address, read)
-            else
-                assert(ai.type == "write", "unknown access type")
-                local written = accessdatastring(ai.written, ai.log2_size)
-                indentout(out, indent, "%d: write %s@0x%x(%u): %s -> %s\n", i,
-                    notes[i] or "", ai.address, ai.address, read, written)
-            end
-            i = i + 1
-        end
-    end
-end
-```
-The function indents each access according to the number of enclosing scopes.
-It uses the notes to print the *meaning* of each word being accessed: Is it a register, a CSR, memory?
+The `dump_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into file `<out>`.
+It indents each access according to the number of enclosing scopes and uses the notes to identify what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
-If the log was generated with the `proofs = true` option, then the current state hash before each access is also printed.
 
 Running the `dump-step.lua` program:
 
-```{.lua key=dump_step_source replace=source subst=cycles->cycles_limit_exec/stderr title="dump-step.lua"}
--- Load the Cartesi modules
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require"config.nothing-to-do")
-
--- Run machine until it halts or yields
-local max_mcycle = $cycles
-while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
-    machine:run(max_mcycle)
-end
-assert(machine:read_mcycle() == max_mcycle, "Machine halted or yielded early!")
-
--- Obtain state hash before step
-local step_log = machine:step{ annotations = true, proofs = true }
-
--- Dump access log to screen
-io.stderr:write(string.format("\nContents of step %u access log:\n\n", max_mcycle))
-util.dump_log(step_log, io.stderr)
+```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua" enabled=yes}
 ```
 with command:
-```bash
-lua5.3 dump-step.lua
+```{.bash key=state_transition_dump_step subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,dump_step_source replace=source/cmd enabled=yes}
+rm -f dump-step.lua
+ln -s "$RECIPES_DIR/dump-step.lua" .
+{
+# docs:begin cmd
+lua5.4 dump-step.lua config.nothing-to-do "$cycles" "$ucycles"
+# docs:end cmd
+} 2>&1
 ```
 produces the output:
-```{key=state_transition_dump_step subst=cycles_limit_exec depends=config_dump_nothing replace=both}
-cycles=$(cat $cycles_limit_exec/stderr)
-lua $RECIPES_DIR/dump-step.lua config.nothing-to-do "$cycles"
+```{replace=state_transition_dump_step/both enabled=yes}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
 The material is beyond the scope of this document.
 In this particular example, however, it was hand-picked for illustration purposes.
-The RISC-V instruction being executed, `sd`, writes the 64-bit word `0x010100000000000a` to address `0x40008000` (access&nbsp;#26).
-This is the memory-mapped address of HTIF's `tohost` CSR.
-The value refers to the console subdevice (`DEV=0x01`) , command `putchar` (`CMD=0x01`), and causes the device to output a line-feed (`DATA=0x0a`).
-I.e., the instruction is completing the row `       \    / CARTESI` in the splash screen.
+The uarch step being executed is the ECALL micro-instruction that asks the emulator to print a line-feed (`0x0a`) to the console, completing the row `       \    / CARTESI` in the splash screen.
 
 #### Verifying state transitions
 
-When the `log_type` includes the field `proofs = true`, each word access comes with a `proof` field containing the proof for the value *read*.
-Using the known state hash before the access, it is possible to verify that the value reported `read` was indeed the value stored at the physical `address` in the machine state.
-For a `"read"` access, the state hash does not change.
-However, for a `"write"` access, the `sibling_hashes` in the `proof` (which have just been verified to be truthful along with the value `read`) can be used to compute the new state hash.
-The new hash is simply
-```lua
-new_hash = proof.roll_hash_up_tree(access.proof, cartesi.keccak(access.written))
-```
+Each access carries a `proof` field.
+Using the known state hash before the access, it is possible to verify that the `read` value was indeed the value stored at `address` in the machine state.
+For a `"write"` access, the `sibling_hashes` in the proof can be used to compute the new state hash.
+Doing this for each access in sequence yields the state hash at the end of the step.
 
-In this way, the accesses can be processed one by one, until the new state hash at the end of the step has been obtained.
-
-The process described above can only verify that, should these accesses be performed starting from the state as it was before the step, a given state hash would obtain.
-To ensure that the accesses indeed correspond to the operation of a Cartesi Machine starting from that state, knowledge of the Cartesi Machine architecture as implemented by the emulator is needed.
-The function `cartesi.machine.verify_state_transition(<state_hash_before>, <access_log>, <state_hash_after>, <runtime_config>)` uses this knowledge to verify that the `<access_log>` transitions from `<state_hash_before>` to `<state_hash_after>`.
-Note there is no need for a Cartesi Machine instance to verify a transition.
-All required state information is in the access log.
-(The `<machine_runtime_config>`
+The method `machine:verify_step_uarch(<state_hash_before>, <access_log>, <state_hash_after>)` performs this verification, additionally checking that the accesses correspond to the operation of the Cartesi Machine microarchitecture starting from `<state_hash_before>`.
+Note there is no need for a Cartesi Machine instance to verify a transition: all required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
-```{.lua key=verify_step_source replace=source subst=cycles->cycles_limit_exec/stderr title="verify-step.lua"}
--- Load the Cartesi modules
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require"config.nothing-to-do")
-
--- Run machine until it halts or yields
-local max_mcycle = $cycles
-while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
-    machine:run(max_mcycle)
-end
-assert(machine:read_mcycle() == max_mcycle, "Machine halted early!")
-
--- Obtain state hash before step
-local hash_before_step = machine:get_root_hash()
--- Obtain access log
-local step_log = machine:step{ annotations = true, proofs = true }
--- Obtain state hash after step
-local hash_after_step = machine:get_root_hash()
-
--- Potentially mess with state access to cause a verification failure
-if #arg > 0 then
-    local env = { string = string, cartesi = cartesi, step_log = step_log }
-	local f = assert(load(arg[1], arg[1], "t", env))
-	f()
-end
-
--- Verify step access log
-assert(cartesi.machine.verify_state_transition(hash_before_step, step_log, hash_after_step, {}))
-io.stderr:write("State transition accepted!\n")
+```{.lua key=verify_step_source replace=source include=verify-step.lua title="verify-step.lua" enabled=yes}
 ```
 
-Running the script without arguments accepts the valid state transition.
-```bash
-lua5.3 verify-step.lua
+Running the script without arguments accepts the valid state transition:
+```{.bash key=verify_step_run subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+rm -f verify-step.lua
+ln -s "$RECIPES_DIR/verify-step.lua" .
+{
+# docs:begin cmd
+lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles"
+# docs:end cmd
+} 2>&1 || true
 ```
-```
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-
-
-State transition accepted!
+```{replace=verify_step_run/both enabled=yes}
 ```
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
-For example, changing the address of access #26
+For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
+```{.bash key=verify_step_mess_address subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+rm -f verify-step.lua
+ln -s "$RECIPES_DIR/verify-step.lua" .
+{
+# docs:begin cmd
+lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].address = 0x100'
+# docs:end cmd
+} 2>&1 || true
 ```
-26: write htif.tohost@0x40008000(1073774592): 0x10100000000000d(72339069014638605) -> 0x10100000000000a(72339069014638602)
-```
-from `0x40008000` to `0x100` causes the program to reject the state transition proof:
-```bash
-lua5.3 verify-step.lua 'step_log.accesses[26].address = 0x100'
-```
-```
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-
-lua5.3: verify-step.lua:31: expected access 26 to write htif.tohost at address 0x40008000(1073774592)
-stack traceback:
-	[C]: in function 'assert'
-	verify-step.lua:31: in main chunk
-	[C]: in ?
+```{replace=verify_step_mess_address/both enabled=yes}
 ```
 
-The error message states that, starting from the `<state_hash_before>` and given accesses 1&ndash;26 in the `<access_log>`, a true Cartesi Machine would have written to address `0x40008000` (helpfully labeled as the CSR `htif.tohost`), rather than address `0x100` claimed by our corrupt access log.
+Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
-Changing the value written also causes the proof to fail, because the earlier entries completely determine the value a true Cartesi Machine would have written:
-```bash
-lua5.3 verify-step.lua 'step_log.accesses[26].written = string.pack(">I8", 0x1234)'
+Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
+```{.bash key=verify_step_mess_written subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+rm -f verify-step.lua
+ln -s "$RECIPES_DIR/verify-step.lua" .
+{
+# docs:begin cmd
+lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+# docs:end cmd
+} 2>&1 || true
 ```
-```
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-
-lua5.3: verify-step.lua:30: word value written in access 26 does not match log
-stack traceback:
-	[C]: in function 'assert'
-	verify-step.lua:30: in main chunk
-	[C]: in ?
+```{replace=verify_step_mess_written/both enabled=yes}
 ```
 
-Changing the value read also causes the proof to be rejected because it will not match the target hash:
-```bash
-lua5.3 verify-step.lua 'step_log.accesses[26].read = string.pack(">I8", 0x1234)'
+Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
+```{.bash key=verify_step_mess_read subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+rm -f verify-step.lua
+ln -s "$RECIPES_DIR/verify-step.lua" .
+{
+# docs:begin cmd
+lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
+# docs:end cmd
+} 2>&1 || true
 ```
-```
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-
-lua5.3: verify-step.lua:30: word value before write access 26 does not match target hash
-stack traceback:
-	[C]: in function 'assert'
-	verify-step.lua:30: in main chunk
-	[C]: in ?
-```
-Changing the target hash to match the false value read causes the proof to be rejected because rolling the target hash up the tree will not result in the expected root hash:
-```bash
-lua5.3 verify-step.lua 'local access = step_log.accesses[26];access.read = 0x1234; access.proof.target_hash = cartesi.keccak(access.read);'
-```
-```
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-
-lua5.3: verify-step.lua:30: word value before write access 26 fails proof
-stack traceback:
-	[C]: in function 'assert'
-	verify-step.lua:30: in main chunk
-	[C]: in ?
+```{replace=verify_step_mess_read/both enabled=yes}
 ```
 
-In a nutshell, only valid state transitions are accepted by the `cartesi.machine.verify_state_transition()` function.
+Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
+```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+rm -f verify-step.lua
+ln -s "$RECIPES_DIR/verify-step.lua" .
+{
+# docs:begin cmd
+lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
+# docs:end cmd
+} 2>&1 || true
+```
+```{replace=verify_step_mess_target_hash/both enabled=yes}
+```
+
+In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
 
 
 # The target perspective

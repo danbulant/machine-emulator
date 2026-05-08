@@ -6,16 +6,17 @@ local util = require"cartesi.util"
 local config = require(arg[1])
 local machine = cartesi.machine(config)
 
--- Run machine until it halts or yields
-local max_mcycle = tonumber(arg[2])
-while not machine:read_iflags_H() and not machine:read_iflags_Y() and machine:read_mcycle() < max_mcycle do
-    machine:run(max_mcycle)
-end
-assert(machine:read_mcycle() == max_mcycle, "Machine halted or yielded early!")
+-- Advance to the requested mcycle and uarch_cycle
+local mcycle = assert(tonumber(arg[2]), "missing mcycle")
+local ucycle = assert(tonumber(arg[3]), "missing uarch_cycle")
+machine:run(mcycle)
+assert(machine:read_reg("mcycle") == mcycle, "machine halted or yielded early")
+machine:run_uarch(ucycle)
+assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
--- Obtain state hash before step
-local step_log = machine:step{ annotations = true, proofs = true }
-
--- Dump access log to screen
-io.stderr:write(string.format("\nContents of step %u access log:\n\n", max_mcycle))
-util.dump_log(step_log, io.stderr)
+-- Obtain access log and dump it to screen
+local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+io.stderr:write(string.format(
+    "\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n",
+    mcycle, ucycle))
+util.dump_log(log, io.stderr)
