@@ -1,122 +1,96 @@
--- No need to load the Cartesi module
-local cartesi = {}
-cartesi.grpc = require"cartesi.grpc"
+-- Load the JSON-RPC submodule and the EVM ABI helpers
+local cartesi = require"cartesi"
+local cartesi_jsonrpc = require"cartesi.jsonrpc"
+local evmu = require"cartesi.evmu"
+
+local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
+    .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
+local NOTICE = "Notice(bytes payload)"
+local ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 -- Writes formatted text to stderr
 local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
--- Create connection to remote Cartesi Machine server
+-- Print a string folded into lines of width w
+local function fold(s, w)
+    for i = 1, #s, w do print(s:sub(i, i + w - 1)) end
+end
+
+-- Encode a raw expression as an EvmAdvance request payload (bc needs a
+-- trailing newline to accept the line as a complete expression)
+local function encode_advance(expr, index)
+    local bint = evmu.bint
+    return evmu.encode_calldata(EVM_ADVANCE, {
+        chain_id = bint.new(0),
+        app_contract = ZERO_ADDRESS,
+        msg_sender = ZERO_ADDRESS,
+        block_number = bint.new(0),
+        block_timestamp = bint.new(os.time()),
+        prev_randao = bint.new(0),
+        index = bint.new(index),
+        payload = evmu.raw(expr .. "\n"),
+    })
+end
+
+-- Connect to remote Cartesi Machine server (and shut it down on exit)
 local remote_address = assert(arg[1], "missing remote address")
-local checkin_address = assert(arg[2], "missing checkin address")
-stderr("Listening for checkin at '%s'\n", checkin_address)
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local remote = cartesi.grpc.stub(remote_address, checkin_address)
+local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address))
+cartesi_jsonrpc_machine:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
-local v = assert(remote.get_version())
+local v = assert(cartesi_jsonrpc_machine:get_server_version())
 stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
 
--- Instantiate machine from template
-local machine = remote.machine("rolling-calculator-template")
+-- Load remote machine from the rolling-calculator template
+local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
--- Get initial config from template
-local config = machine:get_initial_config()
-
--- Print a string splitting it into multiple lines
-local function fold(str, w)
-    local i = 1
-    while i <= #str do
-        print(str:sub(i, i+w-1))
-        i = i + w
-    end
+-- Snapshot via fork: the backup server keeps the pre-input state
+local backup
+local function snapshot() backup = machine:fork_server() end
+local function commit()
+    if backup then backup:shutdown_server() end
+    backup = nil
+end
+local function rollback()
+    assert(backup, "no snapshot to rollback to")
+    local address = machine:get_server_address()
+    machine:shutdown_server()
+    machine:swap(backup)
+    machine:rebind_server(address)
+    backup = nil
 end
 
--- Encode an unsigned integer into 256-bit big-endian
-local function encode_be256(value)
-    return string.rep("\0", 32-8)..string.pack(">I8", value)
-end
-
--- Write the input metadata memory range
-local function write_input_metadata(machine, input_metadata, i)
-    machine:write_memory(input_metadata.start,
-        encode_be256(0) .. -- msg_sender
-        encode_be256(0) .. -- block_number
-        encode_be256(os.time()) .. -- time_stamp
-        encode_be256(0) .. -- epoch_index
-        encode_be256(i) -- input_index"
-    )
-end
-
--- Write the input into the rx_buffer memory range
-local function write_input(machine, rx_buffer, input)
-    machine:write_memory(rx_buffer.start,
-        encode_be256(32) .. -- offset
-        encode_be256(#input) .. -- length
-        input -- input itself
-    )
-end
-
--- Read a notice from the tx_buffer memory range
-local function read_notice(machine, tx_buffer, str)
-    -- Get length of output, skipping offset
-    local length = string.unpack(">I8",
-        machine:read_memory(tx_buffer.start+32+24, 8))
-    -- Get output itself, skipping offset and length
-    return machine:read_memory(tx_buffer.start+64, length)
-end
-
--- Obtain the relevant rollup memory ranges from the initial config
-assert(config.rollup, "rollup not enabled in machine")
-local rx_buffer = config.rollup.rx_buffer
-local tx_buffer = config.rollup.tx_buffer
-local input_metadata = config.rollup.input_metadata
-
--- Run machine until it halts
+-- Run the machine until it halts or stdin closes
 local i = 0
-while not machine:read_iflags_H() do
+while machine:read_reg("iflags_H") == 0 do
     machine:run(math.maxinteger)
-    local reason = machine:read_htif_tohost_data() >> 32
-    -- Machine yielded manual
-    if machine:read_iflags_Y() then
-        -- Send new request if previous was accepted
-        if reason == remote.machine.HTIF_YIELD_REASON_RX_ACCEPTED then
-			-- Otherwise, obtain expression from stdin
-			stderr("type expression\n") -- prompt for expression
-			local expr = io.read()
-			if not expr then
-				break
-			end
-            machine:snapshot()
+    if machine:read_reg("iflags_Y") ~= 0 then
+        local _, reason = machine:receive_cmio_request()
+        if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            commit()
+            stderr("type expression\n")
+            local expr = io.read()
+            if not expr then break end
+            stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
-			-- Write expression as the input
-			write_input(machine, rx_buffer, expr)
-			-- Write the input metadata
-			write_input_metadata(machine, input_metadata, i)
-			-- Tell machine this is an advance-state request
-			machine:write_htif_fromhost_data(0)
-			-- Reset the Y flag so machine can proceed
-			machine:reset_iflags_Y()
-        -- Otherwise, rollback to state before processing was attempted
-        elseif i > 0 then
+            snapshot()
+            machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
+        elseif i > 0 and reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
-			machine:rollback()
+            rollback()
         else
             stderr("machine initialization failed\n")
             break
         end
-    -- Machine yielded automatic
-    elseif machine:read_iflags_X() then
-        -- It output a notice
-        if reason == remote.machine.HTIF_YIELD_REASON_TX_NOTICE then
-            -- Read notice and print it
+    elseif machine:read_reg("iflags_X") ~= 0 then
+        local _, reason, data = machine:receive_cmio_request()
+        if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
             stderr("result is\n")
-            fold(read_notice(machine, tx_buffer), 68)
+            fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
         end
     end
 end
-
--- Shut down remote server
-stderr("Shutting down remote cartesi machine\n")
-remote.shutdown()
+commit()

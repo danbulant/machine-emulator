@@ -1449,7 +1449,7 @@ genext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client replace=source/template subst=calc_ext2 enabled=yes}
+```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template replace=source/template subst=calc_ext2 enabled=yes}
 srv_tmp=$(mktemp)
 _cleanup() {
     rm -f "$srv_tmp" \
@@ -1457,7 +1457,6 @@ _cleanup() {
         input-1-output-hashes-root-hash.bin \
         input-2-output-hashes-root-hash.bin \
         calc.ext2
-    rm -rf rolling-calculator-template
 }
 trap _cleanup EXIT
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
@@ -2989,220 +2988,88 @@ In production, the Server Manager is responsible for passing advance-state and i
 When prototyping, the `cartesi-machine` command-line utility can be used to play the same part, loading sequentially-numbered requests from files and storing sequentially-numbered responses to files.
 As expected, the Lua interface can also be used to feed requests to a Rolling Cartesi Machine and obtain the responses it produces.
 
-The target application (indirectly) raises the HTIF manual yield flag (`machine:read_iflags_Y() == true`) to notify the host it is done with the current request and ready for the next.
-While processing each request, it raises the HTIF automatic yield flag (`machine:read_iflags_X() == true`) for each new response it generates.
-In both cases, the _reason_ for the yield is available from bits 47-32 in the `tohost` HTIF CSR (`machine:read_tohost_data() >> 32`).
-When transitioning between requests, the reason can take the values `machine.HTIF_YIELD_REASON_RX_ACCEPTED` (previous request was accepted), `machine.HTIF_YIELD_REASON_RX_REJECTED` (previous request was rejected), or `machine.HTIF_YIELD_REASON_TX_EXCEPTION` (an unrecoverable error was encountered).
-When generating a new response to a request, the reason can take the self-explanatory values `machine.HTIF_YIELD_REASON_TX_VOUCHER`, `machine.HTIF_YIELD_REASON_TX_NOTICE`, and `machine.HTIF_YIELD_REASON_TX_REPORT`.
+The target application (indirectly) raises the HTIF manual yield flag (`machine:read_reg("iflags_Y") ~= 0`) to notify the host it is done with the current request and ready for the next.
+While processing each request, it raises the HTIF automatic yield flag (`machine:read_reg("iflags_X") ~= 0`) for each new response it generates.
+In both cases, the host retrieves the yield _command_, _reason_, and request _data_ via `machine:receive_cmio_request()`.
+When transitioning between requests, the reason can take the values `cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED` (previous request was accepted), `cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED` (previous request was rejected), or `cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION` (an unrecoverable error was encountered).
+When generating a new response to a request, the reason can take the self-explanatory values `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT` (a voucher or notice) and `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT`.
 
-The data associated with requests is sent to the machine in the rollup memory ranges defined by `memory_range_config` entries stored in the `machine_config` as `rollup.rx_buffer` and `rollup.input_metadata`.
-Conversely, the data associated with responses (or exceptions) is obtained from the machine in the `rollup.tx_buffer` rollup memory range.
-Finally, hashes for vouchers and notices produced in response to advance-state requests are written, respectively, to arrays in the `rollup.voucher_hashes` and `rollup.notice_hashes` rollup memory ranges, in the order they are produced.
+The data associated with requests is sent to the machine in the CMIO memory range defined by the `memory_range_config` entry stored in the `machine_config` as `cmio.rx_buffer`.
+Conversely, the data associated with responses (or exceptions) is obtained from the machine in the `cmio.tx_buffer` memory range.
+The host does not need to access these ranges directly.
+The call `machine:send_cmio_response(reason, data)` writes _data_ into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
+Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
-Data in the input-metadata memory range consists of the following fields: a _message sender_ (an EVM address), a _block-number_, a _timestamp_ (seconds since the _Unix epoch_), the rollup _epoch index_, and the rollup _input index_.
-All entries are 256-bit big-endian unsigned integers.
-In practice, only the least-significant 20 bytes are used for the message sender address, and only the least-significant 8 bytes, or 64-bits, are used for the remaining number entries.
+Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256,address,address,uint256,uint256,uint256,uint256,bytes)` calldata blobs.
+Their fields carry the _chain id_, _app contract_ (an EVM address), _msg sender_ (an EVM address), _block number_, _block timestamp_ (seconds since the _Unix epoch_), _prev randao_ (a 32-byte big-endian unsigned integer), rollup _input index_, and the input _payload_ bytes.
 (See the table in the target perspective [architecture](#rollup-format).)
 
-Data for the input to an advance-state request, the query to an inspect-state request, exceptions, notices, and reports are all encoded in the same way: a 256-bit _offset_ field (with value 32), then a 256-bit _length_ field, directly followed by payload with _length_ bytes.
-The offset and length fields are encoded as 256-bit big-endian unsigned integers.
-Data for vouchers start with an _address_ field (an EVM address, again as the least-significant 20 bytes in a 256-bit big-endian unsigned integer) and then continue just like the others: and _offset_ field (this time with value 64), then a 256-bit _length_ field, directly followed by payload with _length_ bytes.
-(See the table in the target perspective [architecture](#rollup-format).)
+Outputs come back as ABI-encoded `Voucher(address,uint256,bytes)` or `Notice(bytes)` calldata blobs.
+Reports, exceptions, and inspect-state queries are raw payload bytes with no ABI wrapping.
+The `cartesi.evmu` Lua submodule provides `encode_calldata` and `decode_calldata` helpers for these signatures.
 
-The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (We will use the server calculator [example](#rolling-cartesi-machine-templates):
+The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (we will use the server calculator [example](#rolling-cartesi-machine-templates)):
 
-```{.lua title="run-rolling-calculator.lua"}
--- No need to load the Cartesi module
-local cartesi = {}
-cartesi.grpc = require"cartesi.grpc"
-
--- Writes formatted text to stderr
-local function stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
-
--- Create connection to Remote Cartesi Machine server
-local remote_address = assert(arg[1], "missing remote address")
-local checkin_address = assert(arg[2], "missing checkin address")
-stderr("Listening for checkin at '%s'\n", checkin_address)
-stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local remote = cartesi.grpc.stub(remote_address, checkin_address)
-
--- Print server version (and test connection)
-local v = assert(remote.get_version())
-stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
-
--- Instantiate machine from template
-local machine = remote.machine("rolling-calculator-template")
-
--- Get initial config from template
-local config = machine:get_initial_config()
-
--- Print a string splitting it into multiple lines
-local function fold(str, w)
-    local i = 1
-    while i <= #str do
-        print(str:sub(i, i+w-1))
-        i = i + w
-    end
-end
-
--- Encode an unsigned integer into 256-bit big-endian
-local function encode_be256(value)
-    return string.rep("\0", 32-8)..string.pack(">I8", value)
-end
-
--- Write the input metadata memory range
-local function write_input_metadata(machine, input_metadata, i)
-    machine:write_memory(input_metadata.start,
-        encode_be256(0) .. -- msg_sender
-        encode_be256(0) .. -- block_number
-        encode_be256(os.time()) .. -- time_stamp
-        encode_be256(0) .. -- epoch_index
-        encode_be256(i) -- input_index"
-    )
-end
-
--- Write the input into the rx_buffer memory range
-local function write_input(machine, rx_buffer, input)
-    machine:write_memory(rx_buffer.start,
-        encode_be256(32) .. -- offset
-        encode_be256(#input) .. -- length
-        input -- input itself
-    )
-end
-
--- Read a notice from the tx_buffer memory range
-local function read_notice(machine, tx_buffer, str)
-    -- Get length of output, skipping offset
-    local length = string.unpack(">I8",
-        machine:read_memory(tx_buffer.start+32+24, 8))
-    -- Get output itself, skipping offset and length
-    return machine:read_memory(tx_buffer.start+64, length)
-end
-
--- Obtain the relevant rollup memory ranges from the initial config
-assert(config.rollup, "rollup not enabled in machine")
-local rx_buffer = config.rollup.rx_buffer
-local tx_buffer = config.rollup.tx_buffer
-local input_metadata = config.rollup.input_metadata
-
--- Run machine until it halts
-local i = 0
-while not machine:read_iflags_H() do
-    machine:run(math.maxinteger)
-    local reason = machine:read_htif_tohost_data() >> 32
-    -- Machine yielded manual
-    if machine:read_iflags_Y() then
-        -- Send new request if previous was accepted
-        if reason == remote.machine.HTIF_YIELD_REASON_RX_ACCEPTED then
-			-- Otherwise, obtain expression from stdin
-			stderr("type expression\n") -- prompt for expression
-			local expr = io.read()
-			if not expr then
-				break
-			end
-            machine:snapshot()
-            i = i + 1
-			-- Write expression as the input
-			write_input(machine, rx_buffer, expr)
-			-- Write the input metadata
-			write_input_metadata(machine, input_metadata, i)
-			-- Tell machine this is an advance-state request
-			machine:write_htif_fromhost_data(0)
-			-- Reset the Y flag so machine can proceed
-			machine:reset_iflags_Y()
-        -- Otherwise, rollback to state before processing was attempted
-        elseif i > 0 then
-            stderr("input rejected\n")
-			machine:rollback()
-        else
-            stderr("machine initialization failed\n")
-            break
-        end
-    -- Machine yielded automatic
-    elseif machine:read_iflags_X() then
-        -- It output a notice
-        if reason == remote.machine.HTIF_YIELD_REASON_TX_NOTICE then
-            -- Read notice and print it
-            stderr("result is\n")
-            fold(read_notice(machine, tx_buffer), 68)
-        end
-    end
-end
-
--- Shutdown remote server
-stderr("Shutting down remote cartesi machine\n")
-remote.shutdown()
+```{.lua key=run_rolling_calculator replace=source include=run-rolling-calculator.lua enabled=yes}
 ```
 Rolling Cartesi Machines must be rolled-back to the state they were at before they received an advance-state request they later rejected.
-This requires the `machine:snapshot()` and `machine:rollback()` methods available only in Remote Cartesi Machines.
-Therefore, the script uses the `cartesi.grpc` module to instantiate a remote machine based on the `"rolling-calculator-template"`.
-
-After defining a variety of helper functions, the script obtains from the machine configuration the rollup memory ranges it will later use to exchange data with the Rolling Cartesi Machine: `rollup.rx_buffer`, `rollup.tx_buffer`, and `rollup.input_metadata`.
+This requires snapshot and rollback support, available only in Remote Cartesi Machines.
+The script therefore uses the `cartesi.jsonrpc` module to instantiate a remote machine based on the `"rolling-calculator-template"`.
+The `machine:fork_server()` call creates a backup server with a copy of the current state.
+On rejection, the script shuts down the original server, swaps the backup handle into `machine`, and rebinds it to the original address.
+On acceptance, it shuts down the now-stale backup.
 
 It then enters its main loop, which is executed until the machine halts.
 For each iteration, the script invokes `machine:run(math.maxinteger)` to run the machine until it yields or halts.
 When the call returns, it checks if the machine yielded manual.
 If so, it checks the reason for the yield.
 
-If the reason was `machine.HTIF_YIELD_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
+If the reason was `cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
 The script then attempts to obtain a mathematical expression from the console.
-If the user provides one, it creates a new snapshot and then writes the expression as the input payload into
-`rollup.rx_buffer` and the input metadata to `rollup.input_metadata`, both in the appropriate encoding.
-Before continuing with the next loop iteration, the script informs the server that the new request is an advance-state request by writing `0` to the data field of the HTIF `tohost` CSR (as opposed to 1, which would signify an inspect-state request).
-It also clears the `Y` flag in the `iflags` CSR to release the machine for execution.
-If, however, the reason was anythying else, the script rolls back the machine and continues with the next loop iteration.
+If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, ...)`.
+(The `payload` field is wrapped in `evmu.raw(...)` because `cartesi.evmu` treats unwrapped `bytes` arguments as hex-encoded strings.)
+If, however, the reason was anything else, the script rolls back the machine and continues with the next loop iteration.
 
 If the machine yielded automatic, the script once again checks for the yield reason.
-If the reason was `machine.HTIF_YIELD_REASON_TX_NOTICE`, the script decoes the notice payload from `rollup.tx_buffer` and prints the formatted result to the console.
+If the reason was `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script decodes the data as a `Notice` calldata blob, extracts its `payload` field as raw bytes, and prints the formatted result to the console.
 
 Here is what a session looks like.
-First, open an separate shell into the same playground container (For example, by running `docker exec -it <container-name> /bin/bash`) and run the `remote-cartesi-machine` server in it
+First, open a separate shell into the same docker container (for example, by running `docker exec -it <container-name> /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
 ```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 ```
 
 Then, run the `run-rolling-calculator.lua` client script in the other shell
-```bash
-lua run-rolling-calculator.lua localhost:8080 localhost:8081
-```
-
-The client prints the connection status to the console
-```
-Listening for checkin at 'localhost:8081'
-Connecting to remote cartesi machine at 'localhost:8080'
-Connected: remote version is 0.5.0
-```
-and prompts us to type an expression. Entering `6*2^1024 + 3*2^512` causes the expected result to be printed:
-```
-type expression
+```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator subst=rolling_calc_template replace=source/cmd enabled=yes}
+srv_tmp=$(mktemp)
+trap 'rm -f "$srv_tmp"' EXIT
+rm -f rolling-calculator-template run-rolling-calculator.lua
+ln -s "$rolling_calc_template/rolling-calculator-template" .
+ln -s "$RECIPES_DIR/run-rolling-calculator.lua" .
+cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
+srv_pid=$!
+while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check 2>/dev/null; do sleep 1; done
+{
+# docs:begin cmd
+lua5.4 run-rolling-calculator.lua 127.0.0.1:8080
+# docs:end cmd
+} > client 2>&1 <<EOF
 6*2^1024 + 3*2^512
-result is
-10786158809173895446375831144734148401707861873653839436405804869463
-96054833005778796250863934445216126720683279228360145952738612886499
-73495708458383684478649003115037698421037988831222501494715481595948
-96901677837132352593468675094844090688678579236903861342030923488978
-36036892526733668721977278692363075584
-```
-The client then asks for a new expression. Entering an invalid expression `1+(` causes the `calc.sh` script running inside the Rolling Cartesi Machine to reject the input:
-```
-type expression
 1+(
-input rejected
+EOF
+wait "$srv_pid"
+mv "$srv_tmp" server
 ```
-Finally, entering `^D` causes the client script to shutdown the server and exit.
-```
-type expression
-^D
-Shutting down remote cartesi machine
+The client prints the connection status to the console and then prompts us to type an expression.
+Entering `6*2^1024 + 3*2^512` causes the expected result to be printed, after which the client asks for a new expression.
+Entering an invalid expression `1+(` causes the `calc.sh` script running inside the Rolling Cartesi Machine to reject the input.
+Finally, entering `^D` causes the client script to exit and shut down the server.
+The full transcript is
+```{replace=lua_rolling_calculator/client enabled=yes}
 ```
 The remote console shows only the error generated when the invalid expression `1+(` was entered:
-```
-bc: bad expression at '('
-[json.exception.parse_error.101] parse error at line 1, column 1: syntax error while parsing value - unexpected end of
-input; expected '[', '{', or a literal
+```{replace=lua_rolling_calculator/server enabled=yes}
 ```
 
 ### State transition proofs
