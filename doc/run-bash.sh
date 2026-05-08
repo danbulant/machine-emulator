@@ -4,6 +4,7 @@ set -euo pipefail
 REPLACE_DIR="$(dirname "$(realpath "$0")")"
 cd "$REPLACE_CACHE_DIR/$REPLACE_KEY"
 echo "$REPLACE_KEY"
+: > both
 exec > >(tee stdout >> both) 2> >(tee stderr >> both)
 trap 'exec >&- 2>&-; wait' EXIT
 if [ -f spec ]; then
