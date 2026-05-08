@@ -2916,17 +2916,19 @@ Output drive proof accepted!
 ### Remote Cartesi Machines
 
 The Lua API can also be used to control a Remote Cartesi Machine.
-The functionality is available as a separate Lua module, the `cartesi.grpc` submodule.
-(This is to avoid pulling in unnecessary gRPC dependencies where only local Cartesi Machines are needed.)
+The functionality is available as the `cartesi.jsonrpc` submodule.
 
-The `cartesi.grpc.stub(<remote-address>, <checkin-address>)` method opens and returns a client connection to an existing Remote Cartesi Machine server.
-The `<remote-address>` specifies the remote server to connect to, and the `<checkin-address>` specifies an address the server will use to notify the client when it is ready.
-The client connection returned by `cartesi.grpc.stub(<remote-address>, <checkin-address>)` functions as a `remote` version of the local `cartesi` module.
+The `cartesi_jsonrpc.connect_server(<remote-address>[, <timeout-ms>])` function opens a connection to an existing Remote Cartesi Machine server and returns an empty machine handle bound to that server.
+Here `cartesi_jsonrpc` refers to the result of `require"cartesi.jsonrpc"`.
+The handle exposes all the same methods as a local machine instance, a set of server-control methods, and is callable as a constructor just like `cartesi.machine` is.
 
-There are two new methods specific to remote connections.
-The `remote.shutdown()` method causes the remote server to shutdown.
-Note that this will, of course, terminate whatever Remote Cartesi Machine the server was managing.
-The `remote.get_version()` method returns a `semantic_version` object that contains the server version:
+The server-control methods include `:get_server_version()`, `:get_server_address()`, `:shutdown_server()`, `:fork_server()`, `:rebind_server()`, and `:set_timeout()`.
+The `:set_cleanup_call(call)` method controls what happens when the handle is closed or garbage-collected.
+The three constants `cartesi.jsonrpc.NOTHING`, `cartesi.jsonrpc.DESTROY`, and `cartesi.jsonrpc.SHUTDOWN` select the cleanup action.
+`connect_server` defaults to `NOTHING`; `spawn_server` defaults to `SHUTDOWN`.
+For a script that connects to a pre-existing server, the idiomatic pattern is to mark the handle `<close>` and call `:set_cleanup_call(cartesi.jsonrpc.SHUTDOWN)` immediately after connecting, so the server is retired automatically when the script exits with no explicit call needed.
+
+The `:get_server_version()` method returns a `semantic_version` object that contains the server version:
 ```lua
 semantic_version ::= {
   major ::= number,
@@ -2937,100 +2939,47 @@ semantic_version ::= {
 }
 ```
 
-The `remote.machine` field behaves just like the `cartesi.machine` &ldquo;class&rdquo;.
-Likewise, the Remote Cartesi Machine instance returned by the `remote.machine(<machine_config>)` constructor follows the same interface as the local Cartesi Machine instance returned by the `cartesi.machine(<machine_config>)` constructor.
-Note that there can only be a single active Cartesi Machine instance per remote server.
-Therefore, use the `machine:destroy()` on the active instance `machine` before instantiating a new machine with the
-`remote.machine(<machine_config>)` constructor again.
+The empty handle returned by `connect_server` is the remote analogue of `cartesi.machine`.
+Just as `cartesi.machine(<machine_config>)` instantiates a local machine, calling the handle with a config instantiates a remote machine bound to the same server and returns a new handle for that instance.
+The server can serve multiple machines in separate forked child servers (see `--remote-fork` in the host perspective), so there is no need to destroy an instance before creating another.
 
-The following script illustrates the use of the `cartesi.grpc` submodule.
-```{.lua title="run-remote-config.lua"}
--- No need to load the Cartesi module
-local cartesi = {}
--- Load the gRPC submodule for Remote Cartesi Machines
-cartesi.grpc = require"cartesi.grpc"
-
--- Writes formatted text to stderr
-local function stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
-
--- Create connection to Remote Cartesi Machine server
-local remote_address = assert(arg[1], "missing remote address")
-local checkin_address = assert(arg[2], "missing checkin address")
-stderr("Listening for checkin at '%s'\n", checkin_address)
-stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local remote = cartesi.grpc.stub(remote_address, checkin_address)
-
--- Print server version (and test connection)
-local v = assert(remote.get_version())
-stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
-
--- Instantiate remote machine from configuration
-local machine = remote.machine(require(arg[3]))
-
--- Run machine until it halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    machine:run(math.maxinteger)
-end
-
--- Print machine status
-if machine:read_iflags_H() then
-    stderr("\nHalted\n")
-else
-    stderr("\nYielded manual\n")
-end
--- Print cycle count
-stderr("Cycles: %u\n", machine:read_mcycle())
-
--- Shutdown remote server
-stderr("Shutting down remote cartesi machine\n")
-remote.shutdown()
+The following script illustrates the use of the `cartesi.jsonrpc` submodule.
+```{.lua key=run_remote_config replace=source include=run-remote-config.lua enabled=yes}
 ```
-The script starts by loading the `cartesi.grpc` module.
-It then opens a client connection to the remote server using addresses specified as the first and second command-line arguments.
-It calls the `remote.get_version()` method to test the connection and prints the version number returned by the server.
-From then on, the code is virtually the same as it would be if everything was local.
+The script loads the `cartesi.jsonrpc` module and connects to the server address given as the first command-line argument.
+It calls `cartesi_jsonrpc_machine:get_server_version()` to test the connection and prints the version number.
+It then instantiates a remote machine by calling `cartesi_jsonrpc_machine` with the configuration obtained from the second command-line argument, and runs it until it halts or yields.
+The `<close>` annotation combined with `set_cleanup_call(cartesi.jsonrpc.SHUTDOWN)` retires the server automatically when the script exits.
 
-The script creates a Remote Cartesi Machine instance using the `remote.machine(<machine_config>)` method, passing the configuration obtained from the third command-line argument.
-Note that, if the server has an active machine instance already, the call will fail.
-Furthermore, any resources referenced in the `machine_config` must be accessible to the server or the call will also fail.
-The script runs the returned remote machine instance until it halts or yields manual.
-It then prints the reason the machine stopped running and the cycle count at that point.
-Finally, it shuts down the server.
-
-Recall that, to run a server inside the playground, we opened a separate shell into the same playground container (For example, by running `docker exec -it <container-name> /bin/bash`), and then ran the `remote-cartesi-machine` server in it
+Recall that, to run a server inside the playground, we opened a separate shell into the same playground container (for example, by running `docker exec -it <container-name> /bin/bash`), and then ran the `cartesi-jsonrpc-machine` server in it
 ```bash
-remote-cartesi-machine \
-    --server-address=localhost:8080
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
 ```
 Now, instead of using the `cartesi-machine` command-line utility to control it, run the `run-remote-config.lua` client script in the other shell
 ```bash
-lua5.3 run-remote-config.lua \
-    localhost:8080 \
-    localhost:8081 \
+lua5.4 run-remote-config.lua \
+    127.0.0.1:8080 \
     config.nothing-to-do
-
 ```
 The client shell produces
 
-```{.bash key=lua_remote outputs=server,client replace=null}
+```{.bash key=lua_remote outputs=server,client depends=run_remote_config replace=null enabled=yes}
 srv_tmp=$(mktemp)
 trap 'rm -f "$srv_tmp"' EXIT
-remote-cartesi-machine --server-address=localhost:8080 > "$srv_tmp" 2>&1 &
+cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
-while ! netstat -ntl 2>&1 | grep 8080 > /dev/null; do sleep 1; done
-lua5.3 $RECIPES_DIR/run-remote-config.lua \
-    localhost:8080 \
-    localhost:8081 \
+while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check > /dev/null 2>&1; do sleep 1; done
+lua5.4 "$RECIPES_DIR/run-remote-config.lua" \
+    127.0.0.1:8080 \
     config.nothing-to-do > client 2>&1
 wait "$srv_pid"
 mv "$srv_tmp" server
 ```
-```{replace=lua_remote/client}
+```{replace=lua_remote/client enabled=yes}
 ```
 The server shell produces
-```{replace=lua_remote/server}
+```{replace=lua_remote/server enabled=yes}
 ```
 
 ### Rolling Cartesi Machines

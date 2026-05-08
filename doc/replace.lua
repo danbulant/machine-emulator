@@ -9,15 +9,19 @@
 --
 -- LIFECYCLE (three invocations)
 --
---   1. Dry-run: pass -M write-user-dependencies=<path> to pandoc. The filter
---      walks the template, writes each block body to cache/<key>/body.<ext>
+--   1. Dry-run: pass -M write-user-dependencies=<target> to pandoc and use
+--      pandoc's normal -o <path> for the output. The filter walks the
+--      template, writes each block body to cache/<key>/body.<ext>
 --      (idempotently), writes cache/<key>/spec when contents-form subst=
---      entries exist, and emits a self-contained makefile fragment to <path>.
---      Pandoc's rendered output is discarded -- the .d file is the deliverable.
---      Cached outputs are not read; replace=K/both and similar return "".
+--      entries exist, builds a self-contained makefile fragment with <target>
+--      on the LHS of the prereqs line, and replaces the document body with a
+--      single RawBlock containing that text. With -t plain, pandoc emits the
+--      RawBlock verbatim, so <path> ends up holding the makefile fragment.
+--      Cached outputs are not read in this pass and replace=K/both and similar
+--      return "".
 --
---   2. The outer Makefile includes the .d file. Its `all:` target lists every
---      cache file referenced by the document; each rule says "to produce
+--   2. The Makefile includes the .d file. <target>'s prereq line lists every
+--      cache file the document needs. Each rule says "to produce
 --      cache/<key>/stdout, depend on the runner, cache/<key>/body.<ext>, and
 --      each dep's output file, then exec the runner". Running `make` executes
 --      every needed body in topological order, populating the cache.
@@ -101,6 +105,15 @@
 --                       (stdout, stderr, both, source, null) are rejected.
 --                       The runner verifies each artifact exists after the body
 --                       exits and fails if it does not.
+--
+--   include=<path>      Only on key= blocks. Loads the block body from
+--                       $RECIPES_DIR/<path> instead of the inline template text.
+--                       Block body must be empty when include= is set. The
+--                       dry-run emits a make rule that copies the file into
+--                       cache/<K>/{body.<ext>,stdout,stderr,both}. Editing the
+--                       file invalidates the rule's primary target and cascades
+--                       to consumers declaring depends=<K>. outputs=, depends=,
+--                       and subst= are not allowed on include= keys.
 --
 --   enabled=yes|no      Optional. Controls whether this block is active.
 --                       When absent, the value of the -M default-replace=
@@ -195,10 +208,14 @@
 --     at runner time. Editing subst.lua or the spec file triggers a rebuild.
 --   - $VAR substitution requires a non-word boundary after VAR so $foo does
 --     not consume the start of $foobar; longest var wins for disambiguation.
+--   - include= keys emit a make rule with the included file as the only
+--     prereq. Editing the file invalidates cache/<K>/stdout and cascades
+--     through any consumer with depends=<K>.
 
-local deps_file
+local deps_target
 local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
 local REPLACE_CACHE_DIR = os.getenv("REPLACE_CACHE_DIR") or error("REPLACE_CACHE_DIR not set")
+local RECIPES_DIR = os.getenv("RECIPES_DIR") or error("RECIPES_DIR not set")
 
 -- Locate the directory containing this filter file; runners live alongside it.
 local REPLACE_DIR = PANDOC_SCRIPT_FILE:match("(.+)/[^/]+$") or "."
@@ -390,14 +407,19 @@ local function extract_region(body, name, label)
     return (scan:sub(r.first, r.last):gsub("\n$", ""))
 end
 
-local function read_output(key, sub, label)
-    consumed[key .. "/" .. sub] = true
-    if deps_file then return "" end
-    local path = REPLACE_CACHE_DIR .. "/" .. key .. "/" .. sub
-    local f = assert(io.open(path, "r"), label .. ": cannot open " .. path)
+local function read_file(path, label)
+    local f = io.open(path, "r")
+    assertf(f, "%s: cannot open %s", label, path)
     local txt = f:read("a")
     f:close()
-    return (strip_ansi(txt):gsub("\n$", ""))
+    return txt
+end
+
+local function read_output(key, sub, label)
+    consumed[key .. "/" .. sub] = true
+    if deps_target then return "" end
+    local path = REPLACE_CACHE_DIR .. "/" .. key .. "/" .. sub
+    return (strip_ansi(read_file(path, label)):gsub("\n$", ""))
 end
 
 -- Derive language from a codeblock's class list. Returns the first recognized
@@ -422,11 +444,23 @@ local function write_idempotent(path, content)
     f:close()
 end
 
-local function define_script(key, attr, body, classes, deps, subst)
+local function define_script(key, attr, body, classes, deps, subst, include_abs)
     assertf(not defined[key], "key=%s: duplicate definition", key)
     local out_list = parse_list(attr.outputs)
     for _, n in ipairs(out_list) do
         assertf(not RESERVED[n], "key=%s: outputs= cannot contain reserved name '%s'", key, n)
+    end
+    if include_abs then
+        assertf(#out_list == 0, "key=%s: outputs= not allowed on include= keys", key)
+        assertf(#deps == 0,     "key=%s: depends= not allowed on include= keys", key)
+        assertf(#subst == 0,    "key=%s: subst= not allowed on include= keys", key)
+        local lang = lang_from_classes(classes)
+        local info = LANG_INFO[lang]
+        defined[key]   = true
+        outputs_t[key] = {}
+        sources[key]   = body
+        if deps_target then emit_include_rule(key, info, include_abs) end
+        return body
     end
     for _, d in ipairs(deps) do
         assertf(defined[d.base], "key=%s: depends=%s: '%s' not yet defined", key, d.base, d.base)
@@ -467,7 +501,7 @@ local function define_script(key, attr, body, classes, deps, subst)
         end
         write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/spec", table.concat(lines, "\n") .. "\n")
     end
-    if deps_file then emit_rule(key, info, out_list, deps, subst, #contents_entries > 0) end
+    if deps_target then emit_rule(key, info, out_list, deps, subst, #contents_entries > 0) end
     return resolved
 end
 
@@ -510,6 +544,28 @@ function emit_rule(key, info, out_list, deps, subst, has_contents)
     end
 end
 
+-- Emit a make rule for an include= key. The included file is the rule's only
+-- prereq. The recipe copies it into cache/<key>/{body.<ext>,stdout,both} and
+-- truncates stderr. Editing the file invalidates the primary target and
+-- cascades to consumers declaring depends=<key>.
+function emit_include_rule(key, info, include_abs)
+    local primary     = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
+    local body_path   = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
+    local stderr_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stderr"
+    local both_path   = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
+    rules[#rules + 1] = table.concat({
+        primary, ": ", include_abs, "\n",
+        "\t@mkdir -p $(REPLACE_CACHE_DIR)/", key, "\n",
+        "\t@cp ", include_abs, " ", primary,     "\n",
+        "\t@cp ", include_abs, " ", body_path,   "\n",
+        "\t@cp ", include_abs, " ", both_path,   "\n",
+        "\t@: > ", stderr_path,
+    })
+    rules[#rules + 1] = table.concat({body_path,   ": ", primary})
+    rules[#rules + 1] = table.concat({stderr_path, ": ", primary})
+    rules[#rules + 1] = table.concat({both_path,   ": ", primary})
+end
+
 -- Lazily define key and all its transitive depends= in DFS order.
 local function ensure_defined(key)
     if defined[key] then return end
@@ -525,7 +581,7 @@ local function ensure_defined(key)
             ensure_defined(s.base)
         end
     end
-    define_script(key, p.attr, p.body, p.classes, p.deps, p.subst)
+    define_script(key, p.attr, p.body, p.classes, p.deps, p.subst, p.include_abs)
     defining[key] = nil
 end
 
@@ -641,6 +697,7 @@ local function process_codeblock(el)
     attr.block = nil
     attr.subst = nil
     attr.enabled = nil
+    attr.include = nil
 
     if not enabled then
         force_fenced(el)
@@ -677,9 +734,11 @@ local function process_code(el)
     local attr = el.attr.attributes
     local replace = attr.replace
     if not replace then return el end
+    assertf(not attr.include, "inline Code: include= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     attr.replace = nil
     attr.enabled = nil
+    attr.include = nil
     if not enabled then return el end
     local label = "inline Code replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
@@ -694,9 +753,11 @@ local function process_span(el)
     local attr = el.attr.attributes
     local replace = attr.replace
     if not replace then return el end
+    assertf(not attr.include, "inline Span: include= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     attr.replace = nil
     attr.enabled = nil
+    attr.include = nil
     if not enabled then return el end
     local label = "inline Span replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
@@ -747,17 +808,18 @@ local function sorted(t)
     return r
 end
 
-local function emit_deps()
-    local f = assert(io.open(deps_file, "w"))
-    f:write("all:")
+local function build_makefile_text()
+    local out = {deps_target, ":"}
     for _, c in ipairs(sorted(consumed)) do
-        f:write(" $(REPLACE_CACHE_DIR)/" .. c)
+        out[#out + 1] = " $(REPLACE_CACHE_DIR)/"
+        out[#out + 1] = c
     end
-    f:write("\n")
+    out[#out + 1] = "\n"
     for _, r in ipairs(rules) do
-        f:write(r .. "\n")
+        out[#out + 1] = r
+        out[#out + 1] = "\n"
     end
-    f:close()
+    return table.concat(out)
 end
 
 local function collect_codeblock(b)
@@ -766,12 +828,23 @@ local function collect_codeblock(b)
     if not is_enabled(b.attr.attributes) then return end
     check_identifier(key, "key=" .. key)
     assertf(not pending[key], "key=%s: duplicate definition", key)
+    local include = b.attr.attributes.include
+    local body = b.text
+    local include_abs
+    if include then
+        assertf(body == "",
+            "key=%s: include=%s: block body must be empty when include= is set",
+            key, include)
+        include_abs = RECIPES_DIR .. "/" .. include
+        body = read_file(include_abs, "key=" .. key .. " include=" .. include)
+    end
     pending[key] = {
-        attr    = b.attr.attributes,
-        body    = b.text,
-        classes = b.classes,
-        deps    = parse_depends(b.attr.attributes.depends),
-        subst   = parse_subst(b.attr.attributes.subst),
+        attr        = b.attr.attributes,
+        body        = body,
+        classes     = b.classes,
+        deps        = parse_depends(b.attr.attributes.depends),
+        subst       = parse_subst(b.attr.attributes.subst),
+        include_abs = include_abs,
     }
 end
 
@@ -781,7 +854,7 @@ end
 
 function Pandoc(doc)
     local m = doc.meta["write-user-dependencies"]
-    deps_file = m and pandoc.utils.stringify(m) or nil
+    deps_target = m and pandoc.utils.stringify(m) or nil
     local dr = doc.meta["default-replace"]
     if dr ~= nil then
         local v = pandoc.utils.stringify(dr)
@@ -789,7 +862,9 @@ function Pandoc(doc)
     end
     collect(doc.blocks)
     doc.blocks = walk_blocks(doc.blocks)
-    if deps_file then emit_deps() end
+    if deps_target then
+        doc.blocks = { pandoc.RawBlock("plain", build_makefile_text()) }
+    end
     return doc
 end
 
