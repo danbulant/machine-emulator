@@ -472,15 +472,15 @@ The maximum cycle can be specified with the command-line option `--max-mcycle=<n
 cartesi-machine --max-mcycle=0 --store-config="$RECIPES_DIR/config/nothing-to-do.lua"
 ```
 
-```{.bash key=cycles_limit_exec depends=config_store_nothing_to_do replace=null enabled=yes}
+```{.bash key=cycles_htif_putchar depends=config_store_nothing_to_do replace=null enabled=yes}
 lua $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
-```{.bash key=max_mcycle_arg subst=cycles_limit_exec replace=null enabled=yes}
-printf -- '--max-mcycle=%s' "$(cat $cycles_limit_exec/stderr)"
+```{.bash key=max_mcycle_arg subst=cycles->cycles_htif_putchar/stderr replace=null enabled=yes}
+echo --max-mcycle=$cycles
 ```
-For example, adding the []{replace=max_mcycle_arg/stdout enabled=yes} command-line option
-```{.bash key=limit_exec replace=source subst=cycles->cycles_limit_exec/stderr enabled=yes}
+For example, adding the []{replace=max_mcycle_arg enabled=yes} command-line option
+```{.bash key=limit_exec replace=source subst=cycles->cycles_htif_putchar/stderr enabled=yes}
 cartesi-machine --max-mcycle=$cycles
 ```
 produces the output
@@ -539,7 +539,7 @@ To obtain the state hash right before execution starts, use the command-line opt
 Conversely, to obtain the state hash right after execution is done, use the option `--final-hash`.
 For example,
 
-```{.bash key=state_hashes_limit_exec subst=cycles->cycles_limit_exec/stderr replace=source enabled=yes}
+```{.bash key=state_hashes_limit_exec subst=cycles->cycles_htif_putchar/stderr replace=source enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --initial-hash \
@@ -557,12 +557,12 @@ cat $state_hashes_limit_exec/both \
 The initial state hash [...]{replace=state_hashes_initial/stdout enabled=yes} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
 
-```{.bash key=state_hashes_final_limit_exec subst=cycles->cycles_limit_exec/stderr,state_hashes_limit_exec replace=null enabled=yes}
+```{.bash key=state_hashes_final_limit_exec subst=cycles->cycles_htif_putchar/stderr,state_hashes_limit_exec replace=null enabled=yes}
 cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
-In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_limit_exec/stderr enabled=yes}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout enabled=yes}.
+In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_htif_putchar/stderr enabled=yes}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout enabled=yes}.
 
 :::info
 The scare quotes around &ldquo;only&rdquo; are pedantic.
@@ -608,7 +608,7 @@ To store a machine to a given `<directory>`, use the command-line option `--stor
 (In `<directory>`, the `%h` escape will be replaced by the state hash in hex.)
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec/stdout enabled=yes}
-```{.bash key=persistent_machine_cmd replace=source subst=cycles->cycles_limit_exec/stderr,hash->state_hashes_final_limit_exec/stdout enabled=yes}
+```{.bash key=persistent_machine_cmd replace=source subst=cycles->cycles_htif_putchar/stderr,hash->state_hashes_final_limit_exec/stdout enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --store="machine-$hash"
@@ -630,7 +630,7 @@ If the directory already exists, the operation will fail.
 Once created, the directory can be compressed and transferred to other hosts.
 To restore the corresponding Cartesi Machine, use the command-line option `--load=<directory>`.
 For example,
-```{.bash key=persistent_machine replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_limit_exec/stderr enabled=yes}
+```{.bash key=persistent_machine replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_htif_putchar/stderr enabled=yes}
 trap 'rm -rf "machine-$hash"' EXIT
 cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
 # docs:begin
@@ -653,7 +653,7 @@ After all, they are state hashes concerning the state of the same machine at the
 
 The `cartesi-machine-stored-hash` command-line utility can be used to extract the state hash from a stored Cartesi Machine.
 The command
-```{.bash key=persistent_stored_hash replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_limit_exec/stderr enabled=yes}
+```{.bash key=persistent_stored_hash replace=source subst=hash->state_hashes_final_limit_exec/stdout,cycles->cycles_htif_putchar/stderr enabled=yes}
 trap 'rm -rf "machine-$hash"' EXIT
 cartesi-machine --max-mcycle=$cycles --store="machine-$hash" > /dev/null 2>&1
 # docs:begin
@@ -1316,53 +1316,44 @@ ls *.bin
 The `cartesi-rollup-data.lua` command-line utility can also decode the binary records produced by the target application.
 
 For example, we can decode the advance-state request file we encoded for the second input above with the command:
-```bash
+```{.bash key=rolling_ioctl_echo_loop_decode_advance subst=rolling_ioctl_echo_loop replace=source enabled=yes}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 cartesi-rollup-data.lua decode advance < input-2.bin
+# docs:end
 ```
-```
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "0x0000000000000000000000000000000000000002",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 2,
-  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
-}
+```{replace=rolling_ioctl_echo_loop_decode_advance/stdout enabled=yes}
 ```
 A voucher carries a _destination_, a _value_, and a _payload_.
 The `ioctl-echo-loop` utility copies the _msg_sender_ field from the advance-state request to the _destination_ field of the voucher, and the input payload to the voucher payload.
 We can see this by decoding the voucher `input-2-output-0.bin` file with the command
-```bash
+```{.bash key=rolling_ioctl_echo_loop_decode_voucher subst=rolling_ioctl_echo_loop replace=source enabled=yes}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 cartesi-rollup-data.lua decode voucher < input-2-output-0.bin
+# docs:end
 ```
-```
-{
-  "destination": "0x0000000000000000000000000000000000000002",
-  "value": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
-}
+```{replace=rolling_ioctl_echo_loop_decode_voucher/stdout enabled=yes}
 ```
 The results match what was expected from the `ioctl-echo-loop` utility.
 
 Notices and reports carry only a payload.
 To decode them, run, for example:
-```bash
+```{.bash key=rolling_ioctl_echo_loop_decode_notice subst=rolling_ioctl_echo_loop replace=source enabled=yes}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 cartesi-rollup-data.lua decode notice < input-2-output-1.bin
+# docs:end
 ```
+```{replace=rolling_ioctl_echo_loop_decode_notice/stdout enabled=yes}
 ```
-{
-  "payload": "0x68656c6c6f2066726f6d20696e70757420322100"
-}
-```
-```bash
+```{.bash key=rolling_ioctl_echo_loop_decode_report subst=rolling_ioctl_echo_loop replace=source enabled=yes}
+ln -s $rolling_ioctl_echo_loop/*.bin .
+# docs:begin
 cartesi-rollup-data.lua decode report < query-report-0.bin
+# docs:end
 ```
-```
-{
-  "payload": "0x68656c6c6f2066726f6d207175657279210a"
-}
+```{replace=rolling_ioctl_echo_loop_decode_report/stdout enabled=yes}
 ```
 Payloads are 0x-prefixed hex. Pipe through `jq -r .payload | hex --decode` to recover the original bytes.
 Once again, the echo program does its job as expected.
@@ -1692,11 +1683,11 @@ The big-machine instruction about to execute is the `sd` that writes a putchar c
 That single big-machine instruction expands into many uarch instructions.
 The one that actually triggers the host to emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and `a0 = 0x0a`.
 The recipe `find-uarch-putchar-ecall.lua` (under `doc/recipes/`) takes the big-machine mcycle just before the splash-screen newline and advances the uarch one cycle at a time until the next uarch instruction is that putchar `ecall`, writing the matching uarch_cycle to its stderr.
-```{.bash key=cycles_uarch_putchar_ecall subst=cycles_limit_exec replace=null enabled=yes}
-lua $RECIPES_DIR/find-uarch-putchar-ecall.lua $(cat $cycles_limit_exec/stderr) > /dev/null
+```{.bash key=cycles_uarch_putchar_ecall subst=cycles_htif_putchar replace=null enabled=yes}
+lua $RECIPES_DIR/find-uarch-putchar-ecall.lua $(cat $cycles_htif_putchar/stderr) > /dev/null
 ```
 The mcycle from `find-htif-putchar.lua` and the uarch_cycle from `find-uarch-putchar-ecall.lua` are then enough to tell `cartesi-machine` to stop just before the putchar `ecall` and log that single uarch step
-```{.bash key=rarely_log_uarch_putchar replace=source subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr enabled=yes}
+```{.bash key=rarely_log_uarch_putchar replace=source subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr enabled=yes}
 cartesi-machine \
     --max-mcycle=$cycles \
     --max-uarch-cycle=$ucycles \
@@ -3186,7 +3177,7 @@ Running the `dump-step.lua` program:
 ```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua" enabled=yes}
 ```
 with command:
-```{.bash key=state_transition_dump_step subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,dump_step_source replace=source/cmd enabled=yes}
+```{.bash key=state_transition_dump_step subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,dump_step_source replace=source/cmd enabled=yes}
 rm -f dump-step.lua
 ln -s "$RECIPES_DIR/dump-step.lua" .
 {
@@ -3220,7 +3211,7 @@ The following script illustrates the verification of a state transition.
 ```
 
 Running the script without arguments accepts the valid state transition:
-```{.bash key=verify_step_run subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_run subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3234,7 +3225,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles"
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
 For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_step_mess_address subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_address subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3249,7 +3240,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
 Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_step_mess_written subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_written subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3262,7 +3253,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_step_mess_read subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_read subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3275,7 +3266,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[5
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
