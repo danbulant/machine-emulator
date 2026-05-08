@@ -196,7 +196,7 @@ Once inside, you can execute the `cartesi-machine` utility as follows:
 cartesi-machine --help
 ```
 
-```{.text replace=cli_help/both enabled=yes}
+```{.text replace=cli_help enabled=yes}
 cartesi-machine --help
 ```
 
@@ -206,14 +206,14 @@ A final check can also be performed to verify if the contents inside the contain
 sha256sum /usr/share/cartesi-machine/images/linux.bin
 ```
 
-```{.text replace=linux_sha/both enabled=yes}
+```{.text replace=linux_sha enabled=yes}
 ```
 
 ```{.bash key=rootfs_sha replace=source enabled=yes}
 sha256sum /usr/share/cartesi-machine/images/rootfs.ext2
 ```
 
-```{.text replace=rootfs_sha/both enabled=yes}
+```{.text replace=rootfs_sha enabled=yes}
 ```
 
 Note that, if the hashes of the files you are using do not match the ones above, then when you attempt to replicate the examples in the documentation, you will obtain different hashes.
@@ -247,7 +247,7 @@ The simplified command-line is
 cartesi-machine -- ls /bin
 ```
 The output is
-```{replace=ls/both enabled=yes}
+```{replace=ls enabled=yes}
 ```
 
 It shows the Cartesi Machine splash screen, followed by the listing of directory `/bin/`.
@@ -381,7 +381,7 @@ Here, a flash drive with label `foo` is initialized with the contents of an `ext
 The Cartesi-provided `/sbin/init` mounts this as `/mnt/foo`.
 The command executed in the machine simply copies the contents of `/mnt/foo/bar` to the terminal.
 The output is
-```{replace=flash/both enabled=yes}
+```{replace=flash enabled=yes}
 ```
 
 ### Persistent flash drives
@@ -417,7 +417,7 @@ cartesi-machine \
 # docs:end
 ```
 produces the output
-```{replace=not_shared_flash/both enabled=yes}
+```{replace=not_shared_flash enabled=yes}
 ```
 indicating that the file-system was modified, at least from the perspective of the target.
 However, inspecting the `foo.ext2` image file from outside the emulator shows it is unchanged.
@@ -429,7 +429,7 @@ e2ls -al foo.ext2:*.txt
 # docs:end
 ```
 
-```{.bash replace=e2ls_not_shared_foo_ext2/both enabled=yes}
+```{.bash replace=e2ls_not_shared_foo_ext2 enabled=yes}
 ```
 
 This behavior is appropriate when the flash drives will only be used as inputs.
@@ -460,7 +460,7 @@ Typically, the `cartesi-machine` utility only returns when the Cartesi Machine h
 cartesi-machine
 ```
 produces the output
-```{replace=nothing/both enabled=yes}
+```{replace=nothing enabled=yes}
 ```
 Here, the Cartesi-provided `/sbin/init` simply reports there is nothing to do before halting gracefully.
 This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.
@@ -468,11 +468,11 @@ This takes many millions of cycles to complete: time mostly spent initializing t
 The machine's processor includes a control and status register (CSR), named `mcycle`, that starts at 0 and is incremented after every instruction cycle.
 The maximum cycle can be specified with the command-line option `--max-mcycle=<number>`.
 
-```{.bash key=config_dump_nothing replace=null enabled=yes}
-cartesi-machine --max-mcycle=0 --store-config 2>&1 | tee >(grep -v Cycles > "$RECIPES_DIR/config/nothing-to-do.lua")
+```{.bash key=config_store_nothing_to_do replace=null enabled=yes}
+cartesi-machine --max-mcycle=0 --store-config="$RECIPES_DIR/config/nothing-to-do.lua"
 ```
 
-```{.bash key=cycles_limit_exec depends=config_dump_nothing replace=null enabled=yes}
+```{.bash key=cycles_limit_exec depends=config_store_nothing_to_do replace=null enabled=yes}
 lua $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
@@ -484,7 +484,7 @@ For example, adding the []{replace=max_mcycle_arg/stdout enabled=yes} command-li
 cartesi-machine --max-mcycle=$cycles
 ```
 produces the output
-```{replace=limit_exec/both enabled=yes}
+```{replace=limit_exec enabled=yes}
 ```
 Note the execution was interrupted before the splash screen was even completed.
 
@@ -546,7 +546,7 @@ cartesi-machine \
     --final-hash
 ```
 produces the output
-```{replace=state_hashes_limit_exec/both enabled=yes}
+```{replace=state_hashes_limit_exec enabled=yes}
 ```
 
 ```{.bash key=state_hashes_initial subst=state_hashes_limit_exec replace=null enabled=yes}
@@ -584,7 +584,7 @@ cartesi-machine \
     --final-hash
 ```
 produces instead the output
-```{replace=state_hashes_no_limit/both enabled=yes}
+```{replace=state_hashes_no_limit enabled=yes}
 ```
 Naturally, the initial state hash is the same as before.
 
@@ -641,7 +641,7 @@ cartesi-machine \
 # docs:end
 ```
 produces the output
-```{replace=persistent_machine/both enabled=yes}
+```{replace=persistent_machine enabled=yes}
 ```
 Note that, other than `--load`, no initialization command-line options were used.
 These initializations were used to define the machine before it was stored: their values are implicitly encoded in the stored state.
@@ -661,7 +661,7 @@ cartesi-machine-stored-hash machine-$hash
 # docs:end
 ```
 produces the output
-```{replace=persistent_stored_hash/both enabled=yes}
+```{replace=persistent_stored_hash enabled=yes}
 ```
 
 ### Running as root
@@ -673,7 +673,7 @@ cartesi-machine \
     -- id
 ```
 It shows the user and group are indeed `dapp`.
-```{replace=rarely_id/both enabled=yes}
+```{replace=rarely_id enabled=yes}
 ```
 To instead run your target application as `uid=0(root) gid=0(root)`, pass the `--user=root` command-line option, which init honors by running the entrypoint as `root`:
 ```{.bash key=rarely_user_root replace=source enabled=yes}
@@ -682,7 +682,7 @@ cartesi-machine \
     -- id
 ```
 This produces the output:
-```{replace=rarely_user_root/both enabled=yes}
+```{replace=rarely_user_root enabled=yes}
 ```
 It shows the user and group are now `root`.
 
@@ -732,7 +732,7 @@ Then, it creates the `input.raw` file for use as the input drive image containin
 This file is then padded with zeros to 4KiB in size by the `truncate` utility.
 The session then invokes the `cartesi-machine` command-line utility to evaluate the expression.
 The output of the `cartesi-machine` command is
-```{replace=templates_run/both enabled=yes}
+```{replace=templates_run enabled=yes}
 ```
 Once the emulator returns, a tiny Lua script, run by the `lua5.4` Lua interpreter, prints the contents of the output drive
 ```{.bash key=templates_run_result subst=templates_run replace=source enabled=yes}
@@ -743,7 +743,7 @@ lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
 ```
 which reads
-```{replace=templates_run_result/both enabled=yes}
+```{replace=templates_run_result enabled=yes}
 ```
 This is indeed the result of 6&times;2<sup>1024</sup>+3&times;2<sup>512</sup>.
 
@@ -765,7 +765,7 @@ cartesi-machine \
 # docs:end
 ```
 The result is as follows
-```{replace=templates_store/both enabled=yes}
+```{replace=templates_store enabled=yes}
 ```
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
@@ -778,7 +778,7 @@ cartesi-machine-stored-hash calculator-template/
 # docs:end
 ```
 we can see from the output
-```{replace=templates_hash/both enabled=yes}
+```{replace=templates_hash enabled=yes}
 ```
 
 ```{.bash key=templates_trunc_hash subst=templates_hash replace=null enabled=yes}
@@ -846,7 +846,7 @@ The input NVRAM is therefore in the second slot.
 It is automatically spaced by 2<sup>52</sup> bytes relative to the first drive, so that its starting address is `0x90000000000000`.
 
 The output of the command is
-```{replace=proofs_pristine_run/both enabled=yes}
+```{replace=proofs_pristine_run enabled=yes}
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
@@ -955,7 +955,7 @@ cartesi-machine \
 
 This produces the output
 
-```{replace=proofs_output_run/both enabled=yes}
+```{replace=proofs_output_run enabled=yes}
 ```
 The contents of the `output-proof` are
 ```{key=proofs_output_json subst=templates_store replace=both enabled=yes}
@@ -1237,69 +1237,69 @@ The client shell shows a lot more activity:
 ```{replace=rolling_ioctl_echo_loop/client enabled=yes}
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles0 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '1p'
+```{.bash key=rolling_ioctl_echo_loop_first_rx_accepted subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes0 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '1p'     | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_ioctl_echo_loop_hash_before_input1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hashes1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-hashes.sh     | sed -n '2p'     | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_ioctl_echo_loop_hash_after_input1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '2p'
+```{.bash key=rolling_ioctl_echo_loop_input1_tx_output_0 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles2 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '3p'
+```{.bash key=rolling_ioctl_echo_loop_input1_tx_output_1 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output' 2
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles3 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '4p'
+```{.bash key=rolling_ioctl_echo_loop_input1_tx_report subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles4 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '5p'
+```{.bash key=rolling_ioctl_echo_loop_input1_rx_rejected subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles8 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '9p'
+```{.bash key=rolling_ioctl_echo_loop_input2_rx_accepted subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles9 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '10p'
+```{.bash key=rolling_ioctl_echo_loop_query_tx_report subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report' 3
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_cycles10 subst=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client     | $RECIPES_DIR/all-cycles.sh     | sed -n '11p'
+```{.bash key=rolling_ioctl_echo_loop_post_query_rx_accepted subst=rolling_ioctl_echo_loop replace=null enabled=yes}
+cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_ioctl_echo_loop_cycles0/stdout enabled=yes}) signals the point at which the target application attempted to obtain the first request.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_ioctl_echo_loop_first_rx_accepted/stdout enabled=yes}) signals the point at which the target application attempted to obtain the first request.
 In other words, the application is _ready_.
 
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hashes0/stdout enabled=yes}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hashes1/stdout enabled=yes}, and resumes the machine.
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hash_before_input1/stdout enabled=yes}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hash_after_input1/stdout enabled=yes}, and resumes the machine.
 The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
-These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_cycles1/stdout enabled=yes}, another `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_cycles2/stdout enabled=yes}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles3/stdout enabled=yes}.
+These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_output_0/stdout enabled=yes}, another `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_output_1/stdout enabled=yes}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_report/stdout enabled=yes}.
 For each of them, the client receives control back from the machine.
 It reads the tx buffer to store files `input-1-output-0.bin`, `input-1-output-1.bin`, and `input-1-report-0.bin`, respectively.
 
-The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_cycles4/stdout enabled=yes} signals that the `ioctl-echo-loop` application is done processing input index 1 (and rejected it!).
+The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_input1_rx_rejected/stdout enabled=yes} signals that the `ioctl-echo-loop` application is done processing input index 1 (and rejected it!).
 In production, when an input to an advance-state request is rejected, the Cartesi Node rolls back the Rolling Cartesi Machine to the state it was before the input was processed.
 Moreover, all vouchers and notices are deleted (the reports are preserved).
 To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
-This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_cycles0/stdout enabled=yes}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hashes0/stdout enabled=yes}) following input 1 and input 2 are the same.
+This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_first_rx_accepted/stdout enabled=yes}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hash_before_input1/stdout enabled=yes}) following input 1 and input 2 are the same.
 (The output and report files issued before rejection are left in place for the developer's inspection.)
 
 A similar procedure is followed when processing the advance-state request with input index 2, except this time the input is accepted.
-Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_cycles8/stdout enabled=yes} is received by the client, it has run out of advance-state requests to return.
+Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_input2_rx_accepted/stdout enabled=yes} is received by the client, it has run out of advance-state requests to return.
 The client now moves to the inspect-state request.
 It loads `query.bin` into the rx buffer and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
-The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_cycles9/stdout enabled=yes} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_cycles10/stdout enabled=yes}, the client simply shuts down the remote Cartesi Machine server and exits.
+The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_query_tx_report/stdout enabled=yes} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_post_query_rx_accepted/stdout enabled=yes}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
 ```{.bash key=rolling_ioctl_echo_loop_all_bins subst=rolling_ioctl_echo_loop replace=source enabled=yes}
@@ -1612,7 +1612,7 @@ cartesi-machine \
     --append-bootargs="loglevel=8"
 ```
 The output is
-```{replace=rarely_append_bootargs_loglevel/both enabled=yes}
+```{replace=rarely_append_bootargs_loglevel enabled=yes}
 ```
 
 To clear the kernel command-line, use the option `--no-bootargs`.
@@ -1657,7 +1657,7 @@ cartesi-machine \
 ```
 The output is
 
-```{replace=rarely_periodic_hashes/both enabled=yes}
+```{replace=rarely_periodic_hashes enabled=yes}
 ```
 
 The command-line option `--dump-address-ranges[=<dir>]` causes the emulator to dump the contents of all mapped spans in the address space to files under `<dir>`.
@@ -1978,18 +1978,18 @@ cartesi-machine \
 The resulting configuration includes a number of default values, conveniently marked as such by the `cartesi-machine` utility.
 It can be edited down to its essential, and stored into a file, for example as a Lua module:
 
-```{.bash key=config_marchid subst=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh marchid
+```{.bash key=config_marchid depends=config_store_nothing_to_do replace=null enabled=yes}
+$RECIPES_DIR/find-lua-val.sh marchid < $RECIPES_DIR/config/nothing-to-do.lua
 ```
 
-```{.bash key=config_mimpid subst=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mimpid
+```{.bash key=config_mimpid depends=config_store_nothing_to_do replace=null enabled=yes}
+$RECIPES_DIR/find-lua-val.sh mimpid < $RECIPES_DIR/config/nothing-to-do.lua
 ```
 
-```{.bash key=config_mvendorid subst=config_dump_nothing replace=null}
-cat $config_dump_nothing/stdout | $RECIPES_DIR/find-lua-val.sh mvendorid
+```{.bash key=config_mvendorid depends=config_store_nothing_to_do replace=null enabled=yes}
+$RECIPES_DIR/find-lua-val.sh mvendorid < $RECIPES_DIR/config/nothing-to-do.lua
 ```
-```{.lua key=config_ls_bin replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua"}
+```{.lua key=config_ls_bin replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua" enabled=yes}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2050,7 +2050,7 @@ cartesi-machine \
 ```
 produces the corresponding machine configuration.
 This can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua key=config_cat_foo_bar replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua"}
+```{.lua key=config_cat_foo_bar replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua" enabled=yes}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2093,7 +2093,7 @@ cartesi-machine \
     --max-mcycle=0 \
     --store-config
 ```
-```{.lua key=config_nothing_to_do replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua"}
+```{.lua key=config_nothing_to_do replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua" enabled=yes}
 return {
   processor = {
     mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
@@ -2126,7 +2126,7 @@ cartesi-machine \
     --store-config \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
-```{.lua key=config_progress replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua"}
+```{.lua key=config_progress replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua" enabled=yes}
 return {
   processor = {
     mvendorid = $MVENDORID,
@@ -2164,7 +2164,7 @@ cartesi-machine \
     --store-config \
     -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
 ```
-```{.lua key=config_calculator replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua"}
+```{.lua key=config_calculator replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua" enabled=yes}
 return {
   processor = {
     mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
@@ -2577,7 +2577,7 @@ cartesi-machine \
 <div class="grid md:grid-cols-2 gap-4">
 <div>
 
-```{key=state_hashes_lua depends=config_dump_nothing replace=both}
+```{key=state_hashes_lua depends=config_store_nothing_to_do replace=both}
 lua $RECIPES_DIR/run-config-with-hashes.lua config.nothing-to-do
 ```
 
@@ -3186,7 +3186,7 @@ Running the `dump-step.lua` program:
 ```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua" enabled=yes}
 ```
 with command:
-```{.bash key=state_transition_dump_step subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,dump_step_source replace=source/cmd enabled=yes}
+```{.bash key=state_transition_dump_step subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,dump_step_source replace=source/cmd enabled=yes}
 rm -f dump-step.lua
 ln -s "$RECIPES_DIR/dump-step.lua" .
 {
@@ -3196,7 +3196,7 @@ lua5.4 dump-step.lua config.nothing-to-do "$cycles" "$ucycles"
 } 2>&1
 ```
 produces the output:
-```{replace=state_transition_dump_step/both enabled=yes}
+```{replace=state_transition_dump_step enabled=yes}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
@@ -3220,7 +3220,7 @@ The following script illustrates the verification of a state transition.
 ```
 
 Running the script without arguments accepts the valid state transition:
-```{.bash key=verify_step_run subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_run subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3229,12 +3229,12 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles"
 # docs:end cmd
 } 2>&1 || true
 ```
-```{replace=verify_step_run/both enabled=yes}
+```{replace=verify_step_run enabled=yes}
 ```
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
 For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_step_mess_address subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_address subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3243,13 +3243,13 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 # docs:end cmd
 } 2>&1 || true
 ```
-```{replace=verify_step_mess_address/both enabled=yes}
+```{replace=verify_step_mess_address enabled=yes}
 ```
 
 Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
 Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_step_mess_written subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_written subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3258,11 +3258,11 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 # docs:end cmd
 } 2>&1 || true
 ```
-```{replace=verify_step_mess_written/both enabled=yes}
+```{replace=verify_step_mess_written enabled=yes}
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_step_mess_read subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_read subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3271,11 +3271,11 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[5
 # docs:end cmd
 } 2>&1 || true
 ```
-```{replace=verify_step_mess_read/both enabled=yes}
+```{replace=verify_step_mess_read enabled=yes}
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_dump_nothing,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_limit_exec/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3284,7 +3284,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'local a = log.
 # docs:end cmd
 } 2>&1 || true
 ```
-```{replace=verify_step_mess_target_hash/both enabled=yes}
+```{replace=verify_step_mess_target_hash enabled=yes}
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
@@ -4789,7 +4789,7 @@ cartesi-machine \
 ```
 
 The result is
-```{.text replace=dtc/both enabled=yes}
+```{.text replace=dtc enabled=yes}
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
