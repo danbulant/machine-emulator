@@ -1,18 +1,19 @@
 -- Load the Cartesi module
-local cartesi = require"cartesi"
+local cartesi = require("cartesi")
 
 -- Instantiate machine from configuration
-local calculator_config = require"config.calculator"
+local calculator_config = require("config-calculator")
 local machine = cartesi.machine(calculator_config)
 
--- Write expression to input drive
-local input_drive = calculator_config.flash_drive[2]
-machine:write_memory(input_drive.start, table.concat(arg, " ") .. "\n")
+-- Write expression to input NVRAM
+local input_nvram = calculator_config.nvram[1]
+machine:write_memory(input_nvram.start, table.concat(arg, " ") .. "\n")
 
--- Run machine until it halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    machine:run(math.maxinteger)
-end
+-- Run machine until it halts or yields manual
+repeat
+    local break_reason = machine:run(math.maxinteger)
+until break_reason == cartesi.BREAK_REASON_HALTED or break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY
 
-local output_drive = calculator_config.flash_drive[3]
-print((string.unpack("z", machine:read_memory(output_drive.start, output_drive.length))))
+-- Read result from output NVRAM
+local output_nvram = calculator_config.nvram[2]
+print((string.unpack("z", machine:read_memory(output_nvram.start, output_nvram.length))))

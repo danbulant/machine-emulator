@@ -1,38 +1,33 @@
 -- Load the Cartesi module
-local cartesi = require"cartesi"
+local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
+local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 
 -- Converts hash from binary to hexadecimal string
 local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c)
-        return string.format("%02x", string.byte(c))
-    end))
+    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
 end
 
 -- Instantiate machine from configuration
-local config = require(arg[1])
-local machine = cartesi.machine(config)
+local machine = cartesi.machine((require(arg[1])))
 
--- Print the initial hash
-stderr("%u: %s\n", machine:read_mcycle(), hexhash(machine:get_root_hash()))
+-- Print the initial cycle count and root hash
+stderr("%u: %s\n", machine:read_reg("mcycle"), hexhash(machine:get_root_hash()))
 
--- Run machine until it halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    machine:run(math.maxinteger)
-end
+-- Run machine until it halts or yields manual
+local break_reason
+repeat
+    break_reason = machine:run(math.maxinteger)
+until break_reason == cartesi.BREAK_REASON_HALTED or break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY
 
 -- Print machine status
-if machine:read_iflags_H() then
+if break_reason == cartesi.BREAK_REASON_HALTED then
     stderr("\nHalted\n")
 else
     stderr("\nYielded manual\n")
 end
--- Print cycle count
-stderr("Cycles: %u\n", machine:read_mcycle())
+stderr("Cycles: %u\n", machine:read_reg("mcycle"))
 
--- Print the final hash
-stderr("%u: %s\n", machine:read_mcycle(), hexhash(machine:get_root_hash()))
+-- Print the final cycle count and root hash
+stderr("%u: %s\n", machine:read_reg("mcycle"), hexhash(machine:get_root_hash()))

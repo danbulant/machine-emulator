@@ -1,6 +1,6 @@
-local cartesi = require"cartesi"
+local cartesi = require("cartesi")
 
-local config = require"config.nothing-to-do"
+local config = require("config-nothing-to-do")
 local runtime = { console = { output_destination = "to_buffer", output_flush_mode = "every_line" } }
 local machine = cartesi.machine(config, runtime)
 
