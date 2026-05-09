@@ -179,15 +179,15 @@ docker pull $image
 
 ```{.bash replace=source subst=image->docs_image}
 docker run --hostname playground --rm \
-	-e USER=$$(id -u -n) \
-	-e GROUP=$$(id -g -n) \
-	-e UID=$$(id -u) \
-	-e GID=$$(id -g) \
-	-v $(CURDIR):/work \
-	-w /work \
-	-it \
-	$image \
-	/bin/bash
+    -e USER=$$(id -u -n) \
+    -e GROUP=$$(id -g -n) \
+    -e UID=$$(id -u) \
+    -e GID=$$(id -g) \
+    -v $(CURDIR):/work \
+    -w /work \
+    -it \
+    $image \
+    /bin/bash
 ```
 
 Once inside, you can execute the `cartesi-machine` utility as follows:
@@ -225,6 +225,23 @@ In the simplest usage scenario, the `cartesi-machine` command-line utility can b
 The command-line utility, however, is very versatile.
 It was designed to simplify the most common prototyping tasks.
 
+The simplest invocation takes no arguments
+```{.bash key=nothing replace=source enabled=yes}
+# docs:begin null
+cartesi-machine --max-mcycle=0 --store-config="$RECIPES_DIR/config/nothing-to-do.lua"
+# docs:end null
+cartesi-machine
+```
+and produces
+```{replace=nothing enabled=yes}
+```
+The utility instantiates a default Cartesi Machine and lets it run until it halts.
+The Linux kernel boots, the Cartesi-provided `cartesi-init` script prints the ASCII-art splash and reports there is nothing to do, then gracefully halts the machine.
+This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.
+
+The command-line option `--no-init-splash` instructs the utility to skip the splash, keeping the output focused on the example at hand.
+Subsequent examples use it.
+
 ### Initialization
 
 The following command instructs `cartesi-machine` to build a Cartesi Machine.
@@ -234,6 +251,7 @@ Once initialization is complete, the machine executes the command `ls /bin` and 
 
 ```bash
 cartesi-machine \
+    --no-init-splash \
     --ram-length=128Mi \
     --ram-image="/usr/share/cartesi-machine/images/linux.bin" \
     --flash-drive="label:root,data_filename:/usr/share/cartesi-machine/images/rootfs.ext2" \
@@ -243,8 +261,13 @@ The `--ram-image`, `--ram-length`, and `--flash-drive` command-line options have
 To remove these default settings, use the command-line options `--no-ram-image` and `--no-root-flash-drive`, respectively.
 
 The simplified command-line is
-```{.bash key=ls replace=source enabled=yes}
-cartesi-machine -- ls /bin
+```{.bash key=ls outputs=ls-bin.lua replace=source enabled=yes}
+cartesi-machine \
+    --no-init-splash \
+# docs:begin null
+    --store-config=ls-bin.lua \
+# docs:end null
+    -- ls /bin
 ```
 The output is
 ```{replace=ls enabled=yes}
@@ -273,7 +296,10 @@ Exiting the shell returns control back to `/sbin/init`, which then gracefully ha
 
 For example, if an interactive session is started with the following command
 ```bash
-cartesi-machine -i -- sh
+cartesi-machine \
+    --no-init-splash \
+    -i \
+    -- sh
 ```
 it drops into the shell.
 Running the command `ls /bin` causes the listing of directory `/bin` to appear.
@@ -291,7 +317,11 @@ cat >/tmp/cmds <<'EOF'
 ls /bin
 exit
 EOF
-cartesi-machine -i --console-io=input_source:from_file,input_filename:/tmp/cmds -- sh 2>&1
+cartesi-machine \
+    --no-init-splash \
+    -i \
+    --console-io=input_source:from_file,input_filename:/tmp/cmds \
+    -- sh 2>&1
 ```
 :::note
 When running in interactive mode, not even the final cycle count is reproducible.
@@ -368,12 +398,16 @@ The `genext2fs` then takes the reproducible `tar` file and creates a reproducibl
 :::
 
 The image can be loaded as a flash drive:
-```{.bash key=flash subst=foo_ext2 replace=source enabled=yes}
+```{.bash key=flash subst=foo_ext2 outputs=cat-foo-bar.lua replace=source enabled=yes}
 rm -f foo.ext2
 ln -s "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --flash-drive="label:foo,data_filename:foo.ext2" \
+# docs:begin null
+    --store-config=cat-foo-bar.lua \
+# docs:end null
     -- "cat /mnt/foo/bar.txt"
 # docs:end
 ```
@@ -412,6 +446,7 @@ rm -f foo.ext2
 ln -s "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --flash-drive="label:foo,data_filename:foo.ext2,user:dapp" \
     -- "ls /mnt/foo/*.txt && cp /mnt/foo/bar.txt /mnt/foo/baz.txt && ls /mnt/foo/*.txt"
 # docs:end
@@ -441,6 +476,7 @@ rm -f foo.ext2
 cp "$foo_ext2/foo.ext2" foo.ext2
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --flash-drive="label:foo,data_filename:foo.ext2,shared,user:dapp" \
     -- "ls /mnt/foo/*.txt && cp /mnt/foo/bar.txt /mnt/foo/baz.txt && ls /mnt/foo/*.txt"
 # docs:end
@@ -455,24 +491,11 @@ e2ls -al foo.ext2:*.txt
 
 ### Limiting execution
 
-Typically, the `cartesi-machine` utility only returns when the Cartesi Machine halts.  For example, running
-```{.bash key=nothing replace=source enabled=yes}
-cartesi-machine
-```
-produces the output
-```{replace=nothing enabled=yes}
-```
-Here, the Cartesi-provided `/sbin/init` simply reports there is nothing to do before halting gracefully.
-This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.
-
 The machine's processor includes a control and status register (CSR), named `mcycle`, that starts at 0 and is incremented after every instruction cycle.
+By default the `cartesi-machine` utility only returns when the machine halts (or yields manual), as the [introductory example](#command-line-interface) showed.
 The maximum cycle can be specified with the command-line option `--max-mcycle=<number>`.
 
-```{.bash key=config_store_nothing_to_do replace=null enabled=yes}
-cartesi-machine --max-mcycle=0 --store-config="$RECIPES_DIR/config/nothing-to-do.lua"
-```
-
-```{.bash key=cycles_htif_putchar depends=config_store_nothing_to_do replace=null enabled=yes}
+```{.bash key=cycles_htif_putchar depends=nothing replace=null enabled=yes}
 lua $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
@@ -487,6 +510,7 @@ produces the output
 ```{replace=limit_exec enabled=yes}
 ```
 Note the execution was interrupted before the splash screen was even completed.
+This and a handful of subsequent examples deliberately omit `--no-init-splash`. There, the splash is instrumental since the cycle count was chosen to land mid-splash.
 
 The ability to limit computation to an arbitrary number of cycles is fundamental to the verifiability of Cartesi Machines, as is explained in detail under the [blockchain perspective](#verification-game).
 
@@ -499,6 +523,7 @@ The progress feedback is accessed via the `automatic progress <permil>` command-
 For example, during the execution of the loop,
 ```bash
 cartesi-machine \
+    --no-init-splash \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
@@ -507,17 +532,6 @@ By default, the emulator honors automatic yield requests from the target.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
 ```
-
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-        \ /   MACHINE
-         '
-
 Progress:  44.00
 ```
 This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or JSON-RPC interfaces, where Cartesi Machines typically run disconnected from the console.
@@ -670,6 +684,7 @@ Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` scri
 This can be seen by running the command:
 ```{.bash key=rarely_id replace=source enabled=yes}
 cartesi-machine \
+    --no-init-splash \
     -- id
 ```
 It shows the user and group are indeed `dapp`.
@@ -678,6 +693,7 @@ It shows the user and group are indeed `dapp`.
 To instead run your target application as `uid=0(root) gid=0(root)`, pass the `--user=root` command-line option, which init honors by running the entrypoint as `root`:
 ```{.bash key=rarely_user_root replace=source enabled=yes}
 cartesi-machine \
+    --no-init-splash \
     --user=root \
     -- id
 ```
@@ -721,6 +737,7 @@ truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --nvram="label:input,length:1<<12,data_filename:input.raw" \
     --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
     -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
@@ -756,6 +773,7 @@ The `--final-hash` command-line option prints the resulting template hash.
 rm -rf calculator-template
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --nvram="label:input,length:1<<12" \
     --nvram="label:output,length:1<<12" \
     --max-mcycle=0 \
@@ -804,6 +822,7 @@ truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
     --replace-memory-range="label:output,data_filename:output.raw,shared"
@@ -835,6 +854,7 @@ rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
@@ -854,6 +874,7 @@ In addition, the `pristine-input-proof` file now contains a JSON structure with 
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
@@ -911,6 +932,7 @@ ln -s "$templates_store/calculator-template" calculator-template
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --initial-hash \
@@ -945,6 +967,7 @@ truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
@@ -966,6 +989,7 @@ truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
@@ -1162,6 +1186,7 @@ while ! cartesi-machine \
     --remote-address=127.0.0.1:8080 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
+    --no-init-splash \
     --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
@@ -1480,6 +1505,7 @@ rm -rf rolling-calculator-template
 {
 # docs:begin template
 cartesi-machine \
+    --no-init-splash \
     --assert-rolling-template \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --store="rolling-calculator-template" \
@@ -1494,6 +1520,7 @@ while ! cartesi-machine \
     --remote-address=127.0.0.1:8080 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
+    --no-init-splash \
     --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
@@ -1600,6 +1627,7 @@ For example, to prevent clutter in the console, the `cartesi-machine` utility au
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
 ```{.bash key=rarely_append_bootargs_loglevel replace=source enabled=yes}
 cartesi-machine \
+    --no-init-splash \
     --append-bootargs="loglevel=8"
 ```
 The output is
@@ -1613,15 +1641,13 @@ For example, running the `cartesi-machine` command-line utility with no argument
 equivalent to running the command
 
 ```{.bash key=default_bootargs replace=null enabled=yes}
-cartesi-machine --store-config 2>&1 \
-    | grep bootargs \
-    | sed 's/.* = //' \
-    | sed 's/,$//'
+cartesi-machine --max-mcycle=0 --store-json-config | jq -r '.dtb.bootargs'
 ```
 ```{.bash key=no_bootargs_equiv replace=source subst=bootargs->default_bootargs/stdout enabled=yes}
 cartesi-machine \
+    --no-init-splash \
     --no-bootargs \
-    --append-bootargs=$bootargs
+    --append-bootargs="$bootargs"
 ```
 
 The command-line option `--periodic-hashes=<number-period>[,<number-start>]` causes the command-line utility to periodically obtain and print the state hash.
@@ -1641,6 +1667,7 @@ ln -s "$templates_store/calculator-template" calculator-template
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
 cartesi-machine \
+    --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
     --periodic-hashes=1,$initial_cycle
@@ -1734,10 +1761,13 @@ local cartesi = require"cartesi"
 The most important field in the module is the `cartesi.machine` &ldquo;class&rdquo;, used to instantiate new local Cartesi Machines.
 
 A Cartesi Machine instance is defined by its *organization* and the *contents* of its state.
-The organization specifies the amount of RAM and the layout of a number of flash drives (between 0 and 8) and rollup memory ranges.
-To support Cartesi Machine's transparency, flash drives are mapped into the machine's 64-bit physical memory address space.
-The layout defines each flash drive's start and length in the address space.
-The contents of the state include the values stored in ROM, RAM, and in all flash drives and rollup memory ranges, in addition to the values of all processor registers and device-specific state.
+The organization specifies a variety of memory ranges (such as RAM, flash drives, NVRAMs, the DTB, and CMIO buffers).
+To support Cartesi Machine's transparency, all these memory ranges are mapped into the machine's 64-bit physical memory address space.
+The layout defines each entry's start and length in the address space.
+The DTB and the CMIO buffers have fixed layouts.
+RAM has a fixed start, but its length is user-configurable.
+For flash drives and NVRAMs, the user chooses the count and the start and length of each entry.
+The contents of the state include the values stored in all these memory ranges, in addition to the values of all processor registers and device-specific state.
 
 Cartesi Machines can be instantiated directly from a configuration structure, or loaded from a persistent state stored as a directory on disk.
 
@@ -1750,27 +1780,34 @@ Cartesi Machines can be instantiated directly from a configuration structure, or
 
 ```lua
 machine_config ::= {
-  rom ::= rom_config,
   ram ::= ram_config,
+  dtb ::= dtb_config,
   flash_drive ::= {
     [1] ::= memory_range_config, -- flash drive 0
     [2] ::= memory_range_config, -- flash drive 1
     ...
-    [n] ::= memory_range_config  -- flash drive n <= 7
+    [n] ::= memory_range_config
   },
+  nvram ::= {
+    [1] ::= memory_range_config, -- nvram 0
+    [2] ::= memory_range_config, -- nvram 1
+    ...
+    [n] ::= memory_range_config
+  },
+  cmio ::= cmio_config,
   processor ::= processor_config,
-  clint ::= clint_config,
-  htif ::= htif_config,
-  rollup ::= rollup_config,
+  -- advanced: uarch, hash_tree, pmas, virtio
 }
 ```
 
-<a name="rom_config"></a>
+<a name="dtb_config"></a>
 
 ```lua
-rom_config ::= {
-    bootargs ::= string,
-    image_filename ::= string
+dtb_config ::= {
+  bootargs ::= string,
+  init ::= string,
+  entrypoint ::= string,
+  backing_store ::= backing_store_config
 }
 ```
 
@@ -1778,43 +1815,32 @@ rom_config ::= {
 
 ```lua
 ram_config ::= {
-    length ::= number,
-    image_filename ::= string
+  length ::= number,
+  backing_store ::= backing_store_config
 }
 ```
 
-<a name="htif_config"></a>
+<a name="cmio_config"></a>
 
 ```lua
-htif_config ::= {
-    fromhost ::= number,
-    tohost ::= number,
-    console_putchar ::= boolean,
-    yield_manual ::= boolean,
-    yield_automatic ::= boolean
+cmio_config ::= {
+  rx_buffer ::= memory_range_config,
+  tx_buffer ::= memory_range_config
 }
 ```
 
-<a name="clint_config"></a>
+<a name="backing_store_config"></a>
 
 ```lua
-clint_config ::= {
-    mtimecmp ::= number,
+backing_store_config ::= {
+  create ::= boolean,
+  data_filename ::= string,
+  dht_filename ::= string,
+  dpt_filename ::= string,
+  shared ::= boolean,
+  truncate ::= boolean
 }
 ```
-
-<a name="rollup_config"></a>
-
-```lua
-rollup_config ::= {
-  rx_buffer := memory_range_config,
-  tx_buffer := memory_range_config,
-  input_metadata := memory_range_config,
-  voucher_hashes := memory_range_config,
-  notice_hashes := memory_range_config
-}
-```
-
 
 </div>
 
@@ -1824,40 +1850,61 @@ rollup_config ::= {
 
 ```lua
 processor_config ::= {
-  x = {
-    [1]  ::= number, -- register x1
-    [2]  ::= number, -- register x2
+  registers ::= {
+    x0 ::= number, -- always 0
+    x1 ::= number,
     ...
-    [31] ::= number, -- register x31
+    x31 ::= number,
+    f0 ::= number,
+    ...
+    f31 ::= number,
+    fcsr ::= number,
+    pc ::= number,
+    mvendorid ::= number,
+    marchid ::= number,
+    mimpid ::= number,
+    mcycle ::= number,
+    icycleinstret ::= number,
+    misa ::= number,
+    mstatus ::= number,
+    mtvec ::= number,
+    mscratch ::= number,
+    mepc ::= number,
+    mcause ::= number,
+    mtval ::= number,
+    mie ::= number,
+    mip ::= number,
+    medeleg ::= number,
+    mideleg ::= number,
+    mcounteren ::= number,
+    menvcfg ::= number,
+    stvec ::= number,
+    sscratch ::= number,
+    sepc ::= number,
+    scause ::= number,
+    stval ::= number,
+    satp ::= number,
+    scounteren ::= number,
+    senvcfg ::= number,
+    ilrsc ::= number,
+    iprv ::= number,
+    iunrep ::= number,
+    iflags ::= { H ::= number, X ::= number, Y ::= number },
+    htif ::= {
+      tohost ::= number,
+      fromhost ::= number,
+      ihalt ::= number,
+      iconsole ::= number,
+      iyield ::= number
+    },
+    clint ::= { mtimecmp ::= number },
+    plic ::= {
+      girqpend ::= number,
+      girqsrvd ::= number
+    }
   },
-  pc ::= number,
-  mvendorid ::= number,
-  marchid ::= number,
-  mimpid ::= number,
-  mcycle ::= number,
-  minstret ::= number,
-  mstatus ::= number,
-  mtvec ::= number,
-  mscratch ::= number,
-  mepc ::= number,
-  mcause ::= number,
-  mtval ::= number,
-  misa ::= number,
-  mie ::= number,
-  mip ::= number,
-  medeleg ::= number,
-  mideleg ::= number,
-  mcounteren ::= number,
-  stvec ::= number,
-  sscratch ::= number,
-  sepc ::= number,
-  scause ::= number,
-  stval ::= number,
-  satp ::= number,
-  scounteren ::= number,
-  ilrsc ::= number,
-  iflags ::= number
-},
+  backing_store ::= backing_store_config
+}
 ```
 
 <a name="memory_range_config"></a>
@@ -1866,326 +1913,195 @@ processor_config ::= {
 memory_range_config ::= {
   start ::= number,
   length ::= number,
-  image_filename ::= string,
-  shared ::= boolean
+  label ::= string,
+  read_only ::= boolean,
+  backing_store ::= backing_store_config
 }
 ```
 
 </div>
 </div>
 
-The <a href="#rom_config">`rom`</a> entry in `machine_config` is a table with two fields.
-Field `bootargs` gives a string of at most 2KiB that will be copied into the end (the last 2KiB) of ROM.
-Field `image_filename` gives the file name of an image that will be loaded into the beginning of ROM.
-This is where the ROM image `rom.bin` generated by the [Emulator SDK](http://github.com/cartesi/machine-emulator-sdk) is typically loaded.
-This is also where the machine starts execution, i.e., where the processor's program counter initially points to.
-This ROM image generates the [*devicetree*](http://devicetree.org/) that describes the hardware to Linux, passes the `bootargs` string as the kernel command-line parameters, then cedes control to the RAM image.
+```{.lua key=ar_drive_formula replace=null enabled=yes}
+local c = require "cartesi"
+local o = c.AR_DRIVE_OFFSET
+local log2 = 0
+while o > 1 do
+    o = o >> 1
+    log2 = log2 + 1
+end
+io.write(string.format("0x%x + i*2^%d", c.AR_DRIVE_START, log2))
+```
 
-The <a href="#ram_config">`ram`</a> entry in `machine_config` also has two fields.
+The <a href="#ram_config">`ram`</a> entry in `machine_config` has two fields.
 Field `length` gives the amount of RAM in bytes (RAM always starts at offset `0x80000000`).
 This length should be a multiple of 4Ki, the length of a RISC-V memory page.
-Field `image_filename` gives the filename of an image that will be loaded at the start of RAM.
-This is where the RAM image `linux.bin` generated by the [Emulator SDK](http://github.com/cartesi/machine-emulator-sdk) (which contains the Berkeley Boot Loader linked with the Linux kernel) is typically loaded.
+Field `backing_store.data_filename` gives the filename of an image that will be loaded at the start of RAM.
+This is where the RAM image `linux.bin` generated by the [`machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository is typically loaded.
 
-The `flash_drive` entry in `machine_config` is a list of <a href="#memory_range_config">`memory_range_config`</a> entries, each of which contain a flash drive configuration.
-Each `memory_range_config` contains four fields.
-Fields `start` and `length` give the start and length of the flash drive in the machine's address space.
-Once again, the length must be a multiple of 4Ki, the length of a memory page.
-Field `image_filename` gives the file name of an image that will be *mapped* to this region.
-This is different from the ROM and RAM image files, which are simply copied into the Cartesi Machine memory, which has been allocated from the host memory.
-Flash drives use memory mapping because their image files can be very large.
-Mapping them instead of copying them saves host memory, as well as the time it would take to load the files from disk to host memory.
-Since flash drive image files are mapped, their sizes on disk must exactly match the `length` of the flash drive they are *backing*.
-Field `shared` contains a Boolean value that specifies whether changes to the flash drive that happen inside the target reflect in the image file that resides in the host file-system as well.
-If set to `true`, the image file will be modified accordingly.
-This is useful when a flash drive will hold the result of a computation.
-If set to `false` (the default), target modifications to the flash drive are <i>not</i> propagated to the image file that resides in the host file-system.
-I.e., even though the flash drives may be read/write from the target perspective, the image file in the host is left unmodified.
+The <a href="#dtb_config">`dtb`</a> entry in `machine_config` has four fields.
+Field `bootargs` is the kernel command-line string passed to Linux at boot.
+Its default value is []{replace=default_bootargs/stdout enabled=yes}, which boots Linux quietly and runs the Cartesi-provided `cartesi-init` script as init.
+Field `init` is a shell snippet appended to `cartesi-init`'s setup phase, executed as `root` before the entrypoint.
+Field `entrypoint` is the user-mode command that `cartesi-init` runs after setup, by default as user `dapp`.
+This is what the `cartesi-machine` command-line utility appends to when arguments are passed after `--`.
+Field `backing_store` is a <a href="#backing_store_config">`backing_store_config`</a>.
+When instantiating a machine from scratch, its `data_filename` is normally left empty and the emulator generates the DTB image at instantiation from the rest of the configuration.
+The `--store=<dir>` and `--load=<dir>` mechanism populates and consumes this field automatically.
 
-The <a href="#htif_config">`htif`</a> entry in `machine_config` has four fields, two of which are used only in rare occasions.
-The most commonly used field is the Boolean `console_getchar`.
-When set to `true` (the default is `false`), it instructs the emulator to monitor terminal input in the host and make it available to the target via the HTIF device.
-This is used in interactive sessions during prototyping, and should never be used when verifiability is needed.
-The `yield_automatic` and `yield_manual` Booleans instruct the emulator to honor _automatic_ yield and _manual_ yield commands received by the HTIF Yield device, respectively.
-Target applications use these commands to notify the host that the application has just produced output data for collection, or is ready to accept new input data for processing.
-There are two differences between the two types of yield command.
-First, an automatic yield sets the `X` flag in the `iflags` control and status register (CSR), whereas the manual yield sets the `Y` flag.
-Second, the `X` flag is _automatically_ reset when the machine is resumed after an automatic yield.
-In contrast, `Y` flag must be _manually_ reset after a manual yield, or the machine will not advance at all when resumed.
-Manual and automatic yields are the mechanism that control Cartesi Rollups input and output with Rolling Cartesi Machines.
-The fields `tohost` and `fromhost` in `htif` allow for the overriding of the default initial values of these CSRs (control and status registers).
+The `flash_drive` entry in `machine_config` is a list of <a href="#memory_range_config">`memory_range_config`</a> entries.
+The same shape is reused by the `nvram` entry, also a list of `memory_range_config` entries.
+Fields `start` and `length` give the start and length of the entry in the machine's address space.
+Once again, the length must be a multiple of 4Ki.
+If `start` is omitted, it defaults to []{replace=ar_drive_formula/stdout enabled=yes}, where `i` is the index of the entry across the union of `flash_drive` and `nvram` (drives and NVRAMs share the same auto-allocator).
+If `length` is omitted, it defaults to the size of the backing image on disk.
+Field `label` is a string used by the emulator to expose the entry to the guest via DTB aliases.
+Each flash drive is exposed to the guest as a `/dev/pmem*` device, and each NVRAM as a `/dev/uio*` device.
+When `cartesi-init` detects a recognised file system on a flash drive, it additionally mounts that drive at `/mnt/<label>`.
+Field `read_only` is a Boolean (defaults to `false`), honored only by flash drives.
+Field `backing_store` is a `backing_store_config`.
+Its `data_filename` gives the file mapped to the entry's memory range.
+Since the image is mapped, its size on disk must exactly match the `length` of the entry.
+Field `backing_store.shared` is a Boolean specifying whether changes to the entry inside the target reflect in the image file on the host.
+If set to `true`, the host image file is modified accordingly.
+This is useful when an entry will hold the result of a computation.
+If set to `false` (the default), target modifications are *not* propagated to the image file on the host, even though the entries may be read/write from the target perspective.
 
-The <a href="#rollup_config">`rollup`</a> entry in `machine_config` has five fields, each holding a
-`memory_range_config` entry.
-The Cartesi Machine support for Cartesi Rollups involves a variety of memory ranges.
-The first two, `rx_buffer` and `tx_buffer` are used to send data in and out of the machine, respectively.
+The <a href="#cmio_config">`cmio`</a> entry in `machine_config` has two fields, `rx_buffer` and `tx_buffer`, each a `memory_range_config`.
+Unlike flash drives and NVRAMs, the `start` and `length` of the CMIO buffers are fixed by the emulator.
+Only their `backing_store` is user-configurable.
+The two CMIO buffers are used to send data in and out of the machine.
 For example, the input payload to an advance-state request and the query payload to an inspect-state request are written to the `rx_buffer` memory range.
 Conversely, vouchers, notices, reports, and exceptions are written to the `tx_buffer` memory range.
-The input metadata for advance-state requests are written to the `input_metadata` memory range.
-The `voucher_hashes` and `notice_hashes` memory ranges are arrays on which the hash of each voucher or notice emitted during processing of an advance-state are appended, respectively.
 For more details on how exactly these memory ranges are used, please read the [architecture section](#system-architecture) under the target perspective.
 
-The remaining entries in the `machine_config` are used only in rare occasions.
-The devices and processor have a variety of control and status registers (CSRs), in addition to processor's general-purpose registers.
-Most of these are defined in volumes [1 and 2](https://riscv.org/technical/specifications/) of the  ISA specification.
-The Cartesi-specific additions are described under the [architecture section](#system-architecture) under the target perspective.
+The <a href="#processor_config">`processor`</a> entry in `machine_config` has two fields.
+Field `registers` is a flat table of all general-purpose, floating-point, and control-and-status registers, plus the nested sub-tables `iflags`, `htif`, `clint`, and `plic`.
+Each register field is a number that overrides its initial value.
+Most users only need to set `mvendorid`, `mimpid`, and `marchid`, which the emulator checks at instantiation to ensure the configuration matches the running emulator version.
+During prototyping, these can be set to `-1` to make the emulator accept any value.
+In production code, they should be hard-coded.
+Most CSRs are defined in volumes [1 and 2](https://riscv.org/technical/specifications/) of the ISA specification.
+The Cartesi-specific registers (`iprv`, `iunrep`, `iflags`, the HTIF and CMIO interfaces) are described under the [architecture section](#system-architecture) under the target perspective.
 
-The <a href="#clint_config">`clint`</a> entry has a single field, `mtimecmp`, which allows for the overriding of the default initial value of this CSR.
-Similarly, the fields in the <a href="#processor_config">`processor`</a> entry allow for the overriding of the default initial value of all general-purpose registers and CSRs in the processor.
+The `processor.registers.htif` sub-table holds the initial values of HTIF state.
+Fields `tohost` and `fromhost` carry data between the host and the target.
+Field `ihalt` declares whether the emulator honors halt commands.
+Defaults to enabled.
+Field `iconsole` is a bitmask declaring whether the emulator honors console-putchar and console-getchar commands.
+Defaults to putchar-only.
+The command-line option `-i`/`--htif-console-getchar` enables getchar.
+Field `iyield` is a bitmask declaring whether the emulator honors automatic and manual yield commands.
+Defaults to both enabled.
+The command-line options `--no-htif-yield-automatic` and `--no-htif-yield-manual` clear the corresponding bits.
+Yield commands are how target applications notify the host that they have just produced output data for collection, or are ready to accept new input data for processing.
+There are two differences between the two types of yield command.
+First, an automatic yield sets the `X` flag in `processor.registers.iflags`, whereas the manual yield sets the `Y` flag.
+Second, the `X` flag is _automatically_ reset when the machine is resumed after an automatic yield.
+In contrast, the `Y` flag must be _manually_ reset after a manual yield, or the machine will not advance at all when resumed.
+Manual and automatic yields are the mechanism that control Cartesi Rollups input and output with Rolling Cartesi Machines.
+
+The advanced top-level entries `uarch`, `hash_tree`, `pmas`, and `virtio` are documented in the [architecture section](#system-architecture) under the target perspective.
 
 ### Configuration from command-line
 
 The `cartesi-machine` command-line utility can be used to output machine configurations for Cartesi Machines that can be used directly by the Lua `cartesi.machine` constructor.
 Recall from an [earlier example](#initialization) that the `cartesi-machine` command
-
-```bash
-cartesi-machine \
-    --rom-image="/opt/cartesi/share/images/rom.bin" \
-    --ram-length=64Mi \
-    --ram-image="/opt/cartesi/share/images/linux.bin" \
-    --flash-drive="label:root,filename:/opt/cartesi/share/images/rootfs.ext2" \
-    --max-mcycle=0 \
-    --store-config \
-    -- "ls /bin"
+```{.bash replace=ls/source enabled=yes}
 ```
-
 builds a Cartesi Machine that, when run, lists the contents of the `/bin/` directory before gracefully halting.
-The image files `rom.bin`, `linux.bin`, and `rootfs.ext2` are generated by the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk), and are available in the playground Docker image in directory `/opt/cartesi/share/images/`.
-The command-line option `--max-mcycle=0` instructs the utility to stop execution at cycle 0 (`mcycle` is a CSR that starts at 0 and is advanced at every instruction cycle), i.e., before the machine even starts running.
-The key command-line option is `--store-config`, which causes the emulator to print the corresponding configuration to the standard output.
-To store directly to a file, use the `--store-config=<filename>` instead, in which case, the `--load-config=<filename>` command-line option can be used to load the stored config.
-
-```{key=config_dump_ls_bin replace=both}
-cartesi-machine \
-    --rom-image="/opt/cartesi/share/images/rom.bin" \
-    --ram-length=64Mi \
-    --ram-image="/opt/cartesi/share/images/linux.bin" \
-    --flash-drive="label:root,filename:/opt/cartesi/share/images/rootfs.ext2" \
-    --max-mcycle=0 \
-    --store-config \
-    -- "ls /bin"
+The kernel `linux.bin` and root file-system `rootfs.ext2` come from the defaults under `/usr/share/cartesi-machine/images/`.
+The command-line option `--store-config[=<filename>]` makes the utility capture the initial machine configuration.
+Without an argument, the configuration is printed to standard output.
+With `=<filename>`, it is written to that file (and `--load-config=<filename>` reloads it later).
+Adding `--store-config` to the example above captures the following configuration
+```{.lua replace=ls/ls-bin.lua title="ls-bin.lua" enabled=yes}
 ```
 
 The resulting configuration includes a number of default values, conveniently marked as such by the `cartesi-machine` utility.
 It can be edited down to its essential, and stored into a file, for example as a Lua module:
 
-```{.bash key=config_marchid depends=config_store_nothing_to_do replace=null enabled=yes}
-$RECIPES_DIR/find-lua-val.sh marchid < $RECIPES_DIR/config/nothing-to-do.lua
+```{.bash key=config_ls_bin replace=null subst=ls enabled=yes}
+# The runner is split from the rendered consumer block below so the consumer
+# can declare lang .lua (matching the captured Lua content) instead of .bash.
+lua5.4 $RECIPES_DIR/minimal-config.lua $ls/ls-bin.lua
 ```
+```{.lua replace=config_ls_bin/stdout title="config/ls-bin.lua" enabled=yes}
+```
+During prototyping, the `mvendorid`, `mimpid`, and `marchid` fields default to values that match the running emulator.
+For production code, they should be set explicitly so that an instantiation against a different emulator version fails fast.
 
-```{.bash key=config_mimpid depends=config_store_nothing_to_do replace=null enabled=yes}
-$RECIPES_DIR/find-lua-val.sh mimpid < $RECIPES_DIR/config/nothing-to-do.lua
-```
-
-```{.bash key=config_mvendorid depends=config_store_nothing_to_do replace=null enabled=yes}
-$RECIPES_DIR/find-lua-val.sh mvendorid < $RECIPES_DIR/config/nothing-to-do.lua
-```
-```{.lua key=config_ls_bin replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/ls-bin.lua" enabled=yes}
-return {
-  processor = {
-    mvendorid = $MVENDORID,
-    mimpid = $MIMPID,
-    marchid = $MARCHID,
-  },
-  ram = {
-    length = 0x4000000,
-    image_filename = "/opt/cartesi/share/images/linux.bin",
-  },
-  rom = {
-    image_filename = "/opt/cartesi/share/images/rom.bin",
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce mtdparts=flash.0:-(root) -- ls /bin",
-  },
-  flash_drive = {
-    {
-      start = 0x8000000000000000,
-      length = 0x5000000,
-      image_filename = "/opt/cartesi/share/images/rootfs.ext2",
-    },
-  },
-}
-```
-The only required values in the `processor` configuration are the `mvendorid`, `mimpid`, `marchid` CSRs.
-These are used to ensure the emulator version matches the version the configuration was generated for.
-If the emulator detects a mismatch, instantiation fails.
-During prototyping, these fields can be set to `-1` to instantiate a machine with the values it expects.
-In production code, they should be hard-coded to match the release of the emulator in use.
-
-Note how the utility automatically sets the ROM `bootargs` to include several kernel parameters.
-The ones seen in the example have the following meaning:
-- `console=hsvc0` sets the device to be used as console;
-- `rootfstype=ext2` sets the root file-system type;
-- `root=/dev/mtdblock0` sets the device where the root file-system can be found;
-- `rw` instructs the kernel to mount the root file-system read-write;
+The `dtb.bootargs` field carries the default kernel command line.
+The individual parameters have the following meaning:
 - `quiet` stops the kernel from printing initialization messages;
-- `swiotlb=noforce` prevents the kernel from reserving memory for DMA bounce buffers.
+- `earlycon=sbi` enables the SBI-based early console, used before the main console driver is up;
+- `console=hvc0` sets the main console to the hypervisor console virtual device;
+- `uio_pdrv_genirq.of_id=generic-uio` instructs the UIO platform driver to bind to nodes with the `generic-uio` compatible string, used by NVRAM ranges;
+- `root=/dev/pmem0` sets the first flash drive (exposed by the kernel as a persistent-memory block device) as the root file-system;
+- `rw` instructs the kernel to mount the root file-system read-write;
+- `init=/usr/sbin/cartesi-init` runs the Cartesi-provided init script, which reads `dtb.entrypoint` and runs it as user `dapp`.
 
-The two remaining parameters deserve some elaboration.
-The `mtdparts=flash.0:-(root)` section is a kernel command-line parameter that provides the kernel with partitioning information for the flash drives.
-The format for the parameter is documented in the [source-code](https://elixir.bootlin.com/linux/v5.5.19/source/drivers/mtd/parsers/cmdlinepart.c) for the kernel module responsible for parsing it.
-Here, `(root)` gives the partition label, and `flash.0` refers to the first flash drive.
-The `/bin/ls /bin` command appears in the ROM `bootargs` after the `--` separator.
-The Linux kernel passes anything that appears after the separator, verbatim, to `/sbin/init`.
-The Cartesi-provided `/sbin/init` then uses this information to run the desired command.
+The entrypoint command appears in `dtb.entrypoint`, separately from `dtb.bootargs`.
+When the user passes arguments after `--` on the `cartesi-machine` command line, the utility appends them to `dtb.entrypoint`, which `cartesi-init` then executes.
 
-Recall the command-line utility can also run Cartesi Machines with additional drives.
-In that case, the resulting configuration automatically includes an entry for them in the `mtdparts` kernel command-line argument.
-Repeating another [earlier example](#flash-drives)
-```{.bash replace=foo_ext2/source}
+Flash drives are exposed by the kernel as `/dev/pmem<i>` devices.
+NVRAMs are exposed as `/dev/uio<i>` devices.
+The emulator publishes each drive's `label` field in DTB aliases that `cartesi-init` reads.
+For flash drives that carry a recognised file system, `cartesi-init` mounts the drive at `/mnt/<label>`.
+
+The command-line utility can also run Cartesi Machines with additional flash drives.
+Adding `--store-config` to the [earlier example](#flash-drives) that loaded `foo.ext2` as a flash drive
+```{.bash replace=flash/source enabled=yes}
 ```
-```bash
-cartesi-machine \
-    --flash-drive=label:"foo,filename:foo.ext2" \
-    --max-mcycle=0 \
-    --store-config \
-    -- "cat /mnt/foo/bar.txt"
+captures a configuration whose essential, edited-down form is
+```{.bash key=config_cat_foo_bar subst=flash replace=null enabled=yes}
+lua5.4 $RECIPES_DIR/minimal-config.lua $flash/cat-foo-bar.lua
 ```
-produces the corresponding machine configuration.
-This can be edited down to its essential, and stored into a file, for example as a Lua module:
-```{.lua key=config_cat_foo_bar replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/cat-foo-bar.lua" enabled=yes}
-return {
-  processor = {
-    mvendorid = $MVENDORID,
-    mimpid = $MIMPID,
-    marchid = $MARCHID,
-  },
-  ram = {
-    image_filename = "/opt/cartesi/share/images/linux.bin",
-    length = 0x4000000,
-  },
-  rom = {
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce mtdparts=flash.0:-(root);flash.1:-(foo) -- cat /mnt/foo/bar.txt",
-    image_filename = "/opt/cartesi/share/images/rom.bin",
-  },
-  flash_drive = {
-    {
-      image_filename = "/opt/cartesi/share/images/rootfs.ext2",
-      start = 0x8000000000000000,
-      length = 0x5000000,
-    },
-    {
-      image_filename = "foo.ext2",
-      start = 0x9000000000000000,
-      length = 0x100000,
-    },
-  },
-}
+```{.lua replace=config_cat_foo_bar/stdout title="config/cat-foo-bar.lua" enabled=yes}
 ```
-Note the entry in `mtdparts` that causes `flash.1`, the flash drive containing the `foo.ext2` file-system, to receive the label `foo`.
-When the Cartesi-provided `/sbin/init` detects a valid file-system in the flash drive, it automatically uses the label to mount it as `/mnt/foo`.
-It is there that the command `cat /mnt/foo/bar.txt` finds the file to dump to the console.
+The second flash drive carries the file-system mounted at `/mnt/foo`.
+The `cartesi-init` script reads each flash drive's `label` from DTB aliases.
+When it detects a recognised file system on the drive, it mounts the drive at `/mnt/<label>`.
+That is where the entrypoint `cat /mnt/foo/bar.txt` finds the file to dump to the console.
 
 ### Additional sample configurations
 
 Here are the (simplified) configurations for the other examples from the documentation of the `cartesi-machine` command-line utility.
 
-A Cartesi Machine that has nothing to do:
-```bash
-cartesi-machine \
-    --max-mcycle=0 \
-    --store-config
+A Cartesi Machine that has nothing to do.
+This is the [introductory example](#command-line-interface), and its configuration, edited down to its essential, is
+```{.bash key=config_nothing_to_do depends=nothing replace=null enabled=yes}
+lua5.4 $RECIPES_DIR/minimal-config.lua $RECIPES_DIR/config/nothing-to-do.lua
 ```
-```{.lua key=config_nothing_to_do replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/nothing-to-do.lua" enabled=yes}
-return {
-  processor = {
-    mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
-    mimpid = $MIMPID, -- cartesi.machine.MIMPID
-    marchid = $MARCHID, -- cartesi.machine.MARCHID
-  },
-  ram = {
-    image_filename = "/opt/cartesi/share/images/linux.bin",
-    length = 0x4000000,
-  },
-  rom = {
-    image_filename = "/opt/cartesi/share/images/rom.bin",
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce mtdparts=flash.0:-(root)",
-  },
-  flash_drive = {
-    {
-      image_filename = "/opt/cartesi/share/images/rootfs.ext2",
-      start = 0x8000000000000000,
-      length = 0x5000000,
-    },
-  },
-}
+```{.lua replace=config_nothing_to_do/stdout title="config/nothing-to-do.lua" enabled=yes}
 ```
+The `dtb.init` field carries the ASCII-art splash that the `cartesi-machine` utility appends to its setup phase by default.
+This is what produces the Cartesi logo printed before each entrypoint runs.
+The previous configurations also carry this splash: it has been quietly present in `dtb.init` from the start.
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
-```bash
-cartesi-machine \
-    --htif-yield-automatic \
+```{.bash key=config_progress replace=null enabled=yes}
+cartesi-machine --no-init-splash \
     --max-mcycle=0 \
-    --store-config \
+    --store-config=progress.lua \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
+lua5.4 $RECIPES_DIR/minimal-config.lua progress.lua
 ```
-```{.lua key=config_progress replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/progress.lua" enabled=yes}
-return {
-  processor = {
-    mvendorid = $MVENDORID,
-    mimpid = $MIMPID,
-    marchid = $MARCHID,
-  },
-  ram = {
-    length = 0x4000000,
-    image_filename = "/opt/cartesi/share/images/linux.bin",
-  },
-  rom = {
-    image_filename = "/opt/cartesi/share/images/rom.bin",
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce mtdparts=flash.0:-(root) -- for i in $(seq 0 5 1000); do yield automatic progress $i; done",
-  },
-  htif = {
-    yield_automatic = true,
-  },
-  flash_drive = {
-    {
-      start = 0x8000000000000000,
-      length = 0x5000000,
-      image_filename = "/opt/cartesi/share/images/rootfs.ext2",
-      shared = false, -- default
-    },
-  },
-}
+```{.lua replace=config_progress/stdout title="config/progress.lua" enabled=yes}
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
-```bash
-cartesi-machine \
-    --flash-drive="label:input,length:1<<12,filename:input.raw" \
-    --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
+```{.bash key=config_calculator replace=null enabled=yes}
+truncate -s 4K input.raw output.raw
+cartesi-machine --no-init-splash \
+    --nvram="label:input,length:1<<12,data_filename:input.raw" \
+    --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
     --max-mcycle=0 \
-    --store-config \
-    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
+    --store-config=calculator.lua \
+    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+lua5.4 $RECIPES_DIR/minimal-config.lua calculator.lua
 ```
-```{.lua key=config_calculator replace=source subst=MVENDORID->config_mvendorid/stdout,MIMPID->config_mimpid/stdout,MARCHID->config_marchid/stdout title="config/calculator.lua" enabled=yes}
-return {
-  processor = {
-    mvendorid = $MVENDORID, -- cartesi.machine.MVENDORID
-    mimpid = $MIMPID, -- cartesi.machine.MIMPID
-    marchid = $MARCHID, -- cartesi.machine.MARCHID
-  },
-  ram = {
-    image_filename = "/opt/cartesi/share/images/linux.bin",
-    length = 0x4000000,
-  },
-  rom = {
-    image_filename = "/opt/cartesi/share/images/rom.bin",
-    bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- dd status=none if=$(flashdrive input) | lua -e 'print((string.unpack(\"z\", io.read(\"a\"))))' | bc | dd status=none of=$(flashdrive output)",
-  },
-  flash_drive = {
-    {
-      image_filename = "/opt/cartesi/share/images/rootfs.ext2",
-      start = 0x8000000000000000,
-      length = 0x5000000,
-    },
-    {
-      start = 0x9000000000000000,
-      length = 0x1000,
-    },
-    {
-      start = 0xa000000000000000,
-      length = 0x1000,
-    },
-  },
-}
+```{.lua replace=config_calculator/stdout title="config/calculator.lua" enabled=yes}
 ```
 
 ### Loading and running machines
@@ -2568,7 +2484,7 @@ cartesi-machine \
 <div class="grid md:grid-cols-2 gap-4">
 <div>
 
-```{key=state_hashes_lua depends=config_store_nothing_to_do replace=both}
+```{key=state_hashes_lua depends=nothing replace=both}
 lua $RECIPES_DIR/run-config-with-hashes.lua config.nothing-to-do
 ```
 
@@ -2804,23 +2720,23 @@ local cartesi = require"cartesi"
 local _M = {}
 
 function _M.roll_hash_up_tree(proof, target_hash)
-	local hash = target_hash
-	for log2_size = proof.log2_size, 63 do
-		local bit = (proof.address & (1 << log2_size)) ~= 0
-		local first, second
-		if bit then
-			first, second = proof.sibling_hashes[64-log2_size], hash
-		else
-			first, second = hash, proof.sibling_hashes[64-log2_size]
-		end
-		hash = cartesi.keccak(first, second)
-	end
-	return hash
+    local hash = target_hash
+    for log2_size = proof.log2_size, 63 do
+        local bit = (proof.address & (1 << log2_size)) ~= 0
+        local first, second
+        if bit then
+            first, second = proof.sibling_hashes[64-log2_size], hash
+        else
+            first, second = hash, proof.sibling_hashes[64-log2_size]
+        end
+        hash = cartesi.keccak(first, second)
+    end
+    return hash
 end
 
 function _M.slice_assert(root_hash, proof)
-	assert(root_hash == proof.root_hash, "proof root_hash mismatch")
-	assert(_M.roll_hash_up_tree(proof, proof.target_hash) == root_hash,
+    assert(root_hash == proof.root_hash, "proof root_hash mismatch")
+    assert(_M.roll_hash_up_tree(proof, proof.target_hash) == root_hash,
         "node not in tree")
 end
 
@@ -3177,7 +3093,7 @@ Running the `dump-step.lua` program:
 ```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua" enabled=yes}
 ```
 with command:
-```{.bash key=state_transition_dump_step subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,dump_step_source replace=source/cmd enabled=yes}
+```{.bash key=state_transition_dump_step subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,dump_step_source replace=source/cmd enabled=yes}
 rm -f dump-step.lua
 ln -s "$RECIPES_DIR/dump-step.lua" .
 {
@@ -3211,7 +3127,7 @@ The following script illustrates the verification of a state transition.
 ```
 
 Running the script without arguments accepts the valid state transition:
-```{.bash key=verify_step_run subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_run subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3225,7 +3141,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles"
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
 For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_step_mess_address subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_address subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3240,7 +3156,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
 Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_step_mess_written subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_written subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3253,7 +3169,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_step_mess_read subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_read subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3266,7 +3182,7 @@ lua5.4 verify-step.lua config.nothing-to-do "$cycles" "$ucycles" 'log.accesses[5
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=config_store_nothing_to_do,verify_step_source replace=source/cmd enabled=yes}
+```{.bash key=verify_step_mess_target_hash subst=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr depends=nothing,verify_step_source replace=source/cmd enabled=yes}
 rm -f verify-step.lua
 ln -s "$RECIPES_DIR/verify-step.lua" .
 {
@@ -3531,7 +3447,7 @@ end
 #!/usr/bin/env perl
 
 for my $i (1..5){
-	print("$i: Hello from Perl!\n");
+    print("$i: Hello from Perl!\n");
 }
 ```
 

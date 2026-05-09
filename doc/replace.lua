@@ -165,7 +165,10 @@
 --     docs:begin null / docs:end null lines and everything between them are
 --     stripped from the rendered source but still execute. Use this to hide
 --     imports or setup boilerplate. Multiple non-overlapping null regions are
---     allowed; nesting is not permitted.
+--     allowed; nesting is not permitted. The marker lines themselves are
+--     also stripped from the executed body, so a null region may be inserted
+--     in the middle of a bash backslash-continued multi-line command without
+--     bash gluing the leading "#" onto the previous "\<NL>" continuation.
 --
 --   Named region:
 --     replace=source/<name> renders only the content between the matching
@@ -345,35 +348,42 @@ local function substitute(body, var_pairs)
     return table.concat(out)
 end
 
--- Strip docs:begin null / docs:end null ranges (inclusive) from body.
--- Lines inside those markers still execute; they are just hidden from rendered
--- source. Multiple non-overlapping null regions are allowed. Nesting is not.
-local function strip_null_regions(body, label)
+-- Process docs:begin null / docs:end null pairs. When keep_content is false
+-- (the rendered-source path), the markers and the lines between them are
+-- removed. When keep_content is true (the executed-body path), only the
+-- marker lines themselves are removed; the lines between them survive. The
+-- latter mode lets a null region sit in the middle of a bash backslash-
+-- continued command without bash collapsing "\<NL>" + "# docs:begin null"
+-- into a comment that severs the logical line.
+-- Multiple non-overlapping null regions are allowed. Nesting is not.
+local function process_null_regions(body, keep_content, label)
     if not body:find("[#%-/]+%s*docs:begin%s+null") then return body end
     local scan = body:sub(-1) == "\n" and body or (body .. "\n")
     local out = {}
     local in_null = false
     for line in scan:gmatch("([^\n]*)\n") do
-        if not in_null then
-            if line:match("^%s*[#%-/]+%s*docs:begin%s+null%s*$") then
-                in_null = true
-            elseif line:match("^%s*[#%-/]+%s*docs:end%s+null%s*$") then
-                error(string.format("%s: docs:end null without matching docs:begin null", label))
-            else
-                out[#out + 1] = line
-            end
-        else
-            if line:match("^%s*[#%-/]+%s*docs:end%s+null%s*$") then
-                in_null = false
-            elseif line:match("^%s*[#%-/]+%s*docs:begin%s+null%s*$") then
-                error(string.format("%s: nested docs:begin null", label))
-            end
+        if line:match("^%s*[#%-/]+%s*docs:begin%s+null%s*$") then
+            assertf(not in_null, "%s: nested docs:begin null", label)
+            in_null = true
+        elseif line:match("^%s*[#%-/]+%s*docs:end%s+null%s*$") then
+            assertf(in_null, "%s: docs:end null without matching docs:begin null", label)
+            in_null = false
+        elseif keep_content or not in_null then
+            out[#out + 1] = line
         end
     end
     assertf(not in_null, "%s: unterminated docs:begin null", label)
     local result = table.concat(out, "\n")
     if body:sub(-1) == "\n" then result = result .. "\n" end
     return result
+end
+
+local function strip_null_regions(body, label)
+    return process_null_regions(body, false, label)
+end
+
+local function strip_null_markers(body, label)
+    return process_null_regions(body, true, label)
 end
 
 -- Extract a "docs:begin NAME" / "docs:end NAME" region from body.
@@ -485,7 +495,8 @@ local function define_script(key, attr, body, classes, deps, subst, include_abs)
     outputs_t[key] = {}
     for _, n in ipairs(out_list) do outputs_t[key][n] = true end
     sources[key] = resolved
-    write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/body." .. info.ext, resolved)
+    local exec_body = strip_null_markers(resolved, "key=" .. key)
+    write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/body." .. info.ext, exec_body)
     -- Write spec file for contents-form subst entries so the runner can expand them.
     local contents_entries = {}
     for _, p in ipairs(subst) do
