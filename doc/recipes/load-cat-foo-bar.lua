@@ -1,9 +1,8 @@
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 
--- Instantiate machine from configuration
-local config = require(arg[1])
-local machine = cartesi.machine(config)
+-- Instantiate machine from persistent state directory
+local machine = cartesi.machine("cat-foo-bar")
 
 -- Run machine until it halts or yields manual
 repeat

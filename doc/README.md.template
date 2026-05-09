@@ -2111,34 +2111,24 @@ In particular, the configurations produced by the `cartesi-machine` utility, suc
 This is, after all, the interface used internally by the `cartesi-machine` utility.
 
 For example, the script
-```{.lua title="run-config.lua"}
--- Load the Cartesi module
-local cartesi = require"cartesi"
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
-
--- Run machine until it halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    machine:run(math.maxinteger)
-end
+```{.lua key=run_config replace=source include=run-config.lua enabled=yes title="run-config.lua"}
 ```
 loads a machine configuration from the Lua module specified in the command-line (using `require(arg[1])`).
 It then creates an instance by calling the `cartesi.machine(<machine_config>)` constructor, which it stores in the
 `machine` local variable.
 
-The `machine:run(<max_mcycle>)` method of the Cartesi Machine instance runs the corresponding machine until the CSR `mcycle` reaches at most `<max_mcycle>`.
+The `machine:run(<max_mcycle>)` method of the Cartesi Machine instance runs the corresponding machine until the register `mcycle` reaches at most `<max_mcycle>`.
 The value of `<max_mcycle>` used in the script is a very large integer, providing the machine with enough cycles to run until it halts or yields manual.
 Note that the `machine:run()` method can return precociously for a variety of reasons (see below), so it should always be called inside a loop.
-The `iflags` CSR contains a bit `H` that is set to true whenever the machine is halted, and a bit `Y` that is set to true whenever the machine has yielded manual.
-The `machine:read_iflags_H()` and `machine:read_iflags_Y()` methods return the value of these bits, respectively, and the loop breaks if any of them is set.
+It returns a break reason explaining why control was returned to the caller, taken from the `cartesi.BREAK_REASON_*` set.
+The script's loop terminates when the break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`, the two reasons that signal the machine has reached a final state.
 
 <a name="run-cat-foo-bar"></a>
 
 For example, to run the configuration stored in `./config/cat-foo-bar.lua` (assuming `./foo.ext2` is available) simply run
 
 ```bash
-lua5.3 run-config.lua config.cat-foo-bar
+lua5.4 run-config.lua config.cat-foo-bar
 ```
 (The function call `require(argv[1])` translates the argument `"config.cat-foo-bar"` to `"config/cat-foo-bar.lua"` and loads that file.)
 
@@ -2170,38 +2160,20 @@ It will also take the time required by the copying of image files into the direc
 :::
 
 To store a machine at its current state, use the `machine:store(<directory>)` method of the Cartesi Machine instance.
-```{.lua title="store-cat-foo-bar.lua"}
--- Load the Cartesi module
-local cartesi = require"cartesi"
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require"config.cat-foo-bar")
-
--- Store persistent state to directory
-machine:store("cat-foo-bar")
+```{.lua key=store_cat_foo_bar replace=source include=store-cat-foo-bar.lua enabled=yes title="store-cat-foo-bar.lua"}
 ```
 To prevent persistent Cartesi Machines from being inadvertently overwritten, the function call fails when the directory already exists.
 
 After the execution of the script above, the directory `./cat-foo-bar/` contains all the information needed to instantiate the same machine, including copies of all necessary image files.
 There are no external dependencies.
 In fact, running the following script
-```{.lua title="load-cat-foo-bar.lua"}
--- Load the Cartesi module
-local cartesi = require"cartesi"
-
--- Instantiate machine from persistent state directory
-local machine = cartesi.machine("cat-foo-bar")
-
--- Run machine until it halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    machine:run(math.maxinteger)
-end
+```{.lua key=load_cat_foo_bar replace=source include=load-cat-foo-bar.lua enabled=yes title="load-cat-foo-bar.lua"}
 ```
 has exactly the same effect as the example [above](#run-cat-foo-bar), where the machine was instantiated from the configuration and directly run until it halted.
 
 As before, the configuration that was used to instantiate a Cartesi Machine can be obtained from the machine instance with the method `machine:get_initial_config()`.
 Note that this is *not* the configuration that was used to instantiate the machine for the first time, but rather the configuration used to instantiate a copy of the machine that was stored.
-More specifically, any image filenames point to modified copies that reside inside the storage directory.
+More specifically, any `backing_store.data_filename` fields point to modified copies that reside inside the storage directory.
 Likewise, the RAM image and the values of all registers will reflect the values as they were when stored.
 
 ### Limiting execution
@@ -2211,28 +2183,13 @@ From the outside, however, it is impossible to predict how many cycles the emula
 One of the uses for the `<max_mcycle>` argument in production code is to ensure the call returns at a desired frequency, rather than potentially blocking the caller indefinitely.
 
 The following script illustrates the process
-```{.lua title="run-config-in-chunks.lua"}
--- Load the Cartesi module
-local cartesi = require"cartesi"
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
-
-local CHUNK = 1000000 -- 1 million cycles
--- Loop until machine halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    -- Execute at most CHUNK cycles
-    machine:run(machine:read_mcycle() + CHUNK)
-    -- Potentially perform other tasks
-end
--- Machine is now halted or yielded manual
+```{.lua key=run_config_in_chunks replace=source include=run-config-in-chunks.lua enabled=yes title="run-config-in-chunks.lua"}
 ```
 
-The loop conditional checks if the machine has yet to halt.
-If so, it runs the machine for at most an additional `CHUNK` cycles.
-The `machine:read_mcycle()` method returns the current value of the `mcycle` CSR.
-The current value of `mcycle` is used to set the new limit to `mcycle+CHUNK`.
+Each iteration runs the machine for at most an additional `CHUNK` cycles.
+Reading the `mcycle` register with `machine:read_reg("mcycle")` returns the current cycle count, which is used to set the new limit to `mcycle+CHUNK`.
 After the call to `machine:run()` returns, the application is free to perform other tasks.
+The loop exits when the returned break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`. Any other reason (such as `BREAK_REASON_REACHED_TARGET_MCYCLE`, signalling the chunk expired) just continues the loop.
 
 ### Progress feedback
 
@@ -2248,61 +2205,29 @@ Internally, the tool uses an `ioctl` system-call on the Cartesi-specific `/dev/y
 The protocols followed by the `/opt/cartesi/bin/yield` utility to interact with the `/dev/yield` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [target perspective](#system-architecture).
 The focus here is on its effect on the host program controlling the emulator.
 
-A Cartesi Machine can be configured to accept HTIF yield automatic commands by means of the `htif.yield_automatic` Boolean field in the machine configuration.
-When set to true, a yield automatic command will cause the emulator to precociously return from a call to `machine:run(<max_mcycle>)`.
-Otherwise, yield automatic commands are ignored so that execution of the `machine:run(<max_mcycle>)` continues unimpeded until the machine halts or `mcycle` hits `<max_mcycle>`.
+A Cartesi Machine can be configured via `processor.registers.htif.iyield` to accept HTIF yield automatic commands.
+The field is a bitmask of enabled commands.
+Setting the `cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK` bit accepts yield automatic, and setting `cartesi.HTIF_YIELD_CMD_MANUAL_MASK` accepts yield manual.
+The default machine configuration sets both bits.
+When automatic yields are accepted, a yield automatic command causes the emulator to return precociously from `machine:run(<max_mcycle>)` with break reason `BREAK_REASON_YIELDED_AUTOMATICALLY`.
+When the bit is clear, the command is silently ignored and execution continues until the machine halts or `mcycle` hits `<max_mcycle>`.
 
 The following example illustrates how Lua scripts can receive progress information throughout a computation performed inside a Cartesi Machine:
-```{.lua title="run-config-in-chunks-with-progress.lua"}
--- Load the Cartesi module
-local cartesi = require"cartesi"
-
--- Writes formatted text to stderr
-local function stderr(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
-
--- Instantiate machine from configuration
-local machine = cartesi.machine(require(arg[1]))
-
-local CHUNK = 1000000 -- 1 million cycles
-local max_mcycle = CHUNK
--- Loop until machine halts or yields
-while not machine:read_iflags_H() and not machine:read_iflags_Y() do
-    -- Execute at most CHUNK cycles
-    machine:run(max_mcycle)
-    -- Check if machine yielded automatic
-    if machine:read_iflags_X() then
-        -- Check if yield was due to progress report
-        local reason = machine:read_htif_tohost_data() >> 32
-        if reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
-            local permil = machine:read_htif_tohost_data()
-            -- Show progress feedback
-            stderr("Progress: %6.2f\r", permil/10)
-        end
-    end
-    if machine:read_mcycle() == max_mcycle then
-        max_mcycle = max_mcycle + CHUNK
-        -- Potentially perform other tasks
-    end
-end
--- Machine is now halted or yielded
-stderr("\nCycles: %u\n", machine:read_mcycle())
+```{.lua key=run_config_in_chunks_with_progress replace=source include=run-config-in-chunks-with-progress.lua enabled=yes title="run-config-in-chunks-with-progress.lua"}
 ```
-The loop repeats until the machine halts or yields manual.
+The loop repeats until the break reason returned by `machine:run()` is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`.
 As before, the computation is performed in chunks.
 At each iteration, the script tries to advance the computation until the end of the next chunk.
-When the call to `machine:run()` returns, a set bit X in CSR `iflags` means the reason for returning was the Yield automatic command.
+A `BREAK_REASON_YIELDED_AUTOMATICALLY` return means the target ran a yield automatic command.
 That command can be called for different reasons.
-The command and the associated data can be found in the HTIF `tohost` CSR.
-The `cartesi.HTIF_YIELD_REASON_PROGRESS` corresponds to a progress report, and the data contains the progress in parts per mil.
-The loop is aborted if the bits H or Y in `iflags` is set, which signals the machine is halted or yielded manual.
-Otherwise, the execution continues with the remaining of the current chunk, or a new chunk.
-In case of a new chunk, the script could perform any desired &ldquo;per-chunk&rdquo; tasks.
+The reason and the associated data are available in the `htif_tohost_reason` and `htif_tohost_data` registers, which expose pre-decoded fields of the HTIF `tohost` register.
+The constant `cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS` corresponds to a progress report, in which case `htif_tohost_data` holds the progress in parts per mille.
+A `BREAK_REASON_REACHED_TARGET_MCYCLE` return means the chunk expired without a yield or halt.
+In that case the script bumps `max_mcycle` by another `CHUNK` and could perform any desired &ldquo;per-chunk&rdquo; tasks before looping.
 
 For example, running the script with the command-line
 ```bash
-lua5.3 run-config-in-chunks-with-progress.lua config.progress
+lua5.4 run-config-in-chunks-with-progress.lua config.progress
 ```
 produces the output (shown at 44% completion) below
 ```
@@ -2323,7 +2248,6 @@ Progress:  44.00
 This is similar to the `cartesi-machine` command-line
 ```bash
 cartesi-machine \
-    --htif-yield-automatic \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 which uses an equivalent mechanism for progress reports.

@@ -212,8 +212,11 @@
 --   - $VAR substitution requires a non-word boundary after VAR so $foo does
 --     not consume the start of $foobar; longest var wins for disambiguation.
 --   - include= keys emit a make rule with the included file as the only
---     prereq. Editing the file invalidates cache/<K>/stdout and cascades
---     through any consumer with depends=<K>.
+--     prereq, and unconditionally mark the include= primary as consumed so a
+--     recipe edit invalidates README.md even when the only consumer renders
+--     via replace=source (which reads body in memory and would otherwise
+--     leave consumed[] unmarked). Edits also cascade through any consumer
+--     with depends=<K>.
 
 local deps_target
 local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
@@ -469,6 +472,10 @@ local function define_script(key, attr, body, classes, deps, subst, include_abs)
         defined[key]   = true
         outputs_t[key] = {}
         sources[key]   = body
+        -- Mark include= primary as consumed so a recipe edit invalidates README.md
+        -- even when the only consumer renders via replace=source (which reads the
+        -- body in memory and would otherwise leave consumed[] unmarked).
+        consumed[key .. "/stdout"] = true
         if deps_target then emit_include_rule(key, info, include_abs) end
         return body
     end
