@@ -8,7 +8,7 @@ function M.apply(body, pairs)
 end
 
 function M.read_value(path)
-    local f = assert(io.open(path, "r"), "subst: cannot open " .. path)
+    local f = assert(io.open(path, "r"), "vars: cannot open " .. path)
     local s = f:read("a")
     f:close()
     s = s:gsub("\27%[[%d;]*[mGK]", ""):gsub("\r", "")
@@ -17,10 +17,10 @@ end
 
 local function cli(body_in, body_out)
     local pairs_list = {}
-    local sf = assert(io.open("spec", "r"), "subst CLI: ./spec not found")
+    local sf = assert(io.open("spec", "r"), "vars CLI: ./spec not found")
     for line in sf:lines() do
         local var, path = line:match("^([%w_]+)=(.+)$")
-        assert(var, "subst CLI: bad spec line: " .. line)
+        assert(var, "vars CLI: bad spec line: " .. line)
         pairs_list[#pairs_list + 1] = { var = var, value = M.read_value(path) }
     end
     sf:close()
@@ -33,7 +33,7 @@ local function cli(body_in, body_out)
     of:close()
 end
 
-if arg and arg[0] and arg[0]:match("subst%.lua$") and arg[1] then
+if arg and arg[0] and arg[0]:match("vars%.lua$") and arg[1] then
     cli(arg[1], arg[2])
 end
 

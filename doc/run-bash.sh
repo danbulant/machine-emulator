@@ -8,7 +8,7 @@ echo "$REPLACE_KEY"
 exec > >(tee stdout >> both) 2> >(tee stderr >> both)
 trap 'exec >&- 2>&-; wait' EXIT
 if [ -f spec ]; then
-    lua5.4 "$REPLACE_DIR/subst.lua" body.sh body.run.sh
+    lua5.4 "$REPLACE_DIR/vars.lua" body.sh body.run.sh
     exec bash body.run.sh
 else
     exec bash body.sh
