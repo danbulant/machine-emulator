@@ -303,24 +303,21 @@ cartesi-machine \
 ```
 it drops into the shell.
 Running the command `ls /bin` causes the listing of directory `/bin` to appear.
-The command `exit` causes the shell to exit.
+Pressing Ctrl+D at the prompt then causes the shell to exit.
 The output is
 ```{key=cmdline_interactive_ls replace=both enabled=yes}
 # The user-facing command is shown in the bash block above. Here we feed
-# the session non-interactively: -i defaults console.input_source to
-# from_stdin, which calls open_tty() and fails inside a non-TTY container.
-# from_file goes through fopen() and avoids the TTY altogether; /sbin/init
-# halts the machine when the user shell exits, so no EOF-from-getchar is
-# needed. The block uses replace=both, so the heredoc setup is hidden in
-# the rendered README.
-cat >/tmp/cmds <<'EOF'
-ls /bin
-exit
-EOF
-cartesi-machine \
+# the session non-interactively by piping `ls /bin` followed by the VEOF
+# character (^D, byte 0x04) into the emulator. The guest TTY's line
+# discipline turns ^D into a 0-byte read, so the shell exits cleanly
+# without an `exit` command, and ^D itself is not echoed. input_fd:0
+# routes the pipe to the console; /sbin/init halts the machine when the
+# user shell exits.
+printf 'ls /bin\n\x04' | cartesi-machine \
     --no-init-splash \
     -i \
-    --console-io=input_source:from_file,input_filename:/tmp/cmds \
+    --quiet \
+    --console-io=input_fd:0 \
     -- sh 2>&1
 ```
 :::note
@@ -2887,26 +2884,38 @@ The `cartesi/playground` Docker image comes pre-installed with the emulator and 
 Inside the playground, the following command instructs the emulator to load the default machine configuration and run a shell in interactive mode
 
 ```bash
-cartesi-machine -i -- sh
+cartesi-machine \
+    -i \
+    --quiet \
+    -- sh
 ```
 
-Once executed, the Cartesi Machine boots Linux and drops into an interactive shell (The `sh` argument in the command-line.)
+The `--quiet` option suppresses the output of `cartesi-machine.lua` itself, leaving visible only what is produced inside the machine.
+Without it, the command-line utility's output (most notably the final cycle count, which in interactive mode varies between runs) would interleave with the target's output and clutter the example.
 
-```{key=linux_interactive_ls replace=both}
-cartesi-machine -i -- sh 2>&1 <<'MACHINE'
-cd /bin
-ls
-cd /usr/bin
-ls
-exit
-MACHINE
+Once executed, the Cartesi Machine boots Linux and drops into an interactive shell (the `sh` argument in the command-line).
+
+```{key=linux_interactive_ls replace=both enabled=yes}
+# Hidden setup. The user-facing command is shown in the bash block above.
+# To capture this interactive session non-interactively, we feed `ls /bin`
+# followed by the VEOF character (^D, byte 0x04) on stdin. The guest TTY's
+# line discipline turns ^D into a 0-byte read, so the shell exits cleanly
+# without an `exit` command -- and ^D itself is not echoed, so the
+# captured output is just the prompt, the command echo, the listing, and
+# the final prompt.
+# --no-init-splash is added so the captured output omits the init banner.
+printf 'ls /bin\n\x04' | cartesi-machine \
+    --no-init-splash \
+    -i \
+    --quiet \
+    --console-io=input_fd:0 \
+    -- sh 2>&1
 ```
 
-The session shows a user changing the working directory to `/bin/` and listing its contents.
-The user then does the same with directory `/usr/bin/`, before finally leaving the emulator with the `exit` command.
+The session shows a user listing the contents of `/bin/`, then leaving the emulator by pressing Ctrl+D at the prompt.
 The point of the exercise is that, from the inside, the environment will be familiar to any regular Unix user.
 
-One of the key differences is that, unlike stand-alone systems, most systems are not self-hosting.
+One of the key differences is that, unlike stand-alone systems, many embedded systems are not self-hosting.
 None of the utilities visible inside the `/usr/bin/` and `/bin/` directories were built with a compiler that ran inside a Cartesi Machine.
 They were built in a separate host system, on which a cross-compiling toolchain for the target architecture has been installed.
 In the case of Linux, the key elements in the toolchain are the GNU Compiler Collection and the GNU C Library.
