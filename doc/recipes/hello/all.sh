@@ -2,9 +2,10 @@
 
 cd $(dirname $0)
 
+./hello-c
 ./hello-cpp
 ./hello-rust
-4th cxq hello.4th
+gforth hello.4th
 ./hello.lua
 ./hello.js
 ./hello.pl

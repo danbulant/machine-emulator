@@ -23,6 +23,14 @@ export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
 .PHONY: build-docs-image clean
 .DELETE_ON_ERROR:
 
+HELLO_ROOTFS_INPUTS := \
+    $(RECIPES_DIR)/Dockerfile.hello-rootfs \
+    $(RECIPES_DIR)/build-hello-rootfs.sh \
+    $(wildcard $(RECIPES_DIR)/hello/*)
+
+$(RECIPES_DIR)/hello-rootfs.ext2: $(HELLO_ROOTFS_INPUTS) | check-docs-image
+	cd $(RECIPES_DIR) && TAG=$(TAG) ./build-hello-rootfs.sh
+
 check-docs-image:
 	@if docker images $(DOCKER_PLATFORM) -q $(DOCS_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
 		echo "Docker image $(DOCS_IMAGE):$(TAG) exists"; \
@@ -90,11 +98,12 @@ else
 # container. Inside, DEV_ENV_HAS_DOCGEN=yes activates the rules above and
 # evaluates staleness against template.d.
 .PHONY: README.md
-README.md:
+README.md: $(RECIPES_DIR)/hello-rootfs.ext2
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"
 
 endif
 
 clean:
 	rm -f README.md template.d
+	rm -f $(RECIPES_DIR)/hello-rootfs.tar $(RECIPES_DIR)/hello-rootfs.ext2
 	rm -rf $(REPLACE_CACHE_DIR)

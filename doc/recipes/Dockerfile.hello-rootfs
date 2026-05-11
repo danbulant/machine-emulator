@@ -1,0 +1,61 @@
+ARG UBUNTU_TAG=24.04
+ARG RUST_TAG=1.83-slim
+ARG MACHINE_GUEST_TOOLS_VERSION=0.18.0-test2
+ARG MACHINE_GUEST_TOOLS_SHA256=44cfa554246dc32177285e0d3162f161121e979be92bd578765ccb70c6a5077a
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Stage 1: cross-compile the C and C++ programs on the host architecture.
+FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG} AS c-cpp-builder
+ARG DEBIAN_FRONTEND
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends g++-14-riscv64-linux-gnu && \
+    rm -rf /var/lib/apt/lists/*
+COPY hello/hello.c   /work/hello.c
+COPY hello/hello.cpp /work/hello.cpp
+RUN riscv64-linux-gnu-gcc-14 -O2 -std=c17   -o /work/hello-c   /work/hello.c && \
+    riscv64-linux-gnu-g++-14 -O2 -std=c++23 -o /work/hello-cpp /work/hello.cpp
+
+# Stage 2: cross-compile the Rust program on the host architecture.
+FROM --platform=$BUILDPLATFORM rust:${RUST_TAG} AS rust-builder
+ARG DEBIAN_FRONTEND
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc-riscv64-linux-gnu libc6-dev-riscv64-cross && \
+    rm -rf /var/lib/apt/lists/* && \
+    rustup target add riscv64gc-unknown-linux-gnu
+WORKDIR /work
+RUN cargo init --name hello-rust --vcs none .
+COPY hello/hello.rs /work/src/main.rs
+ENV CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=riscv64-linux-gnu-gcc
+RUN cargo build --release --target riscv64gc-unknown-linux-gnu
+
+# Stage 3: assemble the rootfs by emulating riscv64 through binfmt+QEMU.
+# The platform is set by `--platform=linux/riscv64` on the buildx invocation.
+FROM ubuntu:${UBUNTU_TAG} AS rootfs
+ARG DEBIAN_FRONTEND
+ARG MACHINE_GUEST_TOOLS_VERSION
+ARG MACHINE_GUEST_TOOLS_SHA256
+ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_SHA256} \
+    https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.deb \
+    /tmp/
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        /tmp/machine-guest-tools_riscv64.deb \
+        libstdc++6 \
+        bc gforth lua5.4 nodejs perl php-cli python3 ruby tcl && \
+    rm -rf /var/lib/apt/lists/* /tmp/machine-guest-tools_riscv64.deb
+
+COPY --from=c-cpp-builder /work/hello-c                                               /home/dapp/hello-c
+COPY --from=c-cpp-builder /work/hello-cpp                                             /home/dapp/hello-cpp
+COPY --from=rust-builder  /work/target/riscv64gc-unknown-linux-gnu/release/hello-rust /home/dapp/hello-rust
+COPY hello/hello.4th /home/dapp/hello.4th
+COPY hello/hello.js  /home/dapp/hello.js
+COPY hello/hello.lua /home/dapp/hello.lua
+COPY hello/hello.pl  /home/dapp/hello.pl
+COPY hello/hello.php /home/dapp/hello.php
+COPY hello/hello.py  /home/dapp/hello.py
+COPY hello/hello.rb  /home/dapp/hello.rb
+COPY hello/hello.sh  /home/dapp/hello.sh
+COPY hello/hello.tcl /home/dapp/hello.tcl
+COPY hello/all.sh    /home/dapp/all.sh
+RUN chmod +x /home/dapp/hello-c /home/dapp/hello-cpp /home/dapp/hello-rust /home/dapp/hello.* /home/dapp/all.sh && \
+    chown -R dapp:dapp /home/dapp

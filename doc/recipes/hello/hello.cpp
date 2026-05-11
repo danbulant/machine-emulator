@@ -1,8 +1,7 @@
-#include <iostream>
+#include <print>
 
-int main(int argc, char *argv[]) {
-    for (int i = 0; i < 5; i++) {
-        printf("%d: Hello world from C++!\n", i+1);
+int main() {
+    for (int i = 1; i <= 5; i++) {
+        std::println("{}: Hello world from C++!", i);
     }
-    return 0;
 }

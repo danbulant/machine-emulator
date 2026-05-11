@@ -355,8 +355,8 @@ If, however, both `length` and `data_filename` are specified, then the `length` 
 The positioning of flash drives in the machine's address space has implications on certain operations, discussed in detail under [the blockchain perspective](#hash-view-of-state), that involve the manipulation of hashes of the Cartesi Machine state.
 
 The preferred file-system type is `ext2`.
-This is because `ext2` image files can be easily created with the `genext2fs` command-line utility (available in Ubuntu as its own package), and manipulated with `e2ls`, `e2cp`, `e2rm`, etc (command-line utilities available in Ubuntu from the `e2tools` package).
-These utilities come pre-installed in the `cartesi/machine-emulator-docs` Docker image.
+This is because `ext2` image files can be easily created with the `xgenext2fs` command-line utility (a Cartesi fork of `genext2fs`) and manipulated with `e2ls`, `e2cp`, `e2rm`, etc.
+All of these utilities come pre-installed in the `cartesi/machine-emulator-docs` Docker image (the `e2tools` package also provides `e2ls`, `e2cp`, and `e2rm` individually for Ubuntu hosts).
 Support for `ext4` is also enabled by default in the kernel.
 (Support for additional file-systems can be enabled by modifying the configuration the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) uses to produce `linux.bin`.)
 
@@ -375,23 +375,27 @@ tar \
     --numeric-owner \
     -cf foo.tar \
     --directory=foo .
-genext2fs \
-    -f \
-    -b 1024 \
+xgenext2fs \
+    -fzB 4096 \
+    -i 4096 \
     -a foo.tar \
     foo.ext2
 # docs:end
 ```
 
 :::note
-The `genext2fs` command on its own would would produce a file-system that is *not* reproducible, in the sense that running it in different systems, or even running it twice in the same system may produce a different `./foo.ext2` file.
-This is because the utility records modification times, user and group IDs, etc.
-Worse still, it would traverse the files in the `foo/` directory in an unspecified order, progressively adding them to the `foo.ext2` file-system.
-Using the `-f` (faketime) option eliminates the modification times problem, but does nothing to fix the remaining issues.
-Enter the `tar` command.
-It sorts all files before adding them to the archive.
-It also allows us to specify the modification time, user and group IDS, etc.
-The `genext2fs` then takes the reproducible `tar` file and creates a reproducible `ext2` file-system from it.
+The flags above are the base set used in all `xgenext2fs` examples in this documentation.
+The `-a foo.tar` flag tells `xgenext2fs` to populate the image from a `tar` archive rather than from a directory tree.
+The `-f` (faketime) flag zeros the modification times that `xgenext2fs` would otherwise read from the inputs.
+The `-z` flag writes a sparse file, leaving unwritten blocks as holes on disk.
+The `-B 4096` flag sets the block size to 4096 bytes.
+The `-i 4096` flag requests one inode per 4096 bytes of data.
+
+The tar detour is what makes the output reproducible.
+Running `xgenext2fs` directly on a directory tree would record modification times, user and group IDs, and traverse the directory in an unspecified order.
+The `-f` flag fixes the timestamp problem, but does nothing about the rest.
+The `tar` invocation above pins the file order (`--sort=name`), the timestamps (`--mtime`), and the user and group IDs (`--owner`, `--group`, `--numeric-owner`).
+`xgenext2fs` then walks the archive in deterministic order and emits a byte-identical file-system on every run.
 :::
 
 The image can be loaded as a flash drive:
@@ -1454,9 +1458,9 @@ tar \
     --numeric-owner \
     -cf calc.tar \
     --directory=calc .
-genext2fs \
-    -f \
-    -b 1024 \
+xgenext2fs \
+    -fzB 4096 \
+    -i 4096 \
     -a calc.tar \
     calc.ext2
 # docs:end
@@ -2880,8 +2884,8 @@ In order to avoid repetition, this section assumes familiarity with the material
 :::
 
 The most direct way for target developers to familiarize themselves with the Linux environment is to run the Cartesi Machine emulator in interactive mode.
-The `cartesi/playground` Docker image comes pre-installed with the emulator and all its support files.
-Inside the playground, the following command instructs the emulator to load the default machine configuration and run a shell in interactive mode
+The `cartesi/machine-emulator-docs` Docker image comes pre-installed with the emulator, the default kernel and root file-system, and the host-side tooling used by the examples in this documentation (`xgenext2fs`, `pandoc`, the `e2tools` family, and assorted shell utilities).
+Inside that image, the following command instructs the emulator to load the default machine configuration and run a shell in interactive mode
 
 ```bash
 cartesi-machine \
@@ -2920,355 +2924,122 @@ None of the utilities visible inside the `/usr/bin/` and `/bin/` directories wer
 They were built in a separate host system, on which a cross-compiling toolchain for the target architecture has been installed.
 In the case of Linux, the key elements in the toolchain are the GNU Compiler Collection and the GNU C Library.
 Support for RISC-V is upstream in the official [GCC compiler collection](https://gcc.gnu.org/).
-Nevertheless, building a cross-compiler is time-consuming, even with the help of specialized tools such as [crosstool-ng](https://crosstool-ng.github.io/).
-The [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) includes a Docker image `cartesi/toolchain` with the toolchain pre-installed.
-The same toolchain is available in the `cartesi/playground` Docker image.
+The Rust language toolchain likewise supports RISC-V natively through [`rustup`](https://rustup.rs/).
+The examples below pull both toolchains in on demand via a multi-stage Docker build, so the only host-side prerequisite is `docker buildx`.
 
-### Target "Hello world!"
+### Building a custom root file-system
 
-Other than using a cross-compiler in the host to create executables for a different target platform, cross-development is not that different from hosted development.
-As an example, consider the simple task of compiling the ubiquitous &ldquo;Hello world!&rdquo; program in the C++ programming language to run in the target.
-(Printing 5 lines, to at least offer a taste of the programming language.)
+To run a custom target application inside the emulator, the most natural approach is to build a custom root file-system that replaces the default `rootfs.ext2`.
+The custom image contains the target application alongside the Cartesi guest tools and any runtime dependencies.
 
-```{.cpp title="hello.cpp"}
-#include <iostream>
+Building one requires two host-side steps.
+The first assembles the rootfs with `docker buildx build --platform=linux/riscv64 --output type=tar`, which uses binfmt and QEMU to emulate riscv64 and emits the result as a flat tarball.
+(`buildx` runs on the host and cannot run inside the docs image, because Docker cannot be nested.)
+The second converts the tarball into an ext2 image with `xgenext2fs`, which is pre-installed in `cartesi/machine-emulator-docs`.
 
-int main(int argc, char *argv[]) {
-    for (int i = 0; i < 5; i++) {
-        std::cout << i+1 << ": Hello world from C++!\n";
-    }
-    return 0;
-}
+The Dockerfile below illustrates the approach with a three-stage build.
+The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives.
+The second stage cross-compiles an equivalent Rust program, using `rustup` and the same RISC-V GCC as the linker.
+The third stage runs natively on riscv64 (through binfmt and QEMU), installs the Cartesi `machine-guest-tools` Debian package alongside `libstdc++6` and a handful of scripting language interpreters, and copies the compiled binaries and example scripts into `/home/dapp/`.
+All three compiled binaries are dynamically linked against the rootfs's `libc`, just as the scripts depend on their interpreters being present.
+
+```{.dockerfile key=hello_rootfs_dockerfile include=Dockerfile.hello-rootfs replace=source enabled=yes}
 ```
 
-To produce the binary in the playground, run
+The C source compiled in the first stage is the ubiquitous &ldquo;Hello world!&rdquo; program, printing 5 lines:
 
-```bash
-riscv64-cartesi-linux-gnu-g++ -O2 -o hello-cpp hello.cpp
+```{.c key=hello_c_src include=hello/hello.c replace=source enabled=yes}
 ```
 
-Note the prefix `riscv64-cartesi-linux-gnu-` to the typical `g++` command.
-This prefix identifies the cross-compiler.
-The resulting file is a RISC-V executable suitable for running on the target.
-This can be see by running the command
+The C++ counterpart:
 
-```bash
-file hello-cpp
+```{.cpp key=hello_cpp_src include=hello/hello.cpp replace=source enabled=yes}
 ```
 
-which produces
+The second step converts the tarball into an ext2 image:
 
-```
-hello-cpp: ELF 64-bit LSB executable, UCB RISC-V, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-riscv64-lp64.so.1, for GNU/Linux 5.5.19, with debug_info, not stripped
-```
-
-If the bare `gcc` command was used instead, the resulting binary would be suitable for running on the host.
-
-The executable can now be placed inside a new `hello.ext2` file-system:
-
-```bash
-mkdir hello
-cp hello-cpp hello
-genext2fs -b 1024 -d hello hello.ext2
+```{.bash key=build_hello_rootfs include=build-hello-rootfs.sh replace=source enabled=yes}
 ```
 
-The `hello-cpp` program can then be run from using the `cartesi-machine` command-line utility as follows:
+The two additional flags here, relative to the base set introduced above, are `-r +50000` (reserve 50000 extra free blocks so the running system has room to write into the rootfs) and `-L hello` (ext2 volume label).
 
-```bash
+### Target &ldquo;Hello world!&rdquo;
+
+With `hello-rootfs.ext2` in hand, the C++ program can be run inside the emulator.
+The `--flash-drive=label:root,data_filename:hello-rootfs.ext2` form gives the flash drive the label `root`, which matches the label of the default root flash drive and causes `cartesi-machine` to replace the kernel-supplied `rootfs.ext2` with the custom image.
+(The `machine-guest-tools` package post-install script creates the `dapp` Unix user, so the compiled binaries and example scripts reside in `/home/dapp/`.)
+
+```{.bash key=hello_cpp depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_cpp_src replace=source enabled=yes}
+rm -f hello-rootfs.ext2
+ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
+# docs:begin
 cartesi-machine \
-    --flash-drive=label:hello,filename:hello.ext2 \
-    -- /mnt/hello/hello-cpp
+    --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
+    -- /home/dapp/hello-cpp
+# docs:end
 ```
-
 The output is
+```{replace=hello_cpp enabled=yes}
+```
 
-```{key=hello_cpp replace=both}
+The Dockerfile's second stage cross-compiles the following Rust program:
+
+```{.rust key=hello_rs_src include=hello/hello.rs replace=source enabled=yes}
+```
+
+The `rust-builder` stage runs `rustup target add riscv64gc-unknown-linux-gnu` and `cargo build --release --target riscv64gc-unknown-linux-gnu`, with `riscv64-linux-gnu-gcc` (from the `gcc-riscv64-linux-gnu` package) as the linker.
+The resulting binary is placed in `/home/dapp/hello-rust`.
+
+The rootfs also includes a selection of scripting language interpreters from the Ubuntu archives, so the same &ldquo;Hello world!&rdquo; can be realized in any of them:
+
+```{.forth key=hello_4th_src include=hello/hello.4th replace=source enabled=yes}
+```
+
+```{.js key=hello_js_src include=hello/hello.js replace=source enabled=yes}
+```
+
+```{.lua key=hello_lua_src include=hello/hello.lua replace=source enabled=yes}
+```
+
+```{.perl key=hello_pl_src include=hello/hello.pl replace=source enabled=yes}
+```
+
+```{.php key=hello_php_src include=hello/hello.php replace=source enabled=yes}
+```
+
+```{.python key=hello_py_src include=hello/hello.py replace=source enabled=yes}
+```
+
+```{.ruby key=hello_rb_src include=hello/hello.rb replace=source enabled=yes}
+```
+
+```{.bash key=hello_sh_src include=hello/hello.sh replace=source enabled=yes}
+```
+
+```{.tcl key=hello_tcl_src include=hello/hello.tcl replace=source enabled=yes}
+```
+
+The following shell script invokes all of them in order:
+
+```{.bash key=hello_all_src include=hello/all.sh replace=source enabled=yes}
+```
+
+Running it inside the custom rootfs:
+
+```{.bash key=hello_all depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_c_src,hello_cpp_src,hello_rs_src,hello_4th_src,hello_js_src,hello_lua_src,hello_pl_src,hello_php_src,hello_py_src,hello_rb_src,hello_sh_src,hello_tcl_src,hello_all_src replace=source enabled=yes}
+rm -f hello-rootfs.ext2
+ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
+# docs:begin
 cartesi-machine \
-    --flash-drive=label:hello,filename:$RECIPES_DIR/hello.ext2 \
-    -- /mnt/hello/hello-cpp
+    --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
+    -- /home/dapp/all.sh
+# docs:end
 ```
-
-To create the &ldquo;Hello world!&rdquo; program in Rust, first create a Cargo project:
-
-```bash
-cargo new hello-rust
-```
-
-Then, edit the `hello-rust/src/main.rs` file so it contains our modified program:
-
-```{.rust title="main.rs"}
-fn main() {
-    for i in 1..6 {
-        println!("{}: Hello world from Rust!", i);
-    }
-}
-```
-
-Cross-compiling in Rust requires an additional configuration step.
-To that end, create a file with the following JSON object:
-
-```{.json title="riscv64ima-cartesi-linux-gnu.json"}
-{
-  "arch": "riscv64",
-  "code-model": "medium",
-  "cpu": "generic-rv64",
-  "crt-static-respected": true,
-  "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n64-S128",
-  "dynamic-linking": true,
-  "env": "gnu",
-  "executables": true,
-  "features": "+m,+a",
-  "has-rpath": true,
-  "is-builtin": false,
-  "llvm-abiname": "lp64",
-  "llvm-target": "riscv64",
-  "max-atomic-width": 64,
-  "os": "linux",
-  "position-independent-executables": true,
-  "relro-level": "full",
-  "target-family": ["unix"],
-  "linker-flavor": "gcc",
-  "linker": "riscv64-cartesi-linux-gnu-gcc",
-  "pre-link-args": {
-    "gcc": []
-  },
-  "post-link-args": {
-    "gcc": [
-      "-Wl,--allow-multiple-definition",
-      "-Wl,--start-group,-lc,-lm,-lgcc,-lstdc++,-lsupc++,--end-group"
-    ]
-  },
-  "target-pointer-width": "64",
-  "panic-strategy": "abort"
-}
-```
-
-Now invoke Cargo with with the following command-line:
-
-```bash
-cargo build -Z build-std=std,core,alloc,panic_abort,proc_macro --target riscv64ima-cartesi-linux-gnu.json --release
-```
-
-The compiled program should appear in `hello-rust/target/riscv64ima-cartesi-linux-gnu/release/hello-rust`.
-
-One of the advantages of running Linux is the large number of well-established software development tools available.
-By default, the `rootfs.ext2` root file-system includes the `ash` shell, and a Lua interpreter, both of which can be used for scripting.
-
-For example, to run the shell script version of the &ldquo;Hello world!&rdquo; program:
-
-```{.bash title="hello.sh"}
-#!/bin/sh
-
-for i in $(seq 1 5); do
-    echo "$i: Hello world from sh!"
-done
-```
-
-```bash
-cp hello.sh hello
-chmod +x hello/hello.sh
-genext2fs -b 1024 -d hello hello.ext2
-cartesi-machine \
-    --flash-drive=label:hello,filename:hello.ext2 \
-    -- /mnt/hello/hello.sh
-```
-
-Running these commands produce an output that is very similar to the C++ version.
-
-### The root file-system
-
-The `fs/` submodule in the [Emulator SDK](https://github.com/cartesi/machine-emulator-sdk) uses the [Buildroot](https://buildroot.org/) tool to create the root file-system `rootfs.ext2` (mounted as `/`).
-Buildroot is a highly configurable tool, and an explanation of how to use it to its full potential is beyond the scope of this documentation.
-Please refer to its [manual](https://buildroot.org/downloads/manual/manual.html).
-
-Even relative to other Linux root file-systems, the Cartesi-provided `rootfs.ext2` is very simple.
-The only significant customization is the Cartesi-provided `/sbin/init` script, which performs a few initialization tasks before handing control to the application chosen by the developer to run inside the Cartesi Machine, and finally shuts down after the application exits.
-
-As is typical in the field, `rootfs.ext2` uses [BusyBox](https://busybox.net/) to consolidate tiny versions of many common UNIX utilities (`ls`, `cd`, `rm`, etc) into a single binary.
-It also includes a variety of typical command-line utilities, as can be seen in the listings of directories `/bin/` and `/usr/bin/` above.
-
-Using Buildroot, it is rather easy to add new packages, or to remove unnecessary ones.
-Hundreds of packages are available for installation.
-To that end, from inside the Emulator SDK, change into the `fs/` directory and run `make config`.
-This will bring up a textual menu interface, from which the option `Target packages` can be selected.
-
-For example, additional scripting languages are available from the `Interpreter languages and scripting` section.
-After selecting the options for `4th`, `lua`, `qjs`, `perl`, `php`, `python3`, `ruby`, and `tcl` and replacing the old `rootfs.ext2` with the freshly generated one, all these scripting languages become available for use inside the Cartesi Machine.
-
-Here are &ldquo;Hello world!&rdquo; programs for each of these languages:
-
-```4th title="hello.4th"
-6 1 do i <# # #> type ." : Hello world from Forth!" cr loop
-```
-
-```{.js title="hello.js"}
-#!/usr/bin/env qjs
-
-for (var i = 1; i <= 5; i++) {
-  console.log(i + ": Hello world from JavaScript!");
-}
-```
-
-```{.lua title="hello.lua"}
-#!/usr/bin/env lua
-
-for i = 1, 5 do
-    print(i .. ": Hello world from Lua!")
-end
-```
-
-```{.perl title="hello.pl"}
-#!/usr/bin/env perl
-
-for my $i (1..5){
-    print("$i: Hello from Perl!\n");
-}
-```
-
-```{.php title="hello.php"}
-#!/usr/bin/env php
-<?php
-for ($i = 1; $i <= 5; $i++) {
-    print "$i: Hello world from PHP!\n";
-}
-?>
-```
-
-```{.python title="hello.py"}
-#!/usr/bin/env python3
-
-for i in range(1,6):
-    print("{}: Hello world from Python3".format(i))
-```
-
-```{.ruby title="hello.rb"}
-#!/usr/bin/env ruby
-
-for i in 1..5 do
-    puts "%d: Hello world from Ruby!" % i
-end
-```
-
-```{.tcl title="hello.tcl"}
-#!/usr/bin/env tclsh
-
-for {set i 1} {$i <= 5} {incr i} {
-    puts "$i: Hello world from TCL!"
-}
-```
-
-The following shell script invokes all of them:
-
-```{.bash title="all.sh"}
-#!/bin/sh
-
-cd $(dirname $0)
-
-./hello-cpp
-./hello-rust
-4th cxq hello.4th
-./hello.lua
-./hello.js
-./hello.pl
-./hello.php
-./hello.py
-./hello.rb
-./hello.sh
-./hello.tcl
-```
-
-After adding all these files to `hello.ext2` (with _execute_ permissions), the result of the command line
-
-```bash
-cartesi-machine \
-    --flash-drive=label:hello,filename:hello.ext2 \
-    -- "/mnt/hello/all.sh"
-```
-
-is as follows:
-
-```
-
-         .
-        / \
-      /    \
-\---/---\  /----\
- \       X       \
-  \----/  \---/---\
-       \    / CARTESI
-        \ /   MACHINE
-         '
-
-1: Hello world from C++!
-2: Hello world from C++!
-3: Hello world from C++!
-4: Hello world from C++!
-5: Hello world from C++!
-1: Hello world from Rust!
-2: Hello world from Rust!
-3: Hello world from Rust!
-4: Hello world from Rust!
-5: Hello world from Rust!
-1: Hello world from Forth!
-2: Hello world from Forth!
-3: Hello world from Forth!
-4: Hello world from Forth!
-5: Hello world from Forth!
-1: Hello world from Lua!
-2: Hello world from Lua!
-3: Hello world from Lua!
-4: Hello world from Lua!
-5: Hello world from Lua!
-1: Hello world from JavaScript!
-2: Hello world from JavaScript!
-3: Hello world from JavaScript!
-4: Hello world from JavaScript!
-5: Hello world from JavaScript!
-1: Hello world from Perl!
-2: Hello world from Perl!
-3: Hello world from Perl!
-4: Hello world from Perl!
-5: Hello world from Perl!
-1: Hello world from PHP!
-2: Hello world from PHP!
-3: Hello world from PHP!
-4: Hello world from PHP!
-5: Hello world from PHP!
-1: Hello world from Python3
-2: Hello world from Python3
-3: Hello world from Python3
-4: Hello world from Python3
-5: Hello world from Python3
-1: Hello world from Ruby!
-2: Hello world from Ruby!
-3: Hello world from Ruby!
-4: Hello world from Ruby!
-5: Hello world from Ruby!
-1: Hello world from sh!
-2: Hello world from sh!
-3: Hello world from sh!
-4: Hello world from sh!
-5: Hello world from sh!
-1: Hello world from TCL!
-2: Hello world from TCL!
-3: Hello world from TCL!
-4: Hello world from TCL!
-5: Hello world from TCL!
-
-Halted
-Cycles: 205939605
+The output is
+```{replace=hello_all enabled=yes}
 ```
 
 The take-away message is that developers can use the tools they are most familiar with to accomplish the task at hand.
-
-:::note
-Note that your cycle count may vary, since your new `rootfs.ext2` may differ from the one used to produce the results above.
-:::
-
-:::note
-As of version 0.4.0 of the `rootfs.ext2`, the Ruby interpreter does not compile.
-We are working on a fix.
-:::
 
 ### Flash drives
 
