@@ -5,7 +5,9 @@ cd $(dirname $0)
 ./hello-c
 ./hello-cpp
 ./hello-rust
+./hello-go
 gforth hello.4th
+./hello.awk
 ./hello.lua
 ./hello.js
 ./hello.pl

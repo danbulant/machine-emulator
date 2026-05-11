@@ -2937,11 +2937,12 @@ The first assembles the rootfs with `docker buildx build --platform=linux/riscv6
 (`buildx` runs on the host and cannot run inside the docs image, because Docker cannot be nested.)
 The second converts the tarball into an ext2 image with `xgenext2fs`, which is pre-installed in `cartesi/machine-emulator-docs`.
 
-The Dockerfile below illustrates the approach with a three-stage build.
+The Dockerfile below illustrates the approach with a four-stage build.
 The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives.
 The second stage cross-compiles an equivalent Rust program, using `rustup` and the same RISC-V GCC as the linker.
-The third stage runs natively on riscv64 (through binfmt and QEMU), installs the Cartesi `machine-guest-tools` Debian package alongside `libstdc++6` and a handful of scripting language interpreters, and copies the compiled binaries and example scripts into `/home/dapp/`.
-All three compiled binaries are dynamically linked against the rootfs's `libc`, just as the scripts depend on their interpreters being present.
+The third stage cross-compiles an equivalent Go program using the upstream `golang` Docker image with `GOARCH=riscv64`.
+The fourth stage runs natively on riscv64 (through binfmt and QEMU), installs the Cartesi `machine-guest-tools` Debian package alongside `libstdc++6` and a handful of scripting language interpreters, and copies the compiled binaries and example scripts into `/home/dapp/`.
+The C, C++, and Rust binaries are dynamically linked against the rootfs's `libc`. The Go binary is fully static. The scripts depend on their interpreters being present.
 
 ```{.dockerfile key=hello_rootfs_dockerfile include=Dockerfile.hello-rootfs replace=source enabled=yes}
 ```
@@ -2974,6 +2975,7 @@ rm -f hello-rootfs.ext2
 ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
     -- /home/dapp/hello-cpp
 # docs:end
@@ -2990,9 +2992,20 @@ The Dockerfile's second stage cross-compiles the following Rust program:
 The `rust-builder` stage runs `rustup target add riscv64gc-unknown-linux-gnu` and `cargo build --release --target riscv64gc-unknown-linux-gnu`, with `riscv64-linux-gnu-gcc` (from the `gcc-riscv64-linux-gnu` package) as the linker.
 The resulting binary is placed in `/home/dapp/hello-rust`.
 
+The Dockerfile's third stage cross-compiles the following Go program:
+
+```{.go key=hello_go_src include=hello/hello.go replace=source enabled=yes}
+```
+
+The `go-builder` stage builds with `GOARCH=riscv64 GOOS=linux CGO_ENABLED=0`, which uses Go's built-in cross-compilation toolchain to produce a fully-static binary.
+The resulting binary is placed in `/home/dapp/hello-go`.
+
 The rootfs also includes a selection of scripting language interpreters from the Ubuntu archives, so the same &ldquo;Hello world!&rdquo; can be realized in any of them:
 
 ```{.forth key=hello_4th_src include=hello/hello.4th replace=source enabled=yes}
+```
+
+```{.awk key=hello_awk_src include=hello/hello.awk replace=source enabled=yes}
 ```
 
 ```{.js key=hello_js_src include=hello/hello.js replace=source enabled=yes}
@@ -3026,11 +3039,12 @@ The following shell script invokes all of them in order:
 
 Running it inside the custom rootfs:
 
-```{.bash key=hello_all depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_c_src,hello_cpp_src,hello_rs_src,hello_4th_src,hello_js_src,hello_lua_src,hello_pl_src,hello_php_src,hello_py_src,hello_rb_src,hello_sh_src,hello_tcl_src,hello_all_src replace=source enabled=yes}
+```{.bash key=hello_all depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_c_src,hello_cpp_src,hello_rs_src,hello_go_src,hello_4th_src,hello_awk_src,hello_js_src,hello_lua_src,hello_pl_src,hello_php_src,hello_py_src,hello_rb_src,hello_sh_src,hello_tcl_src,hello_all_src replace=source enabled=yes}
 rm -f hello-rootfs.ext2
 ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
 # docs:begin
 cartesi-machine \
+    --no-init-splash \
     --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
     -- /home/dapp/all.sh
 # docs:end
