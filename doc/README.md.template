@@ -147,7 +147,7 @@ Although Cartesi's goal is to shield platform users from as much complexity as p
 
 Cartesi's reference off-chain implementation of a Cartesi Machine is based on software emulation.
 The emulator is written in C/C++ with POSIX dependencies restricted to the terminal, process, and memory-mapping facilities.
-The [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator-sdk) repository can be used to build and install the Cartesi Machine emulator.
+The [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository can be used to build and install the Cartesi Machine emulator.
 It is written as a C++ class, but can be accessed in a variety of different ways.
 
 When linked to a C++ application, the emulator can be controlled directly via the interface of the `cartesi::machine` class.
@@ -232,15 +232,13 @@ cartesi-machine --max-mcycle=0 --store-config=config-nothing-to-do.lua
 # docs:end null
 cartesi-machine
 ```
-and produces
+and produces the output
 ```{replace=nothing enabled=yes}
 ```
-The utility instantiates a default Cartesi Machine and lets it run until it halts.
+The utility instantiates a default Cartesi Machine and runs it until it halts.
 The Linux kernel boots, the Cartesi-provided `cartesi-init` script prints the ASCII-art splash and reports there is nothing to do, then gracefully halts the machine.
 This takes many millions of cycles to complete: time mostly spent initializing the Linux kernel.
-
-The command-line option `--no-init-splash` instructs the utility to skip the splash, keeping the output focused on the example at hand.
-Subsequent examples use it.
+The utility regains control from the emulator, and prints the `Halted` message and the cycle count.
 
 ### Initialization
 
@@ -257,6 +255,7 @@ cartesi-machine \
     --flash-drive="label:root,data_filename:/usr/share/cartesi-machine/images/rootfs.ext2" \
     -- ls /bin
 ```
+The command-line option `--no-init-splash` instructs the utility to skip the splash, keeping the output focused on the example at hand.
 The `--ram-image`, `--ram-length`, and `--flash-drive` command-line options have the values in the example as default, so these options can be omitted.
 To remove these default settings, use the command-line options `--no-ram-image` and `--no-root-flash-drive`, respectively.
 
@@ -273,7 +272,7 @@ The output is
 ```{replace=ls enabled=yes}
 ```
 
-It shows the Cartesi Machine splash screen, followed by the listing of directory `/bin/`.
+It shows the listing of directory `/bin/` inside the root file-system.
 The listing was produced by the command that follows the `--` separator in the command line.
 The Linux kernel passes this unmodified to `/sbin/init`, and the Cartesi-provided `/sbin/init` script executes the command before gracefully halting the machine.
 

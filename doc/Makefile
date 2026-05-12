@@ -92,15 +92,25 @@ README.md: README.md.template replace.lua alerts.lua template.d
 	    -M default-replace=false \
 	    README.md.template -o $@
 
+README.html: README.md README.md.template replace.lua alerts.lua github.template.html template.d
+	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
+	    pandoc -f markdown+emoji -s -t html5 --toc --mathjax \
+	    --lua-filter replace.lua --lua-filter alerts.lua \
+	    --template=github.template.html \
+	    -M default-replace=false \
+	    README.md.template -o $@
+
 else
 
 # Without docgen tools on the host, delegate the whole build to the docs
 # container. Inside, DEV_ENV_HAS_DOCGEN=yes activates the rules above and
 # evaluates staleness against template.d.
-.PHONY: README.md
+.PHONY: README.md README.html
 README.md: $(RECIPES_DIR)/hello-rootfs.ext2
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"
 
+README.html: README.md
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.html DEV_ENV_HAS_DOCGEN=yes"
 endif
 
 clean:
