@@ -529,6 +529,9 @@ cartesi-machine \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
+The `$'...'` form here is bash's ANSI-C-quoted string, used throughout the manual for entrypoint commands.
+It passes the contents to `cartesi-machine` as a single argument, leaves host-side variable references like `$i` unexpanded (so they reach the guest shell verbatim), and accepts `\'` as an escape for a single quote inside the string.
+This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocation seen later under [NVRAMs](#nvrams).
 (The directory `/opt/cartesi/bin/` is in the default search path for executable setup by `/sbin/init`.)
 By default, the emulator honors automatic yield requests from the target.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
@@ -707,6 +710,10 @@ It shows the user and group are now `root`.
 Although running as root is not recommended, the feature can be used to perform setup tasks that require
 elevated permissions.
 
+```{.bash key=calc_pipeline replace=null enabled=yes}
+$'readmmap input | lua5.4 -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+```
+
 ### Cartesi Machine templates
 
 *Templates* are one of the key uses for Cartesi Machines stored to disk.
@@ -729,10 +736,10 @@ They resolve the label, `mmap()` the device, and copy bytes to/from standard inp
 Both also work on flash drives.
 
 The `bc` command-line utility is the perfect tool to evaluate the arithmetic expressions.
-The command passed to `cartesi-machine` below uses `readmmap` to read the contents of the input NVRAM, extracts a zero-terminated string from it using a tiny Lua script run by the `lua` interpreter, pipes the result through `bc`, and uses `writemmap` to copy the result back into the output NVRAM.
+The command passed to `cartesi-machine` below uses `readmmap` to read the contents of the input NVRAM, extracts a zero-terminated string from it using a tiny Lua script run by the `lua5.4` interpreter, pipes the result through `bc`, and uses `writemmap` to copy the result back into the output NVRAM.
 Here is the sample playground session
 
-```{.bash key=templates_run outputs=output.raw replace=source enabled=yes}
+```{.bash key=templates_run vars=pipeline->calc_pipeline/body.sh outputs=output.raw replace=source enabled=yes}
 trap 'rm -f input.raw' EXIT
 # docs:begin
 truncate -s 4K output.raw
@@ -742,7 +749,7 @@ cartesi-machine \
     --no-init-splash \
     --nvram="label:input,length:1<<12,data_filename:input.raw" \
     --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
-    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+    -- $pipeline
 # docs:end
 ```
 
@@ -771,7 +778,7 @@ This will cause the Cartesi Machine to assume both drives are filled with zeros.
 Then, limit the computation with `--max-mcycle=0`, to prevent the Cartesi Machine from running.
 Finally, use the `--store="calculator-template"` command-line option to store the Cartesi Machine template.
 The `--final-hash` command-line option prints the resulting template hash.
-```{.bash key=templates_store outputs=calculator-template replace=source enabled=yes}
+```{.bash key=templates_store vars=pipeline->calc_pipeline/body.sh outputs=calculator-template replace=source enabled=yes}
 rm -rf calculator-template
 # docs:begin
 cartesi-machine \
@@ -781,7 +788,7 @@ cartesi-machine \
     --max-mcycle=0 \
     --final-hash \
     --store="calculator-template" \
-    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+    -- $pipeline
 # docs:end
 ```
 The result is as follows
@@ -2101,7 +2108,7 @@ cartesi-machine --no-init-splash \
     --nvram="label:output,length:1<<12,data_filename:output.raw,shared" \
     --max-mcycle=0 \
     --store-config=config-calculator.lua \
-    -- $'readmmap input | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+    -- $'readmmap input | lua5.4 -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
 lua5.4 $RECIPES_DIR/minimal-config.lua config-calculator.lua
 ```
 ```{.lua replace=config_calculator/stdout title="config-calculator.lua" enabled=yes}
@@ -3057,117 +3064,96 @@ The take-away message is that developers can use the tools they are most familia
 
 ### Flash drives
 
-Flash drives are simply regions of physical memory under the control of Linux's `mtd-ram` driver.
-The flash drives 0&ndash;7 receive device names `flash.0`&ndash;`flash.7`, and the driver makes them accessible as block devices `/dev/mtdblock0`&ndash;`/dev/mtdblock7`.
+Flash drives are simply regions of physical memory accessible to the guest through the kernel's persistent-memory block-device driver, `pmem-region`.
+The driver makes them accessible as block devices `/dev/pmem0` to `/dev/pmem7`.
 
-The kernel command-line parameters `rootfstype=ext2 root=/dev/mtdblock0 rw` declare that the root file-system is of type `ext2`, that it resides in device `/dev/mtdblock0`, i.e., flash drive 0, and that it should be mounted read-write.
-Partitioning information for flash drives and, in particular, custom labels can be specified with the `mtdparts` parameter in the Linux kernel command line.
-The format for the parameter is documented in the [source-code](https://elixir.bootlin.com/linux/v5.5.19/source/drivers/mtd/parsers/cmdlinepart.c) for the kernel module responsible for parsing it.
-For example, the parameter `mtdparts=flash.0:-(root)` specifies a single partition with label `root` for `flash.0`.
+The kernel command-line parameter `root=/dev/pmem0 rw` declares that the root file-system resides in device `/dev/pmem0`, i.e., flash drive 0, and that it should be mounted read-write.
+Custom labels for flash drives are published in the DTB `/aliases` node.
+The node also carries the auto-assigned aliases `flashdrive0` to `flashdrive7`, plus `root` for drive 0.
 
 A flash drive holds whatever data is made available by the emulator in the corresponding target physical memory region.
 The data can come from an image file specified during machine instantiation, from an image file specified after instantiation via the `machine:replace_memory_range(<memory_range_config>)`, or through external state access method `machine:write_memory()`.
 
-The Cartesi-provided `/sbin/init` script scans flash drives 1&ndash;7 for valid file-systems.
-When a valid file-system is detected, the script automatically mounts the file-system at `/mnt/<label>`, using the corresponding `<label>` from the `mtdparts` kernel parameter.
-In this fashion, file-systems present in all flash drives are available for use right after Linux boots.
+At machine instantiation, `cartesi-machine` generates a per-drive shell script that mounts each labelled flash drive carrying a recognized file system at `/mnt/<label>`.
+The emulator places this script in the DTB at `/cartesi-machine/init`, and `cartesi-init` reads and runs it during boot.
+In this fashion, file systems present in all flash drives are available for use right after Linux boots.
 
 This was the case with the command
 
 ```bash
 cartesi-machine \
-    --flash-drive=label:hello,filename:hello.ext2 \
+    --flash-drive=label:hello,data_filename:hello.ext2 \
     -- "/mnt/hello/all.sh"
 ```
 
 The `cartesi-machine` command-line utility instructed the emulator to add a new flash drive, initialized with the contents of the `hello.ext2` image file.
-It gave the label `hello` to that flash drive using the kernel command-line parameter `mtdparts=flash.0:-(root);flash.1:-(hello)`.
-The `/sbin/init` script identified a valid file-system in the device, and used its label to mount it at `/mnt/hello`.
+The `--flash-drive=label:hello` option was the source of the label, surfaced via a DTB alias.
+The `cartesi-init` script identified a valid file system in the device, and used its label to mount it at `/mnt/hello`.
 It then executed the command `/mnt/hello/all.sh`, causing all the &ldquo;Hello world!&rdquo; messages to be printed to screen.
 
-#### Raw flash drives
+#### NVRAMs
 
-Raw flash drives, i.e., flash drives containing free-format data, are not mounted.
-Instead, the data in raw flash drives are read from/written to directly by accessing the underlying block device.
-The layout and contents of data written to raw flash drives is completely up to application developers.
+NVRAMs are raw byte buffers for guest code that needs unstructured memory without a file-system layer.
+They are backed by UIO devices, accessible inside the guest as `/dev/uio0` to `/dev/uio7`, with no page cache between the guest and the underlying memory range.
+Raw access to flash drives via `/dev/pmem0` to `/dev/pmem7` is also available for application developers who prefer a block-device interface.
 
-Depending on the layout and contents, it may be simple or difficult to read from/write to raw flash drives from the command line.
-The most popular tool for reading and writing block devices is the `dd` command-line utility.
-Another alternative is the `devio` tool.
-Some scripting languages, like the Lua programming language, have packing and unpacking libraries that can be very helpful.
+The `readmmap` and `writemmap` utilities ship with the guest tools to read and write NVRAM or flash-drive ranges by label.
+Some scripting languages, like the Lua programming language, have packing and unpacking libraries that can be very helpful for structured data.
 
-For example, consider the previously discussed Cartesi Machine that operates as an arbitrary-precision calculator
+For example, the previously discussed [arbitrary-precision calculator Cartesi Machine](#cartesi-machine-templates) is given the entrypoint
 
-```bash
-\rm -f output.raw
-truncate -s 4K output.raw
-echo "6*2^1024 + 3*2^512" > input.raw
-truncate -s 4K input.raw
-cartesi-machine \
-    --flash-drive="label:input,length:1<<12,filename:input.raw" \
-    --flash-drive="label:output,length:1<<12,filename:output.raw,shared" \
-    -- $'dd status=none if=$(flashdrive input) | lua -e \'print((string.unpack("z", io.read("a"))))\' | bc | dd status=none of=$(flashdrive output)'
-luapp5.3 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
+```{.bash replace=calc_pipeline/source enabled=yes}
 ```
 
 The input is a null-terminated string containing the expression to be evaluated.
-This string is stored inside a raw flash drive with label `input`.
-The output is once again a null-terminated string with the result, this time stored inside a raw flash drive with label `output`.
+This string is stored inside an NVRAM with label `input`.
+The output is once again a null-terminated string with the result, this time stored inside an NVRAM with label `output`.
 
-The command executed inside the machine is
-
-```bash
-dd status=none if=$(flashdrive input) | \
-    lua -e 'print((string.unpack("z", io.read("a"))))' | \
-    bc | \
-    dd status=none of=$(flashdrive output)
-```
-
-The `flashdrive` command-line utility prints the name of the device corresponding to a given label.
-In this case, `flashdrive input` prints `/dev/mtdblock1` and `flashdrive output` prints `/dev/mtdblock2` (recall `/dev/mtdblock0` is the root file-system, defined by default to load the `rootfs.ext2` image).
-
-The first command, `dd status=none if=$(flashdrive input)` therefore reads the entire 4KiB of the raw input flash drive and sends it to the standard output.
-The second command, `lua -e 'print((string.unpack("z", io.read("a"))))'` extracts the first null-terminated string and prints it to standard out.
+`readmmap input` therefore reads the entire 4KiB of the input NVRAM and sends it to the standard output.
+The second command, `lua5.4 -e 'print((string.unpack("z", io.read("a"))))'` extracts the first null-terminated string and prints it to standard out.
 This is the meaning of the `"z"` format argument to the `string.unpack()` function.
 There are a variety of other formats available, including reading integers of different sizes, big- or little-endian etc.
-Please see the [documentation for the `string.unpack()`](https://www.lua.org/manual/5.3/manual.html#6.4.2) function for more details.
+Please see the [documentation for the `string.unpack()`](https://www.lua.org/manual/5.4/manual.html#6.4.2) function for more details.
 The string is received by the `bc` command-line utility.
 In the example, that string is `6*2^1024 + 3*2^512\n`.
 The `bc` command-line utility computes the value of the expression and sends it to standard out.
-This is finally received by the last command, `dd status=none of=$(flashdrive output)`, which writes it to the raw output flash drive.
+This is finally received by `writemmap output`, which writes it to the output NVRAM.
 (No need to null-terminate, since the drive is already completely filled with zeros.)
 
 ### Initialization
 
-By default, a Cartesi Machine starts its execution from the image loaded into ROM.
-In order to boot Linux, the Cartesi-provided `rom.bin` image first builds a [<i>devicetree</i>](http://devicetree.org/) describing the hardware.
-The organization of a Cartesi Machine is defined during machine instantiation from its configuration.
-This includes the number, starts, and lengths of all flash drives and rollup memory ranges, the amount of RAM, and which HTIF commands are supported (yield manual, yield automatic, console getchar etc).
-The `rom.bin` program reads a Cartesi-specific low-level description of this organization from special machine registers and translates it into a devicetree that Linux can understand.
-The configuration also includes the initial contents of ROM, RAM, all flash drives and rollup memory ranges, all registers, and the command-line parameters to be passed to the Linux kernel.
-The latter is also added to the devicetree.
+```{.lua key=ar_ram_start replace=null enabled=yes}
+local c = require "cartesi"
+io.write(string.format("0x%x", c.AR_RAM_START))
+```
 
-Once the devicetree is ready, `rom.bin` jumps to the image loaded into RAM, passing the address of the devicetree (which resides at the end of RAM) in a register.
-The Cartesi-provided `linux.bin` image is composed of the Linux kernel linked with the Berkeley Boot Loader (BBL).
-BBL is a thin abstraction layer that isolates Linux from details of the particular RISC-V machine on which it is running.
-The abstraction layer gives Linux the ability to perform tasks such as powering the machine down and outputting a character to the console.
-Once this functionality has been installed, BBL jumps to the kernel entrypoint.
-The Linux kernel reads the devicetree to find out about the machine organization, loads the appropriate drivers, and performs its own initialization.
+```{.lua key=ar_dtb_start replace=null enabled=yes}
+local c = require "cartesi"
+io.write(string.format("0x%x", c.AR_DTB_START))
+```
 
-When the kernel initialization is complete, it tries to mount a root file-system.
-The information of where this root file-system resides comes from the kernel command-line parameter.
-In normal situations, this will reside in `/dev/mtdblock0`.
-Once the root file-system is mounted, the kernel executes `/sbin/init`.
+The hart starts execution at the beginning of RAM (address []{replace=ar_ram_start/stdout enabled=yes}), where the RAM image is loaded.
+There is no ROM stage.
+Earlier versions of the emulator booted from a `rom.bin` image whose main purpose was to build a [device tree](http://devicetree.org/) describing the hardware.
+Starting with version 0.16, the emulator builds the device tree itself at instantiation, derived from the machine configuration, and stores it in the DTB memory range immediately below RAM.
+The hart starts with the start address of the DTB memory range ([]{replace=ar_dtb_start/stdout enabled=yes}) pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
 
-The Cartesi-provided `/sbin/init` script in `rootfs.ext2` sets up a basic Linux environment on which applications can run.
-In particular, it goes over the available flash drive devices (`/dev/mtdblock1`&ndash;`/dev/mtdblock7`) looking for valid file-systems, and mounting them at the appropriate `/mnt/<label>` mount points.
-The Linux kernel passes to `/sbin/init`, unmodified, everything after the separator `--` in its own command-line.
-Once its initialization tasks are complete, the Cartesi-provided `/sbin/init` concatenates all its arguments into a string and executes them in a shell.
+The Cartesi-provided `linux.bin` image is an OpenSBI `fw_payload` bundle, a small machine-mode firmware that exposes the Supervisor Binary Interface to Linux, linked together with the kernel.
+The firmware occupies the first 512KiB of RAM, declared as a no-map region in the device tree so the kernel does not touch it.
+OpenSBI initializes itself, then hands control to the kernel, passing along the address it received in `a1`.
+The kernel reads the device tree, loads drivers, and finishes its own initialization.
 
-This is how the commands passed to `cartesi-machine` come to be executed in the Linux environment that runs inside the Cartesi Machine.
-Given a proper `rootfs.ext2` and an appropriate command-line, the applications can run any general computation, consuming input from any flash drives, and writing outputs to any flash drives.
-Once the application exits, control returns to `/sbin/init`.
-The script then unmounts all file-systems and gracefully halts the machine.
+When kernel initialization is complete, the kernel mounts the device named by the `root=` parameter, by default `/dev/pmem0`.
+It then executes the program named by `init=`, by default `/usr/sbin/cartesi-init`.
+
+The Cartesi-provided `cartesi-init` program sets up a basic Linux environment on which applications can run.
+It mounts `/proc`, `/dev/pts`, `/dev/shm`, `/sys`, `/tmp`, and `/run`, and sources any drop-in scripts under `/etc/cartesi-init.d/`.
+Next, it sources the per-drive init script that the emulator embedded in the device tree at `/cartesi-machine/init`, which mounts each labelled flash drive carrying a recognized file system at `/mnt/<label>`.
+Finally, it reads the entrypoint string from the device tree at `/cartesi-machine/entrypoint` and executes it in a shell, by default as user `dapp`.
+
+Everything after the `--` separator on the `cartesi-machine` command line is appended to that entrypoint string by the utility, which is how user commands come to be executed in the Linux environment.
+Given a proper rootfs and an appropriate entrypoint, applications can run any general computation, consuming input from flash drives or NVRAMs and writing outputs to flash drives or NVRAMs.
+When the application exits, control returns to `cartesi-init`, which unmounts file systems and gracefully halts the machine.
 
 ### Cartesi-specific devices
 
