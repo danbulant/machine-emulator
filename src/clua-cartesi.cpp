@@ -275,6 +275,15 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setstringfield(L, CM_DTB_BOOTARGS_UIO, "DTB_BOOTARGS_UIO", -1);
     clua_setstringfield(L, CM_DTB_BOOTARGS_ROOT, "DTB_BOOTARGS_ROOT", -1);
     clua_setstringfield(L, CM_DTB_BOOTARGS_INIT, "DTB_BOOTARGS_INIT", -1);
+    // HTIF devices and commands
+    clua_setintegerfield(L, CM_HTIF_DEV_HALT, "HTIF_DEV_HALT", -1);
+    clua_setintegerfield(L, CM_HTIF_DEV_CONSOLE, "HTIF_DEV_CONSOLE", -1);
+    clua_setintegerfield(L, CM_HTIF_DEV_YIELD, "HTIF_DEV_YIELD", -1);
+    clua_setintegerfield(L, CM_HTIF_HALT_CMD_HALT, "HTIF_HALT_CMD_HALT", -1);
+    clua_setintegerfield(L, CM_HTIF_CONSOLE_CMD_GETCHAR, "HTIF_CONSOLE_CMD_GETCHAR", -1);
+    clua_setintegerfield(L, CM_HTIF_CONSOLE_CMD_PUTCHAR, "HTIF_CONSOLE_CMD_PUTCHAR", -1);
+    clua_setintegerfield(L, CM_HTIF_YIELD_CMD_AUTOMATIC, "HTIF_YIELD_CMD_AUTOMATIC", -1);
+    clua_setintegerfield(L, CM_HTIF_YIELD_CMD_MANUAL, "HTIF_YIELD_CMD_MANUAL", -1);
     // HTIF masks
     clua_setintegerfield(L, HTIF_HALT_CMD_HALT_MASK, "HTIF_HALT_CMD_HALT_MASK", -1);
     clua_setintegerfield(L, HTIF_CONSOLE_CMD_GETCHAR_MASK, "HTIF_CONSOLE_CMD_GETCHAR_MASK", -1);

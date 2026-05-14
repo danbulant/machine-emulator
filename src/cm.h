@@ -167,6 +167,22 @@ typedef enum cm_sharing_mode {
     CM_SHARING_ALL = 2,    ///< Share all backing stores, all machine changes will be on-disk
 } cm_sharing_mode;
 
+/// \brief HTIF device identifiers (DEV field of tohost/fromhost).
+typedef enum cm_htif_device {
+    CM_HTIF_DEV_HALT = 0,    ///< Halts the machine
+    CM_HTIF_DEV_CONSOLE = 1, ///< Console input and output
+    CM_HTIF_DEV_YIELD = 2,   ///< Yield control back to the host
+} cm_htif_device;
+
+/// \brief HTIF device commands (CMD field of tohost/fromhost).
+typedef enum cm_htif_command {
+    CM_HTIF_HALT_CMD_HALT = 0,
+    CM_HTIF_CONSOLE_CMD_GETCHAR = 0,
+    CM_HTIF_CONSOLE_CMD_PUTCHAR = 1,
+    CM_HTIF_YIELD_CMD_AUTOMATIC = 0,
+    CM_HTIF_YIELD_CMD_MANUAL = 1,
+} cm_htif_command;
+
 /// \brief Machine x, f, and control and status registers.
 typedef enum cm_reg {
     // Machine x registers
