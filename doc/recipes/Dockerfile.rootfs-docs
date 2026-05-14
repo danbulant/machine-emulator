@@ -2,19 +2,32 @@ ARG UBUNTU_TAG=24.04
 ARG RUST_TAG=1.83-slim
 ARG GO_TAG=1.23-bookworm
 ARG MACHINE_GUEST_TOOLS_VERSION=0.18.0-test2
-ARG MACHINE_GUEST_TOOLS_SHA256=44cfa554246dc32177285e0d3162f161121e979be92bd578765ccb70c6a5077a
+ARG MACHINE_GUEST_TOOLS_DEB_SHA256=44cfa554246dc32177285e0d3162f161121e979be92bd578765ccb70c6a5077a
+ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256=b2f073162988d19bad5df53ecd121c0b5c4fc3ea53758b642edcbe83f8287fd3
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Stage 1: cross-compile the C and C++ programs on the host architecture.
 FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG} AS c-cpp-builder
 ARG DEBIAN_FRONTEND
+ARG MACHINE_GUEST_TOOLS_VERSION
+ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256
 RUN apt-get update && \
     apt-get install -y --no-install-recommends g++-14-riscv64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
+ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARGZ_SHA256} \
+    https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.tar.gz \
+    /tmp/machine-guest-tools_riscv64.tar.gz
+RUN mkdir -p /sysroot && \
+    tar -xzf /tmp/machine-guest-tools_riscv64.tar.gz -C /sysroot && \
+    rm -f /tmp/machine-guest-tools_riscv64.tar.gz
 COPY hello/hello.c   /work/hello.c
 COPY hello/hello.cpp /work/hello.cpp
+COPY puppet.c        /work/puppet.c
 RUN riscv64-linux-gnu-gcc-14 -O2 -std=c17   -o /work/hello-c   /work/hello.c && \
-    riscv64-linux-gnu-g++-14 -O2 -std=c++23 -o /work/hello-cpp /work/hello.cpp
+    riscv64-linux-gnu-g++-14 -O2 -std=c++23 -o /work/hello-cpp /work/hello.cpp && \
+    riscv64-linux-gnu-gcc-14 -O2 -std=c17 \
+        -I/sysroot/usr/include -L/sysroot/usr/lib \
+        -o /work/puppet /work/puppet.c -lcmt
 
 # Stage 2: cross-compile the Rust program on the host architecture.
 FROM --platform=$BUILDPLATFORM rust:${RUST_TAG} AS rust-builder
@@ -41,19 +54,21 @@ RUN go build -ldflags="-s -w" -o /work/hello-go /work/hello.go
 FROM ubuntu:${UBUNTU_TAG} AS rootfs
 ARG DEBIAN_FRONTEND
 ARG MACHINE_GUEST_TOOLS_VERSION
-ARG MACHINE_GUEST_TOOLS_SHA256
-ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_SHA256} \
+ARG MACHINE_GUEST_TOOLS_DEB_SHA256
+ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
     https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.deb \
     /tmp/
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         /tmp/machine-guest-tools_riscv64.deb \
         libstdc++6 \
-        bc gawk gforth lua5.4 nodejs perl php-cli python3 ruby tcl && \
+        bc curl device-tree-compiler file gawk gforth jq lua5.4 lua-socket \
+        nodejs perl php-cli python3 ruby tcl xxd && \
     rm -rf /var/lib/apt/lists/* /tmp/machine-guest-tools_riscv64.deb
 
 COPY --from=c-cpp-builder /work/hello-c                                               /home/dapp/hello-c
 COPY --from=c-cpp-builder /work/hello-cpp                                             /home/dapp/hello-cpp
+COPY --from=c-cpp-builder /work/puppet                                                /home/dapp/puppet
 COPY --from=rust-builder  /work/target/riscv64gc-unknown-linux-gnu/release/hello-rust /home/dapp/hello-rust
 COPY --from=go-builder    /work/hello-go                                              /home/dapp/hello-go
 COPY hello/hello.4th /home/dapp/hello.4th
@@ -67,5 +82,5 @@ COPY hello/hello.rb  /home/dapp/hello.rb
 COPY hello/hello.sh  /home/dapp/hello.sh
 COPY hello/hello.tcl /home/dapp/hello.tcl
 COPY hello/all.sh    /home/dapp/all.sh
-RUN chmod +x /home/dapp/hello-c /home/dapp/hello-cpp /home/dapp/hello-rust /home/dapp/hello-go /home/dapp/hello.* /home/dapp/all.sh && \
+RUN chmod +x /home/dapp/hello-c /home/dapp/hello-cpp /home/dapp/hello-rust /home/dapp/hello-go /home/dapp/puppet /home/dapp/hello.* /home/dapp/all.sh && \
     chown -R dapp:dapp /home/dapp

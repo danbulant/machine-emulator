@@ -249,27 +249,35 @@ Once initialization is complete, the machine executes the command `ls /bin` and 
 
 ```bash
 cartesi-machine \
+    --quiet \
     --no-init-splash \
     --ram-length=128Mi \
     --ram-image="/usr/share/cartesi-machine/images/linux.bin" \
     --flash-drive="label:root,data_filename:/usr/share/cartesi-machine/images/rootfs.ext2" \
     -- ls /bin
 ```
+The `--quiet` option suppresses the output of `cartesi-machine.lua` itself, leaving visible only what is produced inside the machine.
 The command-line option `--no-init-splash` instructs the utility to skip the splash, keeping the output focused on the example at hand.
 The `--ram-image`, `--ram-length`, and `--flash-drive` command-line options have the values in the example as default, so these options can be omitted.
 To remove these default settings, use the command-line options `--no-ram-image` and `--no-root-flash-drive`, respectively.
 
 The simplified command-line is
 ```{.bash key=ls outputs=config-ls-bin.lua replace=source enabled=yes}
+{
+# docs:begin
 cartesi-machine \
+    --quiet \
     --no-init-splash \
 # docs:begin null
     --store-config=config-ls-bin.lua \
 # docs:end null
     -- ls /bin
+# docs:end
+} | head
+echo ...
 ```
 The output is
-```{replace=ls enabled=yes}
+```{replace=ls/stdout enabled=yes}
 ```
 
 It shows the listing of directory `/bin/` inside the root file-system.
@@ -317,11 +325,12 @@ printf 'ls /bin\n\x04' | cartesi-machine \
     -i \
     --quiet \
     --console-io=input_fd:0 \
-    -- sh 2>&1
+    -- sh | head
+echo ...
 ```
 :::note
 When running in interactive mode, not even the final cycle count is reproducible.
-To avoid busy wait for new interactive input, the emulator sleeps from one Cartesi Machine timer interrupt to the next, skipping Cartesi Machine cycles forward so programs running inside to stay _roughly_ in sync with wall-clock time outside.
+To avoid busy wait for new interactive input, the emulator sleeps from one Cartesi Machine timer interrupt to the next, skipping Cartesi Machine cycles forward so programs running inside stay _roughly_ in sync with wall-clock time outside.
 This dynamic balancing act is sure to vary between executions and across different computers.
 :::
 
@@ -483,10 +492,15 @@ cartesi-machine \
 ```
 produces exactly the same output as before.
 However, `e2ls` now shows the image file `foo.ext2` has indeed been modified.
-```{.bash key=e2ls_shared_foo_ext2 replace=both vars=shared_flash enabled=yes}
+```{.bash key=e2ls_shared_foo_ext2 replace=source vars=shared_flash enabled=yes}
 rm -f foo.ext2
 ln -s "$shared_flash/foo.ext2" foo.ext2
+# docs:begin
 e2ls -al foo.ext2:*.txt
+# docs:end
+```
+
+```{.bash replace=e2ls_shared_foo_ext2/both enabled=yes}
 ```
 
 ### Limiting execution
@@ -511,8 +525,6 @@ produces the output
 ```{replace=limit_exec enabled=yes}
 ```
 Note the execution was interrupted before the splash screen was even completed.
-This and a handful of subsequent examples deliberately omit `--no-init-splash`. There, the splash is instrumental since the cycle count was chosen to land mid-splash.
-
 The ability to limit computation to an arbitrary number of cycles is fundamental to the verifiability of Cartesi Machines, as is explained in detail under the [blockchain perspective](#verification-game).
 
 ### Progress feedback
@@ -528,10 +540,14 @@ cartesi-machine \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
+(The directory `/opt/cartesi/bin/`, where `yield` resides, is in the default search path for executable setup by `/sbin/init`.)
+
+:::note
 The `$'...'` form here is bash's ANSI-C-quoted string, used throughout the manual for entrypoint commands.
 It passes the contents to `cartesi-machine` as a single argument, leaves host-side variable references like `$i` unexpanded (so they reach the guest shell verbatim), and accepts `\'` as an escape for a single quote inside the string.
 This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocation seen later under [NVRAMs](#nvrams).
-(The directory `/opt/cartesi/bin/` is in the default search path for executable setup by `/sbin/init`.)
+:::
+
 By default, the emulator honors automatic yield requests from the target.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
@@ -730,7 +746,7 @@ NVRAMs bind directly to a memory-backed UIO device exposed inside the guest as `
 Unlike flash drives, they have no file-system layer and no page cache between the guest and the underlying memory range, so writes are immediately visible to the emulator and there is no need to flush a cache before snapshotting.
 This makes NVRAMs faster than flash drives for cases where the guest only needs raw access to a region of bytes.
 
-Because UIO devices do not support ordinary `read()` or `write()` against the device file, the `readmmap` and `writemmap` utilities ship with the guest tools to read and write UIO ranges by label.
+Because UIO devices do not support ordinary `read()` or `write()` against the device file, the guest utilities include the `readmmap` and `writemmap` tools to read and write NVRAMs.
 They resolve the label, `mmap()` the device, and copy bytes to/from standard input or standard output.
 Both also work on flash drives.
 
@@ -1178,8 +1194,8 @@ For example, the following commands create the input files for two distinct adva
 (saved as `input-1.bin` and `input-2.bin`), and one query for an inspect-state request (saved as `query.bin`):
 
 
-```{.bash key=rolling_ioctl_echo_loop vars=rolling_ioctl_echo_loop_encode outputs=server,client replace=null enabled=yes}
-ln -s $rolling_ioctl_echo_loop_encode/*.bin .
+```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client replace=null enabled=yes}
+ln -s $rolling_puppet_encode/*.bin .
 srv_tmp=$(mktemp)
 {
 # docs:begin server
@@ -1199,28 +1215,38 @@ cartesi-machine \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
     --cmio-inspect-state \
-    -- ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1
+    -- /home/dapp/puppet
 # docs:end client
 } > client 2>&1
 wait "$srv_pid"
 mv "$srv_tmp" server
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_encode replace=source enabled=yes}
-for i in 1 2; do
-    cartesi-rollup-data.lua encode advance > input-$i.bin <<EOF
+```{.bash key=rolling_puppet_encode replace=source enabled=yes}
+cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' $i)",
+  "msg_sender": "$(printf '0x%040d' 1)",
   "block_number": 0,
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": $i,
-  "payload": "$(printf 'hello from input %d!' $i | hex --encode)"
+  "index": 1,
+  "payload": "$(printf 'notice:hello from input 1' | hex --encode)"
 }
 EOF
-done
+cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 2)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 2,
+  "payload": "$(printf 'something the puppet does not understand' | hex --encode)"
+}
+EOF
 cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 {
   "payload": "$(printf 'hello from query!' | hex --encode)"
@@ -1228,29 +1254,34 @@ cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 EOF
 ```
 Listing the files created
-```{.bash key=rolling_ioctl_echo_loop_encoded_bins vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
+```{.bash key=rolling_puppet_encoded_bins vars=rolling_puppet replace=source enabled=yes}
+ln -s $rolling_puppet/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
 ```
 We see
-```{.bash key=encoded_bins_ls replace=rolling_ioctl_echo_loop_encoded_bins/stdout enabled=yes}
+```{.bash key=encoded_bins_ls replace=rolling_puppet_encoded_bins/stdout enabled=yes}
 ```
 
 #### Running a simple target application
 
-The command-line utility `/opt/cartesi/bin/ioctl-echo-loop`, pre-installed in the root file-system `rootfs.ext2`, is a simple Rolling Cartesi Machine application that merely outputs (as vouchers, notices, or reports) the payload it receives as the input to advance-state or query to inspect-state.
-It is perfect to showcase the input-output mechanism.
+The command-line utility `/home/dapp/puppet`, pre-installed in the root file-system `rootfs.ext2`, is a small Rolling Cartesi Machine application built directly against `libcmt`.
+Its source is shown later under [The libcmt library](#the-libcmt-library).
+The `puppet` interprets each advance-state payload as a command.
+A payload of the form `notice:<data>`, `report:<data>`, or `voucher:<data>` causes the named output to be emitted with `<data>`.
+A payload of the form `exception:<data>` halts the machine.
+Any payload that does not match a known verb causes the advance-state request to be rejected.
+Inspect-state queries are echoed back as a single report.
 
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
 The server provides the fork functionality the client uses to roll the machine state back when an input is rejected.
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```{.bash replace=rolling_ioctl_echo_loop/source/server enabled=yes}
+```{.bash replace=rolling_puppet/source/server enabled=yes}
 ```
 
 Then, from a different shell into the same container, run the client with the command
-```{.bash replace=rolling_ioctl_echo_loop/source/client enabled=yes}
+```{.bash replace=rolling_puppet/source/client enabled=yes}
 ```
 
 The command-line option `--cmio-advance-state` instructs the utility to look for input files to use in a sequence of advance-state requests.
@@ -1261,135 +1292,117 @@ The file names therefore match those of the encoded files present in the working
 The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it loads the request data into the rx buffer.
 The command-line option `--cmio-inspect-state` causes the utility to create an inspect-state request right after all advance-state requests have been carried out (if any).
 By default, the query is loaded from a file `query.bin`.
-Finally, the command-line for `ioctl-echo-loop` instructs it to echo each payload as one voucher, one notice, and one report, and to reject the input with index 1.
+The target application is just `puppet`, which acts on whatever payloads it is fed.
+The payload of `input-1.bin` is `notice:hello from input 1`, so the `puppet` will emit a single notice and accept.
+The payload of `input-2.bin` does not match any known verb, so the `puppet` will reject the advance-state request and the client will roll the machine state back.
 
-As a result of these commands, the server shell simply shows the splash screen and a message from `ioctl-echo-loop` declaring what will be echoed:
-```{replace=rolling_ioctl_echo_loop/server enabled=yes}
-```
+As a result of these commands, the server shell shows nothing (the `--no-init-splash` option passed to the client suppresses the splash that the remote machine would otherwise print on boot).
 The client shell shows a lot more activity:
-```{replace=rolling_ioctl_echo_loop/client enabled=yes}
+```{replace=rolling_puppet/client enabled=yes}
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_first_rx_accepted vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
+```{.bash key=rolling_puppet_first_rx_accepted vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hash_before_input1 vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_puppet_hash_before_input1 vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_hash_after_input1 vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_puppet_hash_after_input1 vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_input1_tx_output_0 vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
+```{.bash key=rolling_puppet_input1_tx_output vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_input1_tx_output_1 vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output' 2
+```{.bash key=rolling_puppet_input1_rx_accepted vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_input1_tx_report vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
+```{.bash key=rolling_puppet_input2_rx_rejected vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_input1_rx_rejected vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
+```{.bash key=rolling_puppet_query_tx_report vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
 ```
 
-```{.bash key=rolling_ioctl_echo_loop_input2_rx_accepted vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
-```
-
-```{.bash key=rolling_ioctl_echo_loop_query_tx_report vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report' 3
-```
-
-```{.bash key=rolling_ioctl_echo_loop_post_query_rx_accepted vars=rolling_ioctl_echo_loop replace=null enabled=yes}
-cat $rolling_ioctl_echo_loop/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
+```{.bash key=rolling_puppet_post_query_rx_accepted vars=rolling_puppet replace=null enabled=yes}
+cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_ioctl_echo_loop_first_rx_accepted/stdout enabled=yes}) signals the point at which the target application attempted to obtain the first request.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted/stdout enabled=yes}) signals the point at which the target application made its first call to `cmt_rollup_finish`.
 In other words, the application is _ready_.
 
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_ioctl_echo_loop_hash_before_input1/stdout enabled=yes}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_ioctl_echo_loop_hash_after_input1/stdout enabled=yes}, and resumes the machine.
-The `ioctl-echo-loop` application reads the payload from the request input and echoes it into one voucher, one notice, and one report.
-These operations generate the different flavors of `automatic yield` that can be seen in the client output: a `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_output_0/stdout enabled=yes}, another `tx-output` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_output_1/stdout enabled=yes}, and a `tx-report` at cycle []{replace=rolling_ioctl_echo_loop_input1_tx_report/stdout enabled=yes}.
-For each of them, the client receives control back from the machine.
-It reads the tx buffer to store files `input-1-output-0.bin`, `input-1-output-1.bin`, and `input-1-report-0.bin`, respectively.
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1/stdout enabled=yes}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1/stdout enabled=yes}, and resumes the machine.
+The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
+The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_input1_tx_output/stdout enabled=yes}, returning control to the client.
+The client reads the tx buffer and stores the output as `input-1-output-0.bin`.
+The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_input1_rx_accepted/stdout enabled=yes} signals that the `puppet` is done processing input index 1 and has accepted it.
 
-The `manual yield rx-rejected` at cycle []{replace=rolling_ioctl_echo_loop_input1_rx_rejected/stdout enabled=yes} signals that the `ioctl-echo-loop` application is done processing input index 1 (and rejected it!).
+The client then loads input index 2 and resumes the machine.
+The payload `something the puppet does not understand` does not match any of the recognised verbs, so the `puppet` sets `accept_previous_request = false` on its next call to `cmt_rollup_finish`.
+The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected/stdout enabled=yes} causes the client to roll the machine state back.
 In production, when an input to an advance-state request is rejected, the Cartesi Node rolls back the Rolling Cartesi Machine to the state it was before the input was processed.
 Moreover, all vouchers and notices are deleted (the reports are preserved).
 To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
-This can be confirmed by the fact that the cycle counts ([]{replace=rolling_ioctl_echo_loop_first_rx_accepted/stdout enabled=yes}) and state hashes ([...]{replace=rolling_ioctl_echo_loop_hash_before_input1/stdout enabled=yes}) following input 1 and input 2 are the same.
-(The output and report files issued before rejection are left in place for the developer's inspection.)
+This can be confirmed by the fact that the cycle count and state hash following the rejection match those before input 2 was loaded.
 
-A similar procedure is followed when processing the advance-state request with input index 2, except this time the input is accepted.
-Indeed, when the `manual yield rx-accepted` at cycle []{replace=rolling_ioctl_echo_loop_input2_rx_accepted/stdout enabled=yes} is received by the client, it has run out of advance-state requests to return.
-The client now moves to the inspect-state request.
-It loads `query.bin` into the rx buffer and resumes the machine so the `ioctl-echo-loop` application can respond to the inspect-state request.
-The `automatic yield tx-report` at cycle []{replace=rolling_ioctl_echo_loop_query_tx_report/stdout enabled=yes} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_ioctl_echo_loop_post_query_rx_accepted/stdout enabled=yes}, the client simply shuts down the remote Cartesi Machine server and exits.
+With both advance-state requests handled, the client moves to the inspect-state request.
+It loads `query.bin` into the rx buffer and resumes the machine so the `puppet` can respond.
+The `automatic yield tx-report` at cycle []{replace=rolling_puppet_query_tx_report/stdout enabled=yes} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted/stdout enabled=yes}, the client simply shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
-```{.bash key=rolling_ioctl_echo_loop_all_bins vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
+```{.bash key=rolling_puppet_all_bins vars=rolling_puppet replace=source enabled=yes}
+ln -s $rolling_puppet/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
 ```
-```{.bash replace=rolling_ioctl_echo_loop_all_bins/stdout enabled=yes}
+```{.bash replace=rolling_puppet_all_bins/stdout enabled=yes}
 ```
 
 #### Decoding responses
 
 The `cartesi-rollup-data.lua` command-line utility can also decode the binary records produced by the target application.
 
-For example, we can decode the advance-state request file we encoded for the second input above with the command:
-```{.bash key=rolling_ioctl_echo_loop_decode_advance vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
+For example, we can decode the advance-state request file we encoded for the first input above with the command
+```{.bash key=rolling_puppet_decode_advance vars=rolling_puppet replace=source enabled=yes}
+ln -s $rolling_puppet/*.bin .
 # docs:begin
-cartesi-rollup-data.lua decode advance < input-2.bin
+cartesi-rollup-data.lua decode advance < input-1.bin
 # docs:end
 ```
-```{replace=rolling_ioctl_echo_loop_decode_advance/stdout enabled=yes}
+```{replace=rolling_puppet_decode_advance/stdout enabled=yes}
 ```
-A voucher carries a _destination_, a _value_, and a _payload_.
-The `ioctl-echo-loop` utility copies the _msg_sender_ field from the advance-state request to the _destination_ field of the voucher, and the input payload to the voucher payload.
-We can see this by decoding the voucher `input-2-output-0.bin` file with the command
-```{.bash key=rolling_ioctl_echo_loop_decode_voucher vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
-# docs:begin
-cartesi-rollup-data.lua decode voucher < input-2-output-0.bin
-# docs:end
-```
-```{replace=rolling_ioctl_echo_loop_decode_voucher/stdout enabled=yes}
-```
-The results match what was expected from the `ioctl-echo-loop` utility.
+The payload field carries the hex encoding of the bytes `notice:hello from input 1`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 1`.
 
 Notices and reports carry only a payload.
-To decode them, run, for example:
-```{.bash key=rolling_ioctl_echo_loop_decode_notice vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
+To decode them, run, for example
+```{.bash key=rolling_puppet_decode_notice vars=rolling_puppet replace=source enabled=yes}
+ln -s $rolling_puppet/*.bin .
 # docs:begin
-cartesi-rollup-data.lua decode notice < input-2-output-1.bin
+cartesi-rollup-data.lua decode notice < input-1-output-0.bin
 # docs:end
 ```
-```{replace=rolling_ioctl_echo_loop_decode_notice/stdout enabled=yes}
+```{replace=rolling_puppet_decode_notice/stdout enabled=yes}
 ```
-```{.bash key=rolling_ioctl_echo_loop_decode_report vars=rolling_ioctl_echo_loop replace=source enabled=yes}
-ln -s $rolling_ioctl_echo_loop/*.bin .
+```{.bash key=rolling_puppet_decode_report vars=rolling_puppet replace=source enabled=yes}
+ln -s $rolling_puppet/*.bin .
 # docs:begin
 cartesi-rollup-data.lua decode report < query-report-0.bin
 # docs:end
 ```
-```{replace=rolling_ioctl_echo_loop_decode_report/stdout enabled=yes}
+```{replace=rolling_puppet_decode_report/stdout enabled=yes}
 ```
+Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
+A voucher carries a _destination_, a _value_, and a _payload_.
+Sending the `puppet` an advance-state input with payload `voucher:<data>` would emit such a record, with _destination_ taken from the advance-state _msg_sender_ field, _value_ set to zero, and _payload_ set to `<data>`.
 Payloads are 0x-prefixed hex. Pipe through `jq -r .payload | hex --decode` to recover the original bytes.
-Once again, the echo program does its job as expected.
 
 ### Rolling Cartesi Machine templates
 
@@ -2069,8 +2082,6 @@ lua5.4 $RECIPES_DIR/minimal-config.lua $flash/config-cat-foo-bar.lua
 ```{.lua replace=config_cat_foo_bar/stdout title="config-cat-foo-bar.lua" enabled=yes}
 ```
 The second flash drive carries the file-system mounted at `/mnt/foo`.
-The `cartesi-init` script reads each flash drive's `label` from DTB aliases.
-When it detects a recognised file system on the drive, it mounts the drive at `/mnt/<label>`.
 That is where the entrypoint `cat /mnt/foo/bar.txt` finds the file to dump to the console.
 
 ### Additional sample configurations
@@ -2579,8 +2590,8 @@ The host does not need to access these ranges directly.
 The call `machine:send_cmio_response(reason, data)` writes _data_ into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
 Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
-Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256,address,address,uint256,uint256,uint256,uint256,bytes)` calldata blobs.
-Their fields carry the _chain id_, _app contract_ (an EVM address), _msg sender_ (an EVM address), _block number_, _block timestamp_ (seconds since the _Unix epoch_), _prev randao_ (a 32-byte big-endian unsigned integer), rollup _input index_, and the input _payload_ bytes.
+Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` calldata blobs.
+The _block timestamp_ field is in seconds since the _Unix epoch_, and the _prev randao_ field is a 32-byte big-endian unsigned integer.
 (See the table in the target perspective [architecture](#rollup-format).)
 
 Outputs come back as ABI-encoded `Voucher(address,uint256,bytes)` or `Notice(bytes)` calldata blobs.
@@ -2895,13 +2906,10 @@ Inside that image, the following command instructs the emulator to load the defa
 
 ```bash
 cartesi-machine \
-    -i \
     --quiet \
+    -i \
     -- sh
 ```
-
-The `--quiet` option suppresses the output of `cartesi-machine.lua` itself, leaving visible only what is produced inside the machine.
-Without it, the command-line utility's output (most notably the final cycle count, which in interactive mode varies between runs) would interleave with the target's output and clutter the example.
 
 Once executed, the Cartesi Machine boots Linux and drops into an interactive shell (the `sh` argument in the command-line).
 
@@ -2938,19 +2946,30 @@ The examples below pull both toolchains in on demand via a multi-stage Docker bu
 To run a custom target application inside the emulator, the most natural approach is to build a custom root file-system that replaces the default `rootfs.ext2`.
 The custom image contains the target application alongside the Cartesi guest tools and any runtime dependencies.
 
-Building one requires two host-side steps.
+Once a custom image is in hand, there are two ways to put it in front of the emulator.
+A given `cartesi-machine` invocation can use `--flash-drive=label:root,data_filename:<path>.ext2` to override the default root flash drive with the file at `<path>`.
+The `root` label matches the label that `cartesi-machine` assigns to the default root flash drive, so this flag wins over the kernel-supplied default for the lifetime of that invocation.
+Alternatively, the file can be installed at `/usr/share/cartesi-machine/images/rootfs.ext2` (or symlinked there) so that every invocation picks it up by default.
+
+The example we work through here is the `rootfs-docs.ext2` image used by the `cartesi/machine-emulator-docs` Docker image as its `rootfs.ext2`.
+It contains a few small &ldquo;Hello world!&rdquo; programs in different languages, plus the `puppet` libcmt-rollup target application used in the [rolling-machines walk-through](#rolling-cartesi-machines).
+The docs image installs it via the second mechanism above (`rootfs.ext2` symlinked to `rootfs-docs.ext2`), so the rest of this section can invoke `cartesi-machine` with no flash-drive override.
+
+Building the rootfs requires two host-side steps.
 The first assembles the rootfs with `docker buildx build --platform=linux/riscv64 --output type=tar`, which uses binfmt and QEMU to emulate riscv64 and emits the result as a flat tarball.
-(`buildx` runs on the host and cannot run inside the docs image, because Docker cannot be nested.)
-The second converts the tarball into an ext2 image with `xgenext2fs`, which is pre-installed in `cartesi/machine-emulator-docs`.
+The second converts the tarball into an ext2 image with [`xgenext2fs`](https://github.com/cartesi/genext2fs), which must be installed on the host (release `v1.5.6` or newer).
 
 The Dockerfile below illustrates the approach with a four-stage build.
-The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives.
+The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives, and the `puppet` libcmt-rollup target application against the headers and shared library shipped by `machine-guest-tools` (downloaded as a tarball release artifact and extracted into a sysroot inside the build stage).
 The second stage cross-compiles an equivalent Rust program, using `rustup` and the same RISC-V GCC as the linker.
 The third stage cross-compiles an equivalent Go program using the upstream `golang` Docker image with `GOARCH=riscv64`.
 The fourth stage runs natively on riscv64 (through binfmt and QEMU), installs the Cartesi `machine-guest-tools` Debian package alongside `libstdc++6` and a handful of scripting language interpreters, and copies the compiled binaries and example scripts into `/home/dapp/`.
-The C, C++, and Rust binaries are dynamically linked against the rootfs's `libc`. The Go binary is fully static. The scripts depend on their interpreters being present.
+The C, C++, Rust, and `puppet` binaries are dynamically linked against the rootfs's `libc`.
+The `puppet` binary also dynamically links to `libcmt.so`, which the `machine-guest-tools` Debian package installs at `/usr/lib/libcmt.so` inside the rootfs.
+The Go binary is fully static.
+The scripts depend on their interpreters being present.
 
-```{.dockerfile key=hello_rootfs_dockerfile include=Dockerfile.hello-rootfs replace=source enabled=yes}
+```{.dockerfile key=rootfs_docs_dockerfile include=Dockerfile.rootfs-docs replace=source enabled=yes}
 ```
 
 The C source compiled in the first stage is the ubiquitous &ldquo;Hello world!&rdquo; program, printing 5 lines:
@@ -2963,28 +2982,25 @@ The C++ counterpart:
 ```{.cpp key=hello_cpp_src include=hello/hello.cpp replace=source enabled=yes}
 ```
 
+The same stage also cross-compiles `puppet`, the libcmt-rollup target application used in the rolling-machines walk-through.
+Its source is shown under [The libcmt library](#the-libcmt-library).
+
 The second step converts the tarball into an ext2 image:
 
-```{.bash key=build_hello_rootfs include=build-hello-rootfs.sh replace=source enabled=yes}
+```{.bash key=build_rootfs_docs include=build-rootfs-docs.sh replace=source enabled=yes}
 ```
 
-The two additional flags here, relative to the base set introduced above, are `-r +50000` (reserve 50000 extra free blocks so the running system has room to write into the rootfs) and `-L hello` (ext2 volume label).
+The two additional flags here, relative to the base set introduced above, are `-r +50000` (reserve 50000 extra free blocks so the running system has room to write into the rootfs) and `-L docs` (ext2 volume label).
 
 ### Target &ldquo;Hello world!&rdquo;
 
-With `hello-rootfs.ext2` in hand, the C++ program can be run inside the emulator.
-The `--flash-drive=label:root,data_filename:hello-rootfs.ext2` form gives the flash drive the label `root`, which matches the label of the default root flash drive and causes `cartesi-machine` to replace the kernel-supplied `rootfs.ext2` with the custom image.
+The C++ program can now be run inside the emulator.
 (The `machine-guest-tools` package post-install script creates the `dapp` Unix user, so the compiled binaries and example scripts reside in `/home/dapp/`.)
 
-```{.bash key=hello_cpp depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_cpp_src replace=source enabled=yes}
-rm -f hello-rootfs.ext2
-ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
-# docs:begin
+```{.bash key=hello_cpp depends=rootfs_docs_dockerfile,build_rootfs_docs,hello_cpp_src replace=source enabled=yes}
 cartesi-machine \
     --no-init-splash \
-    --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
     -- /home/dapp/hello-cpp
-# docs:end
 ```
 The output is
 ```{replace=hello_cpp enabled=yes}
@@ -3045,15 +3061,10 @@ The following shell script invokes all of them in order:
 
 Running it inside the custom rootfs:
 
-```{.bash key=hello_all depends=hello_rootfs_dockerfile,build_hello_rootfs,hello_c_src,hello_cpp_src,hello_rs_src,hello_go_src,hello_4th_src,hello_awk_src,hello_js_src,hello_lua_src,hello_pl_src,hello_php_src,hello_py_src,hello_rb_src,hello_sh_src,hello_tcl_src,hello_all_src replace=source enabled=yes}
-rm -f hello-rootfs.ext2
-ln -s "$RECIPES_DIR/hello-rootfs.ext2" hello-rootfs.ext2
-# docs:begin
+```{.bash key=hello_all depends=rootfs_docs_dockerfile,build_rootfs_docs,hello_c_src,hello_cpp_src,hello_rs_src,hello_go_src,hello_4th_src,hello_awk_src,hello_js_src,hello_lua_src,hello_pl_src,hello_php_src,hello_py_src,hello_rb_src,hello_sh_src,hello_tcl_src,hello_all_src replace=source enabled=yes}
 cartesi-machine \
     --no-init-splash \
-    --flash-drive=label:root,data_filename:hello-rootfs.ext2 \
     -- /home/dapp/all.sh
-# docs:end
 ```
 The output is
 ```{replace=hello_all enabled=yes}
@@ -3061,42 +3072,32 @@ The output is
 
 The take-away message is that developers can use the tools they are most familiar with to accomplish the task at hand.
 
-### Flash drives
+### Flash drives and NVRAMs
 
-Flash drives are simply regions of physical memory accessible to the guest through the kernel's persistent-memory block-device driver, `pmem-region`.
-The driver makes them accessible as block devices `/dev/pmem0` to `/dev/pmem7`.
+Flash drives and NVRAMs are simply regions of physical memory accessible to the guest through different Linux drivers.
 
-The kernel command-line parameter `root=/dev/pmem0 rw` declares that the root file-system resides in device `/dev/pmem0`, i.e., flash drive 0, and that it should be mounted read-write.
-Custom labels for flash drives are published in the DTB `/aliases` node.
-The node also carries the auto-assigned aliases `flashdrive0` to `flashdrive7`, plus `root` for drive 0.
+Flash drives use the persistent-memory block-device driver `pmem-region`, which makes them accessible as block devices `/dev/pmem0` to `/dev/pmem7`.
+The initialization script added by `cartesi-machine` to the `machine_config` field `dtb.init` mounts any labeled flash
+drive containing a valid file-system at `/mnt/<label>`.
+In this fashion, file systems present in all flash drives become available for use.
 
-A flash drive holds whatever data is made available by the emulator in the corresponding target physical memory region.
-The data can come from an image file specified during machine instantiation, from an image file specified after instantiation via the `machine:replace_memory_range(<memory_range_config>)`, or through external state access method `machine:write_memory()`.
-
-At machine instantiation, `cartesi-machine` generates a per-drive shell script that mounts each labelled flash drive carrying a recognized file system at `/mnt/<label>`.
-The emulator places this script in the DTB at `/cartesi-machine/init`, and `cartesi-init` reads and runs it during boot.
-In this fashion, file systems present in all flash drives are available for use right after Linux boots.
-
-This was the case with the command
-
-```bash
-cartesi-machine \
-    --flash-drive=label:hello,data_filename:hello.ext2 \
-    -- "/mnt/hello/all.sh"
-```
-
-The `cartesi-machine` command-line utility instructed the emulator to add a new flash drive, initialized with the contents of the `hello.ext2` image file.
-The `--flash-drive=label:hello` option was the source of the label, surfaced via a DTB alias.
-The `cartesi-init` script identified a valid file system in the device, and used its label to mount it at `/mnt/hello`.
-It then executed the command `/mnt/hello/all.sh`, causing all the &ldquo;Hello world!&rdquo; messages to be printed to screen.
-
-#### NVRAMs
+The default kernel command-line parameter contains the substring `root=/dev/pmem0 rw`, which declares that the root file-system resides in device `/dev/pmem0`, i.e., flash drive 0, and that it should be mounted read-write.
 
 NVRAMs are raw byte buffers for guest code that needs unstructured memory without a file-system layer.
-They are backed by UIO devices, accessible inside the guest as `/dev/uio0` to `/dev/uio7`, with no page cache between the guest and the underlying memory range.
-Raw access to flash drives via `/dev/pmem0` to `/dev/pmem7` is also available for application developers who prefer a block-device interface.
+They are backed by UIO devices, through driver `generic-uio`, and are accessible inside the guest as `/dev/uio0` to
+`/dev/uio7`.
+Unlike with flash drives, there is no page cache between the guest and the underlying memory range.
 
-The `readmmap` and `writemmap` utilities ship with the guest tools to read and write NVRAM or flash-drive ranges by label.
+Custom labels for flash drives and NVRAMs are published in the DTB `/aliases` node.
+The node also carries the auto-assigned aliases `flashdrive0` to `flashdrive7` and `nvram0` to `nvram7`.
+The `root` label is added by the `cartesi-machine` command-line utility as the custom label for `/dev/dev/pmem0`.
+The command-line utilities `flashdrive`, `nvram`, and `memoryrange`, installed by `machine-guest-tools` can translate
+these labels to the corresponding devices and their extents in physical memory.
+
+A flash drive or NVRAM holds whatever data is made available by the emulator in the corresponding target physical memory region.
+The data can come from an image file specified during machine instantiation, from an image file specified after instantiation via the `machine:replace_memory_range(<memory_range_config>)`, or through external state access method `machine:write_memory()`.
+Additionaly, the `readmmap` and `writemmap` utilities can read and write NVRAM or flash-drive ranges by label.
+
 Some scripting languages, like the Lua programming language, have packing and unpacking libraries that can be very helpful for structured data.
 
 For example, the previously discussed [arbitrary-precision calculator Cartesi Machine](#cartesi-machine-templates) is given the entrypoint
@@ -3108,7 +3109,7 @@ The input is a null-terminated string containing the expression to be evaluated.
 This string is stored inside an NVRAM with label `input`.
 The output is once again a null-terminated string with the result, this time stored inside an NVRAM with label `output`.
 
-`readmmap input` therefore reads the entire 4KiB of the input NVRAM and sends it to the standard output.
+The `readmmap input` command therefore reads the entire 4KiB of the input NVRAM and sends it to the standard output.
 The second command, `lua5.4 -e 'print((string.unpack("z", io.read("a"))))'` extracts the first null-terminated string and prints it to standard out.
 This is the meaning of the `"z"` format argument to the `string.unpack()` function.
 There are a variety of other formats available, including reading integers of different sizes, big- or little-endian etc.
@@ -3131,11 +3132,11 @@ local c = require "cartesi"
 io.write(string.format("0x%x", c.AR_DTB_START))
 ```
 
-The hart starts execution at the beginning of RAM (address []{replace=ar_ram_start/stdout enabled=yes}), where the RAM image is loaded.
-There is no ROM stage.
-Earlier versions of the emulator booted from a `rom.bin` image whose main purpose was to build a [device tree](http://devicetree.org/) describing the hardware.
-Starting with version 0.16, the emulator builds the device tree itself at instantiation, derived from the machine configuration, and stores it in the DTB memory range immediately below RAM.
-The hart starts with the start address of the DTB memory range ([]{replace=ar_dtb_start/stdout enabled=yes}) pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
+Earlier versions of the emulator booted from a `rom.bin` image whose main purpose was to build, inside the target
+itself, a [device tree](http://devicetree.org/) describing the hardware.
+Starting with version 0.16, the emulator builds the device tree in the host, at instantiation, derived from the machine configuration, and stores it in the DTB memory range immediately below RAM.
+The hart starts execution directly at the beginning of RAM (address []{replace=ar_ram_start/stdout enabled=yes}), where the RAM image is loaded.
+The start address of the DTB memory range ([]{replace=ar_dtb_start/stdout enabled=yes}) is pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
 
 The Cartesi-provided `linux.bin` image is an OpenSBI `fw_payload` bundle, a small machine-mode firmware that exposes the Supervisor Binary Interface to Linux, linked together with the kernel.
 The firmware occupies the first 512KiB of RAM, declared as a no-map region in the device tree so the kernel does not touch it.
@@ -3147,182 +3148,157 @@ It then executes the program named by `init=`, by default `/usr/sbin/cartesi-ini
 
 The Cartesi-provided `cartesi-init` program sets up a basic Linux environment on which applications can run.
 It mounts `/proc`, `/dev/pts`, `/dev/shm`, `/sys`, `/tmp`, and `/run`, and sources any drop-in scripts under `/etc/cartesi-init.d/`.
-Next, it sources the per-drive init script that the emulator embedded in the device tree at `/cartesi-machine/init`, which mounts each labelled flash drive carrying a recognized file system at `/mnt/<label>`.
-Finally, it reads the entrypoint string from the device tree at `/cartesi-machine/entrypoint` and executes it in a shell, by default as user `dapp`.
+Next, it sources (as `root`) the script it reads from the device-tree node `/cartesi-machine/init`, which the emulator
+has filled from the contents of the `machine_config` at `dtb.init`.
+(The `cartesi-machine` utility adds there a script to mount each labelled flash drive carrying a recognized file system
+at `/mnt/<label>`.)
+Finally, `cartesi-init` reads the entrypoint string from the device tree at `/cartesi-machine/entrypoint`, which the emulator fills from `machine_config` at `dtb.entrypoint`, and executes it in a shell, by default as user `dapp`.
+(This is where `cartesi-machine` puts the commands it finds after the `--` separator in the command-line.)
 
-Everything after the `--` separator on the `cartesi-machine` command line is appended to that entrypoint string by the utility, which is how user commands come to be executed in the Linux environment.
-Given a proper rootfs and an appropriate entrypoint, applications can run any general computation, consuming input from flash drives or NVRAMs and writing outputs to flash drives or NVRAMs.
+Given a proper rootfs and an appropriate entrypoint, applications can run any general computation, consuming input from flash drives or NVRAMs and writing outputs to flash drives or NVRAMs, or run a Rolling Cartesi Machine loop that uses the `/dev/cmio` device to read inputs and write outputs (see below).
 When the application exits, control returns to `cartesi-init`, which unmounts file systems and gracefully halts the machine.
 
-### Cartesi-specific devices
+### Communication between target and host
 
-The Linux kernel produced in the `kernel/` directory of the [Cartesi Machine SDK](https://github.com/cartesi/machine-emulator-sdk) includes two Cartesi-specific device drivers, accessible via `/dev/yield` and `/dev/rollup`.
-The `/dev/yield` device allows target applications to return control back to the host, while signaling a variety of conditions that may require its attention.
-The `/dev/rollup` device allows target applications to interact with Cartesi Rollups, receiving requests and returning responses.
-(Internally, the `/dev/rollup` device uses the `/dev/yield` device.)
+Target applications inside a Cartesi Machine drive the rollups model by issuing requests to the yield sub-device of HTIF, the Cartesi Machine's host-target communication device.
+HTIF itself and its yield sub-device are described later, under the System architecture chapter.
+The Cartesi-extended Linux kernel produced by [`machine-linux-image`](https://github.com/cartesi/machine-linux-image) exposes the rollups communication protocol to user-space through a single character device file, `/dev/cmio`.
 
-#### ioctl for /dev/yield
+Target applications interact with `/dev/cmio` through one of four layers, in decreasing order of convenience.
+When available, the preferred path is a language binding of the `libcmt` library included in [`machine-guest-tools`](https://github.com/cartesi/machine-guest-tools).
+C and C++ can use libcmt directly.
+In the future, other language ecosystems (Rust, Go, JavaScript, Python, Lua, and so on) will wrap libcmt and expose the rollups interface idiomatically.
+In the meantime, applications written in languages without a libcmt binding talk to the device through the `/usr/bin/rollup-http-server` daemon, which translates HTTP requests into libcmt operations.
+For shell-driven workflows, `machine-guest-tools` also includes the `/usr/bin/rollup` command-line utility, a libcmt consumer that exposes single libcmt operations on standard input and standard output.
+And for the adventurous, or for tooling that needs to talk to the device directly for testing or debugging, the raw `/dev/cmio` `ioctl` interface itself is documented at the bottom of this section, alongside the lower-level `/usr/bin/yield` command-line utility.
 
-The `/dev/yield` device can be controlled directly via its `ioctl` interface.
-This is how the `/opt/cartesi/bin/yield` command-line utility operates.
-The only `ioctl` request code exported is `IOCTL_YIELD`.
-It takes as argument a structure `yield_request` defined as follows:
+When the application yields, the emulator returns control to the host.
+The host either provides a new input to the target application, or processes an output generated by it.
+Manual yields require the host to reset the `iflags_Y` register before the machine can resume.
+Automatic yields briefly set the `iflags_X` register, which the emulator clears on the next instruction.
+
+#### The libcmt library
+
+The libcmt library comes with the `machine-guest-tools` package, installed in the rootfs as `/usr/lib/libcmt.{so,a}` with public headers under `/usr/include/libcmt/`.
+The high-level rollups loop lives in `rollup.h`.
+The supporting headers (`abi.h`, `buf.h`, `io.h`, `keccak.h`, `merkle.h`, `util.h`) exist mostly to back it.
+
+The `rollup.h` API mirrors the lifecycle of a target application.
+`cmt_rollup_init()` opens `/dev/cmio` and maps the receive and transmit buffers.
+`cmt_rollup_finish()` accepts or rejects the previous request and blocks until the next one arrives.
+A field in the returned `cmt_rollup_finish_t` indicates whether the new request is an `HTIF_YIELD_REASON_ADVANCE` or an `HTIF_YIELD_REASON_INSPECT`.
+For an advance, `cmt_rollup_read_advance_state()` decodes the ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` payload from the receive buffer into a `cmt_rollup_advance_t` struct with one field per parameter.
+For an inspect, `cmt_rollup_read_inspect_state()` returns just the payload.
+
+While processing a request, the application emits zero or more outputs.
+`cmt_rollup_emit_voucher()`, `cmt_rollup_emit_delegate_call_voucher()`, `cmt_rollup_emit_notice()`, `cmt_rollup_emit_report()`, and `cmt_rollup_emit_exception()` emit the named output.
+`cmt_rollup_progress()` reports a per-mille progress value as an automatic yield.
+The rules of the request/response protocol and the meaning of each output type are spelled out under Rolling Cartesi Machines, in the host-side chapter.
+Finally, `cmt_rollup_fini()` tears down the mappings and closes the device.
+
+The `puppet` target application used in the [rolling-machines walk-through](#rolling-cartesi-machines) is a small libcmt rollup loop whose advance-state payloads are commands.
+It exercises most of the `rollup.h` API in roughly fifty lines.
+
+```{.c key=puppet replace=source include=puppet.c enabled=yes title="puppet.c"}
+```
+
+After `cmt_rollup_init` opens the device, the program makes the first call to `cmt_rollup_finish` with `accept_previous_request = true`, which signals that the target is ready and blocks for the first request.
+The accept here is not optional: the alternative would have `cmt_rollup_finish` ask the host to revert the machine state, which has no meaning before any request has been processed.
+Each subsequent advance-state payload is a verb (`notice`, `report`, `voucher`, `exception`, or `exit`) optionally followed by `:` and arbitrary data.
+The verb selects a libcmt call to make with that data.
+`notice:<data>`, `report:<data>`, and `voucher:<data>` emit the named output and accept the request.
+`exception:<data>` emits an exception, halting the machine.
+`exit` breaks out of the loop and returns from `main`, and the machine halts when `cartesi-init` reaps the process.
+Any payload that does not match a known verb causes the advance-state request to be rejected, so the host rolls the state back.
+For inspect-state requests, the program emits a single report echoing the query and accepts.
+The loop exits when an error escapes from any libcmt call, which is also what happens when the host signals end of input by halting the machine.
+
+#### The rollup HTTP server
+
+For target applications written in languages that have no libcmt binding, the `/usr/bin/rollup-http-server` daemon is the practical bridge to `/dev/cmio`.
+The daemon listens on a local HTTP port and translates each request it receives into a libcmt operation.
+The target application's request/response loop runs in the host language and issues HTTP calls to the daemon to advance state, emit outputs, and finish requests.
+
+#### The rollup command-line utility
+
+The `/usr/bin/rollup` utility is a thin libcmt wrapper that exposes single libcmt operations on the command line, reading and writing JSON on standard input and standard output.
+It is intended for shell-driven demos and tests.
+Production applications should use either a libcmt language binding or `/usr/bin/rollup-http-server` instead.
+The [calculator that evaluates `bc` expressions](#rolling-cartesi-machine-templates) earlier in this document drives a `rollup`-based loop from a shell script.
+
+For reference, the help text of the `rollup` utility is
+
+```{.bash key=cli_rollup_help replace=source enabled=yes}
+cartesi-machine \
+    --no-init-splash \
+    --quiet \
+    -- rollup --help
+```
+
+```{replace=cli_rollup_help/stdout enabled=yes}
+```
+
+#### The /dev/cmio device
+
+The raw `/dev/cmio` character device file is the kernel-level interface to the HTIF yield sub-device.
+Most users should not interact with it directly.
+Language bindings should be built on top of libcmt rather than `/dev/cmio` directly, because libcmt does more than carry traffic through the device.
+It also maintains the merkle tree of output hashes that the host needs in order to validate the application's outputs.
+The notes below are useful for the curious and for tooling that needs to talk to the device directly for testing or debugging.
+
+The kernel UAPI header is `<linux/cartesi/cmio.h>`, whose struct definitions are the source of truth.
+The device exposes two `ioctl` requests.
+`IOCTL_CMIO_SETUP` takes a `struct cmio_setup` argument and fills it with descriptors for the receive and transmit buffers.
+The caller `mmap`s those buffers once, at startup, and accesses them directly thereafter.
+`IOCTL_CMIO_YIELD` takes a `struct cmio_yield` argument and yields control to the host, encoding the yield kind in the struct's fields.
+The two arguments are roughly
 
 ```C
-struct yield_request {
-    __u8 dev;
-    __u8 cmd;
-    __u16 reason;
-    __u32 data;
+struct cmio_setup {
+    struct { uint64_t data; uint64_t length; } tx, rx;
+};
+
+struct cmio_yield {
+    uint8_t  dev;     /* HTIF_DEVICE_YIELD */
+    uint8_t  cmd;     /* HTIF_YIELD_CMD_AUTOMATIC or HTIF_YIELD_CMD_MANUAL */
+    uint16_t reason;
+    uint32_t data;
 };
 ```
 
-The `dev` field must take the value `HTIF_DEVICE_YIELD`.
+The `dev` field identifies the HTIF sub-device targeted by the request.
+HTIF distinguishes three sub-devices internally, halt, console, and yield.
+`/dev/cmio` carries only yield-class traffic, so the `dev` field must be `HTIF_DEVICE_YIELD`.
+The `cmd` field selects between an automatic yield, where the host resumes the machine without further action, and a manual yield, where the host must reset `iflags_Y` before the machine can resume.
+The `reason` field carries one of the constants below, and the `data` field carries an auxiliary 32-bit value whose meaning is reason-specific.
 
-The `cmd` field can take one of two values: `HTIF_YIELD_MANUAL` or `HTIF_YIELD_AUTOMATIC`.
-Sending either a manual yield or an automatic yield command to the device causes the emulator to return control to the host, giving it access to the `reason` and `data` fields.
+The reasons paired with `HTIF_YIELD_CMD_AUTOMATIC` are
+`HTIF_YIELD_AUTOMATIC_REASON_PROGRESS` (the `data` field carries a per-mille progress value),
+`HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` (a voucher, delegate-call voucher, or notice has been written to the transmit buffer), and
+`HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` (a report has been written to the transmit buffer).
 
-Manual yields are used when the target application needs some kind of manual intervention from the host that modifies the machine state before resuming, typically when it needs some kind of input or throws an exception.
-In that case, the Y bit in the `iflags` CSR will be set, and must be externally reset before the machine can continue executing.
-Automatic yields are used when the target application has produced some data for the host, and can be resumed without further action, automatically.
-The X bit in the `iflags` CSR will be set instead, and will be automatically reset when the machine is resumed.
+The reasons paired with `HTIF_YIELD_CMD_MANUAL` are
+`HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` (the application has accepted the previous request and is ready for the next, and the host sets the `data` field on resume to `HTIF_YIELD_REASON_ADVANCE` or `HTIF_YIELD_REASON_INSPECT` to indicate the type of the freshly loaded input in the receive buffer),
+`HTIF_YIELD_MANUAL_REASON_RX_REJECTED` (the application has rejected the previous request, and the host reverts the machine state and replies with the next request as above), and
+`HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION` (the application has emitted an exception payload to the transmit buffer and the machine cannot continue).
 
-The `HTIF_YIELD_REASON_PROGRESS` value for the `reason` field is used with automatic yields.
-In this case, the value of the `data` field should contain an integer with the progress in parts per thousand.
+For convenience, `machine-guest-tools` also includes a `/usr/bin/yield` utility that sends a single yield request from the shell, useful for tests and one-off demos.
+It is a direct wrapper for `IOCTL_CMIO_YIELD` and only supports yield-class requests, so it does not send halt or console requests to HTIF.
+Its usage is
 
-The remaining values for the `reason` field are in conjunction with the `/dev/rollup` device.
-
-#### ioctl for /dev/rollup
-
-The `/dev/rollup` device also exposes an `ioctl` interface.
-It exports a variety of `ioctl` requests.
-These are used, for example, by the `/opt/cartesi/bin/rollup` and `/opt/cartesi/bin/rollup-http-server` command-line utilities.
-
-Recall that Cartesi Rollups is a mechanism by which a target application receives requests for processing and produces responses to those requests.
-There are two types of rollup requests: advance-state requests and inspect-state requests.
-There are four types of rollup responses: vouchers, notices, reports, and exceptions.
-
-The `ioctl` request `IOCTL_ROLLUP_FINISH` is used to transition between one rollup request to the next.
-It takes as argument a structure `rollup_finish` defined as follows:
-
-```C
-struct rollup_finish {
-    /* True if previous request should be accepted */
-    /* False if previous request should be rejected */
-    bool accept_previous_request;
-
-    int next_request_type; /* either CARTESI_ROLLUP_ADVANCE or CARTESI_ROLLUP_INSPECT */
-    int next_request_payload_length;
-};
+```{.bash key=cli_yield_help replace=source enabled=yes}
+{
+# docs:begin
+cartesi-machine \
+    --no-init-splash \
+    --quiet \
+    -- yield
+# docs:end
+} | grep -v -e 'Too few arguments' -e '^$'
 ```
 
-The `accept_previous_request` field is set to `true` when accepting the previous request, or to `false` when rejecting it.
-As a result, the `/dev/rollup` device will issue an yield manual command to the `/dev/yield` device, passing as `reason` field, respectively, `HTIF_YIELD_REASON_RX_ACCEPTED` or `HTIF_YIELD_REASON_RX_REJECTED`.
-Upon return, the value of field `next_request_type` will contain `CARTESI_ROLLUP_ADVANCE` if the next request is an advance-state request, or `CARTESI_ROLLUP_INSPECT` if the next request is an inspect-state request.
-Moreover, the `next_request_payload_length` field will contain the length of the request payload.
-
-To obtain the advance-state request data, the target application should then use the `ioctl` request `IOCTL_ROLLUP_READ_ADVANCE_STATE`.
-It takes as argument a structure `rollup_advance_state` defined as follows:
-
-```C
-struct rollup_bytes {
-    unsigned char *data;
-    uint64_t length;
-};
-
-struct rollup_input_metadata {
-    uint8_t msg_sender[CARTESI_ROLLUP_ADDRESS_SIZE];
-    uint64_t block_number;
-    uint64_t timestamp;
-    uint64_t epoch_index;
-    uint64_t input_index;
-};
-
-struct rollup_advance_state {
-    struct rollup_input_metadata metadata;
-    struct rollup_bytes payload;
-};
+```{replace=cli_yield_help/stdout enabled=yes}
 ```
-
-The `payload` field should contain a `rollup_bytes` structure, where the `payload.data` points to a buffer that can hold `payload.length` bytes.
-Note that the value of `payload.length` should be no less than the value of `next_request_payload_length` returned in the `rollup_finish` argument to the previous `ioctl` request `IOCTL_ROLLUP_FINISH`.
-Upon return, the `payload.data` buffer will contain the advance-state request payload.
-This data comes from what the host wrote to the `rollup.rx_buffer` memory range.
-In addition, the `metadata` field will contain all the associated input metadata.
-This data comes from what the host wrote to the `rollup.input_metadata` memory range.
-
-To obtain the inspect-state request data, the target application should then use the `ioctl` request `IOCTL_ROLLUP_READ_ADVANCE_STATE`.
-It takes as argument a structure `rollup_advance_state` defined as follows:
-
-```C
-struct rollup_inspect_state {
-    struct rollup_bytes payload;
-};
-```
-
-The `payload` field should contain a `rollup_bytes` structure, where the `payload.data` points to a buffer that can hold `payload.length` bytes.
-Note that the value of `payload.length` should be no less than the value of `next_request_payload_length` returned in the `rollup_finish` argument to the previous `ioctl` request `IOCTL_ROLLUP_FINISH`.
-Upon return, the `payload.data` buffer will contain the inspect-state request payload.
-This data comes from what the host wrote to the `rollup.rx_buffer` memory range.
-
-While processing a request, to produce a voucher, the target application should use the `ioctl` request `IOCTL_ROLLUP_WRITE_VOUCHER`.
-It takes as argument a structure `rollup_voucher` defined as follows:
-
-```C
-struct rollup_voucher {
-    uint8_t address[CARTESI_ROLLUP_ADDRESS_SIZE];
-    struct rollup_bytes payload;
-    uint64_t index;
-};
-```
-
-The `address` field should contain the desired voucher address.
-The `payload` field should contain a `rollup_bytes` structure with the desired voucher payload.
-The `/dev/rollup` device copies this data to the `rollup.tx_buffer` memory range for the host to read.
-Then, the `/dev/rollup` device issues an yield automatic command to the `/dev/yield` device, passing as `reason` field `HTIF_YIELD_REASON_TX_VOUCHER`.
-Upon return, the `index` field contains the index of the emitted voucher.
-
-While processing a request, to produce a rollup notice, the target application should use the `ioctl` request `IOCTL_ROLLUP_WRITE_NOTICE`.
-It takes as argument a structure `rollup_notice` defined as follows:
-
-```C
-struct rollup_notice {
-    struct rollup_bytes payload;
-    uint64_t index;
-};
-```
-
-The `payload` field should contain a `rollup_bytes` structure with the desired notice payload.
-The `/dev/rollup` device copies this data to the `rollup.tx_buffer` memory range for the host to read.
-Then, the `/dev/rollup` device issues an yield automatic command to the `/dev/yield` device, passing as `reason` field `HTIF_YIELD_REASON_TX_NOTICE`.
-Upon return, the `index` field contains the index of the emitted notice.
-
-While processing a request, to produce a rollup report, the target application should use the `ioctl` request `IOCTL_ROLLUP_WRITE_REPORT`.
-It takes as argument a structure `rollup_report` defined as follows:
-
-```C
-struct rollup_report {
-    struct rollup_bytes payload;
-};
-```
-
-The `payload` field should contain a `rollup_bytes` structure with the desired report payload.
-The `/dev/rollup` device copies this data to the `rollup.tx_buffer` memory range for the host to read.
-Then, the `/dev/rollup` device issues an yield automatic command to the `/dev/yield` device, passing as `reason` field `HTIF_YIELD_REASON_TX_REPORT`.
-
-Finally, to throw a rollup exception, the target application should use the `ioctl` request
-`IOCTL_ROLLUP_THROW_EXCEPTION`.
-It takes as argument a structure `rollup_exception` defined as follows:
-
-```C
-struct rollup_exception {
-    struct rollup_bytes payload;
-};
-```
-
-The `payload` field should contain a `rollup_bytes` structure with the desired exception payload.
-The `/dev/rollup` device copies this data to the `rollup.tx_buffer` memory range for the host to read.
-Then, the `/dev/rollup` device issues an yield _manual_ command to the `/dev/yield` device, passing as `reason` field `HTIF_YIELD_REASON_TX_EXCEPTION`.
 
 ## System architecture
 

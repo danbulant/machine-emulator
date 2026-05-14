@@ -43,9 +43,12 @@ RUN cd /tmp/cartesi-images && \
     wget -nc -i dependencies -P build/images && \
     sha256sum --check dependencies.sha256 && \
     cd /usr/share/cartesi-machine/images && \
-    mv /tmp/cartesi-images/build/images/* . && \
-    ln -s "$(ls rootfs-tools*.ext2)" rootfs.ext2 && \
-    ln -s "$(ls linux-*.bin)" linux.bin
+    mv /tmp/cartesi-images/build/images/linux-*.bin . && \
+    ln -s "$(ls linux-*.bin)" linux.bin && \
+    rm -rf /tmp/cartesi-images
+
+COPY doc/recipes/rootfs-docs.ext2 /usr/share/cartesi-machine/images/rootfs-docs.ext2
+RUN ln -s rootfs-docs.ext2 /usr/share/cartesi-machine/images/rootfs.ext2
 
 ENV DEV_ENV_HAS_DOCGEN=yes
 ENV PATH=/work/recipes:${PATH}
