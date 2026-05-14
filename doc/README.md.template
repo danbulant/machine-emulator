@@ -3322,81 +3322,183 @@ This section describes Cartesi's RISC-V architecture, the modifications made to 
 
 ### The processor
 
-Following RISC-V terminology, Cartesi Machines implement the `RV64IMAZicsr_Zifencei` ISA.
+Following RISC-V terminology, Cartesi Machines implement the `RV64IMAFDCZicsr_Zifencei` ISA.
 The letters after RV specify the extension set.
-This selection corresponds to a 64-bit machine, integer arithmetic with multiplication and division, atomic operations, as well as the optional supervisor and user privilege levels.
+This selection corresponds to a 64-bit machine, integer arithmetic with multiplication and division, atomic operations, single- and double-precision floating-point arithmetic, and compressed instructions, as well as the optional supervisor and user privilege levels.
 In addition, Cartesi Machines support the Sv39 mode of address translation and memory protection.
 Sv39 provides a 39-bit protected virtual address space, divided into 4KiB pages, organized by a three-level page table.
 This set of features creates a balanced compromise between the simplicity demanded by a blockchain implementation and the flexibility expected from off-chain computations.
 
-There are a total of 98 instructions, out of which 28 simply narrow or widen, respectively, their 64-bit or 32-bit counterparts.
-This being a RISC ISA, most instructions are very simple and can be emulated in a few lines of high-level code.
+Even so, the instruction set remains compact.
+Most instructions are very simple and can be emulated in a few lines of high-level code.
 In contrast, the x86 ISA defines at least 2000 (potentially complex) instructions.
 In fact, the only complex operation in RISC-V is the virtual-to-physical address translation.
-Instruction decoding is particularly simple due to the reduced number of formats (only 4, all taking 32-bits).
+Instruction decoding is particularly simple due to the reduced number of formats taking 32 or 16 bits.
 
-The entire processor state fits within 512&nbsp;bytes, which are divided into 64 registers, each one holding 64-bits.
-It consists of 32 general-purpose integer registers and 26 control and status registers (CSRs).
-Most of these registers are defined by the RISC-V&nbsp;ISA; the remaining are Cartesi-specific.
-The processor makes its entire state available, externally-only and read-only, by mapping individual registers to the lowest 512 bytes in the physical address space (in the <i>processor shadow</i>).
-The adjacent&nbsp;1.5KiB are reserved for future use.
-The entire mapping is given in the following table:
+The entire processor state fits within 848 bytes, divided into 106 registers, each holding 64 bits.
+It consists of 32 general-purpose integer registers (`x0`&hellip;`x31`), 32 floating-point registers (`f0`&hellip;`f31`), and 42 standard or Cartesi-specific control registers.
+The last 8 of those control registers persist the externally-visible state of the board's CLINT, PLIC, and HTIF subsystems, which is otherwise also reachable through the device-mapped addresses described in the next section.
+The processor makes its entire state available, externally and read-only, by mapping every register to the start of the physical address space (in the <i>processor shadow</i>, a 4KiB range).
+The mapping is given in the following table:
+
+```{.lua key=reg_addr replace=null enabled=yes outputs=x0,x1,x31,mcycle,pc,fcsr,f0,f1,f31,iprv,mstatus,mtvec,mscratch,mepc,mcause,mtval,misa,mie,mip,medeleg,mideleg,mcounteren,menvcfg,mvendorid,marchid,mimpid,stvec,sscratch,sepc,scause,stval,satp,scounteren,senvcfg,ilrsc,icycleinstret,iunrep,iflags_X,iflags_Y,iflags_H,clint_mtimecmp,plic_girqpend,plic_girqsrvd,htif_tohost,htif_fromhost,htif_ihalt,htif_iconsole,htif_iyield}
+local cartesi = require "cartesi"
+local names = {"x0", "x1", "x31", "mcycle", "pc", "fcsr", "f0", "f1", "f31", "iprv",
+    "mstatus", "mtvec", "mscratch", "mepc", "mcause", "mtval", "misa", "mie", "mip",
+    "medeleg", "mideleg", "mcounteren", "menvcfg", "mvendorid", "marchid", "mimpid",
+    "stvec", "sscratch", "sepc", "scause", "stval", "satp", "scounteren", "senvcfg",
+    "ilrsc", "icycleinstret", "iunrep",
+    "iflags_X", "iflags_Y", "iflags_H",
+    "clint_mtimecmp", "plic_girqpend", "plic_girqsrvd",
+    "htif_tohost", "htif_fromhost", "htif_ihalt", "htif_iconsole", "htif_iyield"}
+for _, name in ipairs(names) do
+    local f = assert(io.open(name, "w"))
+    f:write(string.format("0x%03x", cartesi.machine:get_reg_address(name)))
+    f:close()
+end
+```
 
 <center>
 <table>
 <tr>
-  <th>Offset</th>             <th>Register</th>
-  <th>Offset</th>             <th>Register</th>
-  <th>Offset</th>             <th>Register</th>
-  <th>Offset</th>             <th>Register</th>
+<th>Offset</th>
+<th>Register</th>
+<th>Offset</th>
+<th>Register</th>
+<th>Offset</th>
+<th>Register</th>
+<th>Offset</th>
+<th>Register</th>
 </tr>
 <tr>
-  <td><tt>0x000</tt></td>     <td><tt>x0 </tt></td>
-  <td><tt>0x120</tt></td>     <td><tt>mcycle</tt></td>
-  <td><tt>0x160</tt></td>     <td><tt>misa</tt></td>
-  <td><tt>0x1a0</tt></td>     <td><tt>sepc</tt></td>
+<td>[]{replace=reg_addr/x0 enabled=yes}</td>
+<td><tt>x0</tt></td>
+<td>[]{replace=reg_addr/mtvec enabled=yes}</td>
+<td><tt>mtvec</tt></td>
+<td>[]{replace=reg_addr/marchid enabled=yes}</td>
+<td><tt>marchid</tt></td>
+<td>[]{replace=reg_addr/iflags_X enabled=yes}</td>
+<td><tt>iflags_X</tt></td>
 </tr>
 <tr>
-  <td><tt>0x008</tt></td>     <td><tt>x1 </tt></td>
-  <td><tt>0x128</tt></td>     <td><tt>minstret</tt></td>
-  <td><tt>0x168</tt></td>     <td><tt>mie</tt></td>
-  <td><tt>0x1a8</tt></td>     <td><tt>scause</tt></td>
+<td>[]{replace=reg_addr/x1 enabled=yes}</td>
+<td><tt>x1</tt></td>
+<td>[]{replace=reg_addr/mscratch enabled=yes}</td>
+<td><tt>mscratch</tt></td>
+<td>[]{replace=reg_addr/mimpid enabled=yes}</td>
+<td><tt>mimpid</tt></td>
+<td>[]{replace=reg_addr/iflags_Y enabled=yes}</td>
+<td><tt>iflags_Y</tt></td>
 </tr>
 <tr>
-  <td><tt>&hellip;</tt></td> <td><tt>&hellip;</tt></td>
-  <td><tt>0x130</tt></td>    <td><tt>mstatus</tt></td>
-  <td><tt>0x170</tt></td>    <td><tt>mip</tt></td>
-  <td><tt>0x1b0</tt></td>    <td><tt>stval</tt></td>
+<td><tt>&hellip;</tt></td>
+<td><tt>&hellip;</tt></td>
+<td>[]{replace=reg_addr/mepc enabled=yes}</td>
+<td><tt>mepc</tt></td>
+<td>[]{replace=reg_addr/stvec enabled=yes}</td>
+<td><tt>stvec</tt></td>
+<td>[]{replace=reg_addr/iflags_H enabled=yes}</td>
+<td><tt>iflags_H</tt></td>
 </tr>
 <tr>
-  <td><tt>0x0f8</tt></td>    <td><tt>x31</tt></td>
-  <td><tt>0x138</tt></td>    <td><tt>mtvec</tt></td>
-  <td><tt>0x178</tt></td>    <td><tt>medeleg</tt></td>
-  <td><tt>0x1b8</tt></td>    <td><tt>satp</tt></td>
+<td>[]{replace=reg_addr/x31 enabled=yes}</td>
+<td><tt>x31</tt></td>
+<td>[]{replace=reg_addr/mcause enabled=yes}</td>
+<td><tt>mcause</tt></td>
+<td>[]{replace=reg_addr/sscratch enabled=yes}</td>
+<td><tt>sscratch</tt></td>
+<td>[]{replace=reg_addr/clint_mtimecmp enabled=yes}</td>
+<td><tt>clint_mtimecmp</tt></td>
 </tr>
 <tr>
-  <td><tt>0x100</tt></td>    <td><tt>pc</tt></td>
-  <td><tt>0x140</tt></td>    <td><tt>mscratch</tt></td>
-  <td><tt>0x180</tt></td>    <td><tt>mideleg</tt></td>
-  <td><tt>0x1c0</tt></td>    <td><tt>scounteren</tt></td>
+<td>[]{replace=reg_addr/mcycle enabled=yes}</td>
+<td><tt>mcycle</tt></td>
+<td>[]{replace=reg_addr/mtval enabled=yes}</td>
+<td><tt>mtval</tt></td>
+<td>[]{replace=reg_addr/sepc enabled=yes}</td>
+<td><tt>sepc</tt></td>
+<td>[]{replace=reg_addr/plic_girqpend enabled=yes}</td>
+<td><tt>plic_girqpend</tt></td>
 </tr>
 <tr>
-  <td><tt>0x108</tt></td>    <td><tt>mvendorid</tt></td>
-  <td><tt>0x148</tt></td>    <td><tt>mepc</tt></td>
-  <td><tt>0x188</tt></td>    <td><tt>mcounteren</tt></td>
-  <td><tt>0x1c8</tt></td>    <td><tt>ilrsc</tt></td>
+<td>[]{replace=reg_addr/pc enabled=yes}</td>
+<td><tt>pc</tt></td>
+<td>[]{replace=reg_addr/misa enabled=yes}</td>
+<td><tt>misa</tt></td>
+<td>[]{replace=reg_addr/scause enabled=yes}</td>
+<td><tt>scause</tt></td>
+<td>[]{replace=reg_addr/plic_girqsrvd enabled=yes}</td>
+<td><tt>plic_girqsrvd</tt></td>
 </tr>
 <tr>
-  <td><tt>0x110</tt></td>    <td><tt>marchid</tt></td>
-  <td><tt>0x150</tt></td>    <td><tt>mcause</tt></td>
-  <td><tt>0x190</tt></td>    <td><tt>stvec</tt></td>
-  <td><tt>0x1d0</tt></td>    <td><tt>iflags </tt></td>
+<td>[]{replace=reg_addr/fcsr enabled=yes}</td>
+<td><tt>fcsr</tt></td>
+<td>[]{replace=reg_addr/mie enabled=yes}</td>
+<td><tt>mie</tt></td>
+<td>[]{replace=reg_addr/stval enabled=yes}</td>
+<td><tt>stval</tt></td>
+<td>[]{replace=reg_addr/htif_tohost enabled=yes}</td>
+<td><tt>htif_tohost</tt></td>
 </tr>
 <tr>
-  <td><tt>0x118</tt></td>    <td><tt>mimpid</tt></td>
-  <td><tt>0x158</tt></td>    <td><tt>mtval</tt></td>
-  <td><tt>0x198</tt></td>    <td><tt>sscratch</tt></td>
-  <td><tt></tt></td>         <td><tt></tt></td>
+<td>[]{replace=reg_addr/f0 enabled=yes}</td>
+<td><tt>f0</tt></td>
+<td>[]{replace=reg_addr/mip enabled=yes}</td>
+<td><tt>mip</tt></td>
+<td>[]{replace=reg_addr/satp enabled=yes}</td>
+<td><tt>satp</tt></td>
+<td>[]{replace=reg_addr/htif_fromhost enabled=yes}</td>
+<td><tt>htif_fromhost</tt></td>
+</tr>
+<tr>
+<td>[]{replace=reg_addr/f1 enabled=yes}</td>
+<td><tt>f1</tt></td>
+<td>[]{replace=reg_addr/medeleg enabled=yes}</td>
+<td><tt>medeleg</tt></td>
+<td>[]{replace=reg_addr/scounteren enabled=yes}</td>
+<td><tt>scounteren</tt></td>
+<td>[]{replace=reg_addr/htif_ihalt enabled=yes}</td>
+<td><tt>htif_ihalt</tt></td>
+</tr>
+<tr>
+<td><tt>&hellip;</tt></td>
+<td><tt>&hellip;</tt></td>
+<td>[]{replace=reg_addr/mideleg enabled=yes}</td>
+<td><tt>mideleg</tt></td>
+<td>[]{replace=reg_addr/senvcfg enabled=yes}</td>
+<td><tt>senvcfg</tt></td>
+<td>[]{replace=reg_addr/htif_iconsole enabled=yes}</td>
+<td><tt>htif_iconsole</tt></td>
+</tr>
+<tr>
+<td>[]{replace=reg_addr/f31 enabled=yes}</td>
+<td><tt>f31</tt></td>
+<td>[]{replace=reg_addr/mcounteren enabled=yes}</td>
+<td><tt>mcounteren</tt></td>
+<td>[]{replace=reg_addr/ilrsc enabled=yes}</td>
+<td><tt>ilrsc</tt></td>
+<td>[]{replace=reg_addr/htif_iyield enabled=yes}</td>
+<td><tt>htif_iyield</tt></td>
+</tr>
+<tr>
+<td>[]{replace=reg_addr/iprv enabled=yes}</td>
+<td><tt>iprv</tt></td>
+<td>[]{replace=reg_addr/menvcfg enabled=yes}</td>
+<td><tt>menvcfg</tt></td>
+<td>[]{replace=reg_addr/icycleinstret enabled=yes}</td>
+<td><tt>icycleinstret</tt></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>[]{replace=reg_addr/mstatus enabled=yes}</td>
+<td><tt>mstatus</tt></td>
+<td>[]{replace=reg_addr/mvendorid enabled=yes}</td>
+<td><tt>mvendorid</tt></td>
+<td>[]{replace=reg_addr/iunrep enabled=yes}</td>
+<td><tt>iunrep</tt></td>
+<td></td>
+<td></td>
 </tr>
 </table>
 </center>
@@ -3407,35 +3509,43 @@ This is a key component of the verification process, and can also be used to bou
 
 The registers whose names start with &ldquo;`i`&rdquo; are Cartesi additions, and have the following semantics:
 
-* The layout for register&nbsp;<tt>iflags</tt> can be seen below:<p></p>
-<center>
-<table>
-<tr>
-  <th> Bits </th>
-  <td><tt>63&ndash;5</tt></td>
-  <td><tt>4&ndash;3</tt></td>
-  <td><tt>2</tt></td>
-  <td><tt>1</tt></td>
-  <td><tt>0</tt></td>
-</tr>
-<tr>
-  <th> Field </th>
-  <td><i>Reserved</i></td>
-  <td><tt>PRV</tt></td>
-  <td><tt>X</tt></td>
-  <td><tt>Y</tt></td>
-  <td><tt>H</tt></td>
-</tr>
-</table>
-</center>
-
-Bit `PRV` gives the current privilege level (0 for User, 1 for Supervisor, and 3 for Machine), bit `X` is set to 1 when the processor has yielded automatic, bit `Y` is set to 1 when the processor has yielded manual, bit `H` is set to 1 to signal the processor has been permanently halted.
-* Register&nbsp;`ilrsc` holds the reservation address for the&nbsp;LR/SC atomic memory operations;
+* Register&nbsp;`iprv` holds the current privilege level (0 for User, 1 for Supervisor, and 3 for Machine).
+* Register&nbsp;`iflags_X` is set to 1 when the processor has yielded automatic.
+The emulator clears it again as soon as the machine resumes.
+* Register&nbsp;`iflags_Y` is set to 1 when the processor has yielded manual.
+It remains set until the host clears it (either directly, or as a side effect of `send_cmio_response`).
+* Register&nbsp;`iflags_H` is set to 1 to signal the processor has been permanently halted.
+* Register&nbsp;`ilrsc` holds the reservation address for the&nbsp;LR/SC atomic memory operations.
+* Register&nbsp;`icycleinstret` holds the difference between `mcycle` and the architectural instruction count.
+* Register&nbsp;`iunrep` is non-zero in machines configured as unreproducible, a creation-time mode that enables host VirtIO devices in exchange for giving up state-hash verifiability.
 
 ### The board
 
 The interaction between board and processor happens through interrupts and the memory bus. Devices are mapped to the processor's physical address space.
 The mapping can be seen in the following table:
+
+```{.lua key=ar_table replace=null enabled=yes outputs=shadow,tlb,pmas,clint,htif,virtio,plic,cmio_rx,cmio_tx,dtb,ram_start,drive_start}
+local c = require "cartesi"
+local function write(name, content)
+    local f = assert(io.open(name, "w"))
+    f:write(content)
+    f:close()
+end
+local function range_se(start, e) return string.format("0x%08x-0x%08x", start, e) end
+local function range_sl(start, len) return range_se(start, start + len - 1) end
+write("shadow",  range_se(c.AR_SHADOW_STATE_START,     c.AR_SHADOW_TLB_START - 1))
+write("tlb",     range_sl(c.AR_SHADOW_TLB_START,       c.AR_SHADOW_TLB_LENGTH))
+write("pmas",    range_sl(c.AR_PMAS_START,             c.AR_PMAS_LENGTH))
+write("clint",   range_sl(c.AR_CLINT_START,            c.AR_CLINT_LENGTH))
+write("htif",    range_sl(c.AR_HTIF_START,             c.AR_HTIF_LENGTH))
+write("virtio",  range_se(c.AR_FIRST_VIRTIO_START,     c.AR_LAST_VIRTIO_END - 1))
+write("plic",    range_sl(c.AR_PLIC_START,             c.AR_PLIC_LENGTH))
+write("cmio_rx", range_sl(c.AR_CMIO_RX_BUFFER_START,   1 << c.AR_CMIO_RX_BUFFER_LOG2_SIZE))
+write("cmio_tx", range_sl(c.AR_CMIO_TX_BUFFER_START,   1 << c.AR_CMIO_TX_BUFFER_LOG2_SIZE))
+write("dtb",     range_sl(c.AR_DTB_START,              c.AR_DTB_LENGTH))
+write("ram_start",   string.format("0x%x", c.AR_RAM_START))
+write("drive_start", string.format("0x%x", c.AR_DRIVE_START))
+```
 
 <center>
 <table>
@@ -3444,70 +3554,72 @@ The mapping can be seen in the following table:
   <th> Mapping </th>
 </tr>
 <tr>
-  <td> <tt>0x00000000&ndash;0x000003ff</tt> </td>
-  <td> Processor shadow </td>
+  <td> []{replace=ar_table/shadow enabled=yes} </td>
+  <td> Processor and board shadow </td>
 </tr>
 <tr>
-  <td> <tt>0x00000800&ndash;0x00000bff</tt> </td>
-  <td> Board shadow </td>
+  <td> []{replace=ar_table/tlb enabled=yes} </td>
+  <td> Shadow TLB </td>
 </tr>
 <tr>
-  <td> <tt>0x00001000&ndash;0x000ffff</tt> </td>
-  <td> ROM (Bootstrap &amp; Devicetree) </td>
+  <td> []{replace=ar_table/pmas enabled=yes} </td>
+  <td> PMA Array </td>
 </tr>
 <tr>
-  <td> <tt>0x02000000&ndash;0x020bffff</tt> </td>
-  <td> Core Local Interruptor </td>
+  <td> []{replace=ar_table/clint enabled=yes} </td>
+  <td> Core Local Interruptor (CLINT) </td>
 </tr>
 <tr>
-  <td> <tt>0x40008000&ndash;0x40008fff</tt> </td>
-  <td> Host-Target Interface </td>
+  <td> []{replace=ar_table/htif enabled=yes} </td>
+  <td> Host-Target Interface (HTIF) </td>
 </tr>
 <tr>
-  <td> <tt> 0x60000000&ndash;0x600fffff</tt>  (<i>configurable</i>) </td>
-  <td> Rollup RX buffer </td>
+  <td> []{replace=ar_table/virtio enabled=yes} (<i>unreproducible mode only</i>) </td>
+  <td> VirtIO devices </td>
 </tr>
 <tr>
-  <td> <tt> 0x60200000&ndash;0x602FFFFF</tt>  (<i>configurable</i>) </td>
-  <td> Rollup TX buffer </td>
+  <td> []{replace=ar_table/plic enabled=yes} </td>
+  <td> Platform-Level Interrupt Controller (PLIC) </td>
 </tr>
 <tr>
-  <td> <tt> 0x60400000&ndash;0x60400FFF</tt>  (<i>configurable</i>) </td>
-  <td> Rollup Input Metadata </td>
+  <td> []{replace=ar_table/cmio_rx enabled=yes} </td>
+  <td> CMIO RX buffer </td>
 </tr>
 <tr>
-  <td> <tt> 0x60600000&ndash;0x606FFFFF</tt>  (<i>configurable</i>) </td>
-  <td> Rollup Voucher Hashes </td>
+  <td> []{replace=ar_table/cmio_tx enabled=yes} </td>
+  <td> CMIO TX buffer </td>
 </tr>
 <tr>
-  <td> <tt> 0x60800000&ndash;0x608FFFFF</tt>  (<i>configurable</i>) </td>
-  <td> Rollup Notice Hashes </td>
+  <td> []{replace=ar_table/dtb enabled=yes} </td>
+  <td> Device tree (DTB) </td>
 </tr>
 <tr>
-  <td> <tt>0x80000000&ndash;</tt><i>configurable</i> </td>
+  <td> []{replace=ar_table/ram_start enabled=yes}&ndash;<i>configurable</i> </td>
   <td> RAM </td>
 </tr>
 <tr>
-  <td> <i> configurable </i> </td>
-  <td> Flash drive 0 </td>
+  <td> []{replace=ar_table/drive_start enabled=yes}&ndash;<i>configurable</i> </td>
+  <td> Flash drive or NVRAM 0 </td>
 </tr>
 <tr>
   <td> &hellip;</td>
   <td> &hellip;</td>
 </tr>
 <tr>
-  <td> <i> configurable </i> </td>
-  <td> Flash drive 7 </td>
+  <td> <i>configurable</i> </td>
+  <td> Flash drive or NVRAM 7 </td>
 </tr>
 </table>
 </center>
 
-There are 60KiB of ROM starting at address&nbsp;`0x1000`, where execution starts by default.
-The amount of RAM is user-configurable, but always starts at address&nbsp;`0x80000000`.
-Finally, a number of additional physical memory ranges can be set aside for flash-memory devices.
-These will typically be preloaded with file-system images, but can also hold raw data.
+Execution starts at the beginning of RAM, where the bootloader (an OpenSBI&nbsp;`fw_payload` bundle that wraps the Linux kernel) is loaded from `linux.bin`.
+The amount of RAM is user-configurable, but always starts at address []{replace=ar_table/ram_start enabled=yes}.
+The DTB occupies a fixed region immediately below RAM and carries the kernel command line, the description of every other range, and the init/entrypoint scripts.
 
-The board maps two non-memory devices to the physical address space: CLINT and HTIF.
+Flash drives and NVRAMs share a single slot allocator. When `start` is left unset, the slot defaults to []{replace=ar_drive_formula/stdout enabled=yes}, where `i` is the index across the combined `flash_drive` and `nvram` lists.
+Flash drives are typically preloaded with file-system images, and NVRAMs hold raw byte buffers backed by a UIO device.
+
+The board maps four non-memory devices to the physical address space: CLINT, HTIF, PLIC, and (in unreproducible machines only) one or more VirtIO devices.
 
 #### CLINT
 
@@ -3526,31 +3638,40 @@ It is mapped to a physical memory starting at `0x40008000`, where registers can 
 <center>
 <table>
 <tr>
-  <th>Offset</th>             <th>Register</th>
+<th>Offset</th>
+<th>Register</th>
 </tr>
 <tr>
-  <td><tt>0x000</tt></td>     <td><tt>tohost</tt></td>
+<td><tt>0x000</tt></td>
+<td><tt>tohost</tt></td>
 </tr>
 <tr>
-  <td><tt>0x008</tt></td>     <td><tt>fromhost</tt></td>
+<td><tt>0x008</tt></td>
+<td><tt>fromhost</tt></td>
 </tr>
 <tr>
-  <td><tt>0x010</tt></td>     <td><tt>ihalt</tt></td>
+<td><tt>0x010</tt></td>
+<td><tt>ihalt</tt></td>
 </tr>
 <tr>
-  <td><tt>0x018</tt></td>     <td><tt>iconsole</tt></td>
+<td><tt>0x018</tt></td>
+<td><tt>iconsole</tt></td>
 </tr>
 <tr>
-  <td><tt>0x020</tt></td>     <td><tt>iyield</tt></td>
+<td><tt>0x020</tt></td>
+<td><tt>iyield</tt></td>
 </tr>
 <tr>
-  <td><tt>0x028</tt></td>     <td><i>Reserved</i></td>
+<td><tt>0x028</tt></td>
+<td><i>Reserved</i></td>
 </tr>
 <tr>
-  <td><tt>&hellip;</tt></td>     <td><tt>&hellip;</tt></td>
+<td><tt>&hellip;</tt></td>
+<td><tt>&hellip;</tt></td>
 </tr>
 <tr>
-  <td><tt>0x218</tt></td>     <td><i>Reserved</i></td>
+<td><tt>0x218</tt></td>
+<td><i>Reserved</i></td>
 </tr>
 </table>
 </center>
@@ -3559,16 +3680,18 @@ The format of CSRs `tohost` and `fromhost` are as follows: <p></p>
 <center>
 <table>
 <tr>
-  <th> Bits </th>
-  <td><tt>63&ndash;56</tt></td>
-  <td><tt>55&ndash;48</tt></td>
-  <td><tt>47&ndash;0</tt></td>
+<th>Bits</th>
+<td><tt>63&ndash;56</tt></td>
+<td><tt>55&ndash;48</tt></td>
+<td><tt>47&ndash;32</tt></td>
+<td><tt>31&ndash;0</tt></td>
 </tr>
 <tr>
-  <th> Field </th>
-  <td><tt>DEV</tt></td>
-  <td><tt>CMD</tt></td>
-  <td><tt>DATA</tt></td>
+<th>Field</th>
+<td><tt>DEV</tt></td>
+<td><tt>CMD</tt></td>
+<td><tt>REASON</tt></td>
+<td><tt>DATA</tt></td>
 </tr>
 </table>
 </center>
@@ -3582,26 +3705,41 @@ Interactions with Cartesi's HTIF device follow the following protocol:
 Cartesi's HTIF supports 3 subdevices: Halt, Console, and Yield.
 These are identified by the following values for the field `DEV`.
 
+```{.lua key=htif_const replace=null enabled=yes outputs=HTIF_DEV_HALT,HTIF_DEV_CONSOLE,HTIF_DEV_YIELD,HTIF_HALT_CMD_HALT,HTIF_CONSOLE_CMD_GETCHAR,HTIF_CONSOLE_CMD_PUTCHAR,HTIF_YIELD_CMD_AUTOMATIC,HTIF_YIELD_CMD_MANUAL,HTIF_YIELD_AUTOMATIC_REASON_PROGRESS,HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT,HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT,HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED,HTIF_YIELD_MANUAL_REASON_RX_REJECTED,HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION,HTIF_YIELD_REASON_ADVANCE_STATE,HTIF_YIELD_REASON_INSPECT_STATE}
+local cartesi = require "cartesi"
+for _, n in ipairs({"HTIF_DEV_HALT", "HTIF_DEV_CONSOLE", "HTIF_DEV_YIELD",
+        "HTIF_HALT_CMD_HALT", "HTIF_CONSOLE_CMD_GETCHAR", "HTIF_CONSOLE_CMD_PUTCHAR",
+        "HTIF_YIELD_CMD_AUTOMATIC", "HTIF_YIELD_CMD_MANUAL",
+        "HTIF_YIELD_AUTOMATIC_REASON_PROGRESS", "HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT",
+        "HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT", "HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED",
+        "HTIF_YIELD_MANUAL_REASON_RX_REJECTED", "HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION",
+        "HTIF_YIELD_REASON_ADVANCE_STATE", "HTIF_YIELD_REASON_INSPECT_STATE"}) do
+    local f = assert(io.open(n, "w"))
+    f:write(tostring(cartesi[n]))
+    f:close()
+end
+```
+
 <center>
 <table>
 <tr>
-  <th colspan="2"> `DEV` </th>
+<th colspan="2"> `DEV` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_DEVICE_HALT</tt></td>
-  <td>0</td>
+<td><tt>HTIF_DEV_HALT</tt></td>
+<td>[]{replace=htif_const/HTIF_DEV_HALT enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_DEVICE_CONSOLE</tt></td>
-  <td>1</td>
+<td><tt>HTIF_DEV_CONSOLE</tt></td>
+<td>[]{replace=htif_const/HTIF_DEV_CONSOLE enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_DEVICE_YIELD</tt></td>
-  <td>2</td>
+<td><tt>HTIF_DEV_YIELD</tt></td>
+<td>[]{replace=htif_const/HTIF_DEV_YIELD enabled=yes}</td>
 </tr>
 </table>
 </center>
@@ -3614,23 +3752,23 @@ Unavailable commands are silently ignored by the machine.
 <center>
 <table>
 <tr>
-  <th colspan="2"> `CMD` </th>
+<th colspan="2"> `CMD` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_HALT_HALT</tt></td>
-  <td>0</td>
+<td><tt>HTIF_HALT_CMD_HALT</tt></td>
+<td>[]{replace=htif_const/HTIF_HALT_CMD_HALT enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-The Halt device (`DEV=HTIF_DEVICE_HALT`) is used to halt the machine.
-This will permanently set bit `H` in `iflags` and return control back to the host.
+The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine.
+This will permanently set register `iflags_H` to 1 and return control back to the host.
 
-Send request `CMD=HTIF_HALT_HALT` and `DATA` containing bit 0 set to&nbsp;1.
+Send request `CMD=HTIF_HALT_CMD_HALT` and `DATA` containing bit 0 set to&nbsp;1.
 Bits 47&ndash;1 can be set to an arbitrary exit code.
 
 ##### Console
@@ -3638,168 +3776,146 @@ Bits 47&ndash;1 can be set to an arbitrary exit code.
 <center>
 <table>
 <tr>
-  <th colspan="2"> `CMD` </th>
+<th colspan="2"> `CMD` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_CONSOLE_GETCHAR</tt></td>
-  <td>0</td>
+<td><tt>HTIF_CONSOLE_CMD_GETCHAR</tt></td>
+<td>[]{replace=htif_const/HTIF_CONSOLE_CMD_GETCHAR enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_CONSOLE_PUTCHAR</tt></td>
-  <td>1</td>
+<td><tt>HTIF_CONSOLE_CMD_PUTCHAR</tt></td>
+<td>[]{replace=htif_const/HTIF_CONSOLE_CMD_PUTCHAR enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-The Console device (`DEV=HTIF_DEVICE_CONSOLE`) can be used to input/output characters.
+The Console device (`DEV=HTIF_DEV_CONSOLE`) can be used to input/output characters.
 
-To input a  character from console (in interactive sessions), request `CMD=HTIF_CONSOLE_GETCHAR`, `DATA=0`, then read response `CMD=HTIF_CONSOLE_GETCHAR`, `DATA=<ch>+1`. (`DATA=0` means no character was available);
+To input a  character from console (in interactive sessions), request `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=0`, then read response `CMD=HTIF_CONSOLE_CMD_GETCHAR`, `DATA=<ch>+1`. (`DATA=0` means no character was available);
 
-To output a character `<ch>` to console, request `CMD=HTIF_CONSOLE_PUTCHAR`, with `DATA=<ch>`.
+To output a character `<ch>` to console, request `CMD=HTIF_CONSOLE_CMD_PUTCHAR`, with `DATA=<ch>`.
 
 ##### Yield
 
 The Yield device can be used to return control to the host.
-It uses a slight refinement to the format of CSRs `tohost` and `fromhost`, by splitting out a `REASON` field from `DATA`:<p></p>
-<center>
-<table>
-<tr>
-  <th> Bits </th>
-  <td><tt>63&ndash;56</tt></td>
-  <td><tt>55&ndash;48</tt></td>
-  <td><tt>47&ndash;32</tt></td>
-  <td><tt>31&ndash;0</tt></td>
-</tr>
-<tr>
-  <th> Field </th>
-  <td><tt>DEV</tt></td>
-  <td><tt>CMD</tt></td>
-  <td><tt>REASON</tt></td>
-  <td><tt>DATA</tt></td>
-</tr>
-</table>
-</center>
-
 There are two types of yield: _automatic_ and _manual_.
 
 <center>
 <table>
 <tr>
-  <th colspan="2"> `CMD` </th>
+<th colspan="2"> `CMD` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_AUTOMATIC</tt></td>
-  <td>0</td>
+<td><tt>HTIF_YIELD_CMD_AUTOMATIC</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_CMD_AUTOMATIC enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_MANUAL</tt></td>
-  <td>1</td>
+<td><tt>HTIF_YIELD_CMD_MANUAL</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_CMD_MANUAL enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-To issue an automatic yield, request `CMD=HTIF_YIELD_AUTOMATIC`.
-An automatic yield sets the bit `X` in `iflags` and returns control back to the host.
-There are currently 4 supported reasons for automatic yields:
+To issue an automatic yield, request `CMD=HTIF_YIELD_CMD_AUTOMATIC`.
+An automatic yield sets register `iflags_X` to 1 and returns control back to the host.
+There are currently 3 supported reasons for automatic yields:
 
 <center>
 <table>
 <tr>
-  <th colspan="2"> `REASON` </th>
+<th colspan="2"> `REASON` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_PROGRESS</tt></td>
-  <td>0</td>
+<td><tt>HTIF_YIELD_AUTOMATIC_REASON_PROGRESS</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_PROGRESS enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_TX_VOUCHER</tt></td>
-  <td>3</td>
+<td><tt>HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_TX_NOTICE</tt></td>
-  <td>4</td>
-</tr>
-<tr>
-  <td><tt>HTIF_YIELD_REASON_TX_REPORT</tt></td>
-  <td>5</td>
+<td><tt>HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-To report `progress`, set `REASON=HTIF_YIELD_REASON_PROGRESS`, and `DATA=<permil>`, where `<permil>` gives the progress in parts per thousand.
+To report `progress`, set `REASON=HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`, and `DATA=<permil>`, where `<permil>` gives the progress in parts per thousand.
 The other reasons for automatic yield signal the production of Cartesi Rollups responses.
-`REASON=HTIF_YIELD_REASON_TX_VOUCHER`, `REASON=HTIF_YIELD_REASON_TX_NOTICE`, and `REASON=HTIF_YIELD_REASON_TX_REPORT` denote, respectively, transfers of a voucher, a notice, and a report from target to host.
-The `DATA` field in `tohost` is ignored in these cases.
+`REASON=HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` denotes the production of an output (a voucher, delegate-call voucher, or notice) and `REASON=HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` denotes the production of a report.
+In both cases, the target writes the payload to the CMIO TX buffer and `DATA` carries the payload length in bytes.
 
-To issue a manual yield, request `CMD=HTIF_YIELD_MANUAL`.
-A manual yield sets the bit `Y` in `iflags` and returns control back to the host.
+To issue a manual yield, request `CMD=HTIF_YIELD_CMD_MANUAL`.
+A manual yield sets register `iflags_Y` to 1 and returns control back to the host.
 There are currently 3 supported reasons for manual yields, all used with Cartesi Rollups:
 
 <center>
 <table>
 <tr>
-  <th colspan="2"> `REASON` </th>
+<th colspan="2"> `REASON` </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_RX_ACCEPTED</tt></td>
-  <td>1</td>
+<td><tt>HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_RX_REJECTED</tt></td>
-  <td>2</td>
+<td><tt>HTIF_YIELD_MANUAL_REASON_RX_REJECTED</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_RX_REJECTED enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_REASON_TX_EXCEPTION</tt></td>
-  <td>6</td>
+<td><tt>HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-To accept or reject the previous request, set `REASON=HTIF_YIELD_REASON_RX_ACCEPTED` or
-`REASON=HTIF_YIELD_REASON_RX_REJECTED`, respectively.
-The `DATA` field in `tohost` is ignored in these cases.
-Upon return, the `DATA` field in `fromhost` will contain the type of the next request:
+To accept or reject the previous request, set `REASON=HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` or
+`REASON=HTIF_YIELD_MANUAL_REASON_RX_REJECTED`, respectively.
+On accept, the target writes the root hash of the output hashes tree to the CMIO TX buffer, and `DATA` in `tohost` carries the length of that hash in bytes.
+On reject, `DATA` is ignored.
+Upon return, the host has loaded the next request into the CMIO RX buffer.
+The `REASON` field in `fromhost` carries the request type, and the `DATA` field carries the request length in bytes.
 
 <center>
 <table>
 <tr>
-  <th colspan="2"> `DATA` in response </th>
+<th colspan="2"> `REASON` in response </th>
 </tr>
 <tr>
-  <th> Name </th>
-  <th> Value </th>
+<th>Name</th>
+<th>Value</th>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_ADVANCE_STATE</tt></td>
-  <td>0</td>
+<td><tt>HTIF_YIELD_REASON_ADVANCE_STATE</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_REASON_ADVANCE_STATE enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>HTIF_YIELD_INSPECT_STATE</tt></td>
-  <td>1</td>
+<td><tt>HTIF_YIELD_REASON_INSPECT_STATE</tt></td>
+<td>[]{replace=htif_const/HTIF_YIELD_REASON_INSPECT_STATE enabled=yes}</td>
 </tr>
 </table>
 </center>
 
-The signal the throwing of a rollup exception, set `REASON=HTIF_YIELD_REASON_TX_EXCEPTION`.
-The `DATA` field in `tohost` is ignored in this case.
+To signal the throwing of a rollup exception, set `REASON=HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION`.
+The target writes the exception payload to the CMIO TX buffer and `DATA` in `tohost` carries the payload length in bytes.
 
-Before resuming the emulator after a manual yield, the host must manually reset the `Y` bit in `iflags`.
+Before resuming the emulator after a manual yield, the host must manually reset register `iflags_Y` to 0.
 Otherwise, the emulator will immediately return with no changes to its state.
 
 #### Rollup
@@ -3880,58 +3996,73 @@ The format for all these request and response data are as follows: <a name="roll
 <center>
 <table>
 <tr>
-  <th colspan="2">Format for input metadata</th>
+<th colspan="2">Format for input metadata</th>
 </tr>
 <tr>
-  <th>Offset (bytes) </th>             <th>Field</th>
+<th>Offset (bytes)</th>
+<th>Field</th>
 </tr>
 <tr>
-  <td><tt>0&ndash;31</tt></td>     <td>message sender (address hash)</td>
+<td><tt>0&ndash;31</tt></td>
+<td>message sender (address hash)</td>
 </tr>
 <tr>
-  <td><tt>32&ndash;63</tt></td>     <td>block number (number)</td>
+<td><tt>32&ndash;63</tt></td>
+<td>block number (number)</td>
 </tr>
 <tr>
-  <td><tt>64&ndash;95</tt></td>     <td>time stamp (number)</td>
+<td><tt>64&ndash;95</tt></td>
+<td>time stamp (number)</td>
 </tr>
 <tr>
-  <td><tt>96&ndash;127</tt></td>     <td>epoch index (number)</td>
+<td><tt>96&ndash;127</tt></td>
+<td>epoch index (number)</td>
 </tr>
 <tr>
-  <td><tt>128&ndash;159</tt></td>     <td>input index (number)</td>
+<td><tt>128&ndash;159</tt></td>
+<td>input index (number)</td>
 </tr>
 <tr>
-  <th colspan="2">Format for voucher</th>
+<th colspan="2">Format for voucher</th>
 </tr>
 <tr>
-  <th>Offset (bytes) </th>             <th>Field</th>
+<th>Offset (bytes)</th>
+<th>Field</th>
 </tr>
 <tr>
-  <td><tt>0&ndash;31</tt></td>     <td>address (address hash)</td>
+<td><tt>0&ndash;31</tt></td>
+<td>address (address hash)</td>
 </tr>
 <tr>
-  <td><tt>32&ndash;63</tt></td>     <td>offset (number, always 64)</td>
+<td><tt>32&ndash;63</tt></td>
+<td>offset (number, always 64)</td>
 </tr>
 <tr>
-  <td><tt>64&ndash;95</tt></td>     <td>length (number)</td>
+<td><tt>64&ndash;95</tt></td>
+<td>length (number)</td>
 </tr>
 <tr>
-  <td><tt>96&ndash;96+length-1</tt></td>     <td>payload (raw data)</td>
+<td><tt>96&ndash;96+length-1</tt></td>
+<td>payload (raw data)</td>
 </tr>
 <tr>
-  <th colspan="2">Format for input, notice, report, and exception </th>
+<th colspan="2">Format for input, notice, report, and exception</th>
 </tr>
 <tr>
-  <th>Offset (bytes) </th>             <th>Field</th>
+<th>Offset (bytes)</th>
+<th>Field</th>
 </tr>
 <tr>
-  <td><tt>0&ndash;31</tt></td>     <td>offset (number, always 32)</td>
+<td><tt>0&ndash;31</tt></td>
+<td>offset (number, always 32)</td>
 </tr>
 <tr>
-  <td><tt>32&ndash;63</tt></td>     <td>length (number)</td>
+<td><tt>32&ndash;63</tt></td>
+<td>length (number)</td>
 </tr>
 <tr>
-  <td><tt>64&ndash;64+length-1</tt></td>     <td>payload (raw data)</td>
+<td><tt>64&ndash;64+length-1</tt></td>
+<td>payload (raw data)</td>
 </tr>
 </table>
 </center>
