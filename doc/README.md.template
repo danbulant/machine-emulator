@@ -302,7 +302,7 @@ Interaction with the shell enables the exploration of the Linux distribution fro
 Exiting the shell returns control back to `/sbin/init`, which then gracefully halts the machine.
 
 For example, if an interactive session is started with the following command
-```bash
+```{.bash key=cmdline_interactive_ls_shown replace=source enabled=yes}
 cartesi-machine \
     --no-init-splash \
     -i \
@@ -580,7 +580,11 @@ cartesi-machine \
     --final-hash
 ```
 produces the output
-```{replace=state_hashes_limit_exec enabled=yes}
+```{key=reorder_state_hashes_limit_exec vars=state_hashes_limit_exec replace=stdout enabled=yes}
+cat $state_hashes_limit_exec/stderr | head -n 1
+cat $state_hashes_limit_exec/stdout
+echo
+cat $state_hashes_limit_exec/stderr | tail -n 1
 ```
 
 ```{.bash key=state_hashes_initial vars=state_hashes_limit_exec replace=null enabled=yes}
@@ -2783,10 +2787,12 @@ ln -sf "$RECIPES_DIR/dump-step.lua" .
 # docs:begin cmd
 lua5.4 dump-step.lua config-nothing-to-do "$cycles" "$ucycles"
 # docs:end cmd
-} 2>&1
+}
 ```
 produces the output:
-```{replace=state_transition_dump_step enabled=yes}
+```{key=reorder_state_transition_dump_step vars=state_transition_dump_step replace=stdout enabled=yes}
+cat $state_transition_dump_step/stdout
+cat $state_transition_dump_step/stderr
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
@@ -2817,9 +2823,9 @@ ln -sf "$RECIPES_DIR/verify-step.lua" .
 # docs:begin cmd
 lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles"
 # docs:end cmd
-} 2>&1 || true
+} || true
 ```
-```{replace=verify_step_run enabled=yes}
+```{replace=verify_step_run/stderr enabled=yes}
 ```
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
@@ -2831,9 +2837,9 @@ ln -sf "$RECIPES_DIR/verify-step.lua" .
 # docs:begin cmd
 lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].address = 0x100'
 # docs:end cmd
-} 2>&1 || true
+} || true
 ```
-```{replace=verify_step_mess_address enabled=yes}
+```{replace=verify_step_mess_address/stderr enabled=yes}
 ```
 
 Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
@@ -2846,9 +2852,9 @@ ln -sf "$RECIPES_DIR/verify-step.lua" .
 # docs:begin cmd
 lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7].written = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 # docs:end cmd
-} 2>&1 || true
+} || true
 ```
-```{replace=verify_step_mess_written enabled=yes}
+```{replace=verify_step_mess_written/stderr enabled=yes}
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
@@ -2859,9 +2865,9 @@ ln -sf "$RECIPES_DIR/verify-step.lua" .
 # docs:begin cmd
 lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[5].read = string.pack("<I8", 0x1234)..string.rep("\0", 24)'
 # docs:end cmd
-} 2>&1 || true
+} || true
 ```
-```{replace=verify_step_mess_read enabled=yes}
+```{replace=verify_step_mess_read/stderr enabled=yes}
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
@@ -2872,9 +2878,9 @@ ln -sf "$RECIPES_DIR/verify-step.lua" .
 # docs:begin cmd
 lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a = log.accesses[5]; a.read = string.pack("<I8", 0x1234)..string.rep("\0", 24); a.read_hash = cartesi.keccak256(a.read)'
 # docs:end cmd
-} 2>&1 || true
+} || true
 ```
-```{replace=verify_step_mess_target_hash enabled=yes}
+```{replace=verify_step_mess_target_hash/stderr enabled=yes}
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
@@ -2904,16 +2910,12 @@ The most direct way for target developers to familiarize themselves with the Lin
 The `cartesi/machine-emulator-docs` Docker image comes pre-installed with the emulator, the default kernel and root file-system, and the host-side tooling used by the examples in this documentation (`xgenext2fs`, `pandoc`, the `e2tools` family, and assorted shell utilities).
 Inside that image, the following command instructs the emulator to load the default machine configuration and run a shell in interactive mode
 
-```bash
-cartesi-machine \
-    --quiet \
-    -i \
-    -- sh
+```{.bash replace=cmdline_interactive_ls_shown/source enabled=yes}
 ```
 
 Once executed, the Cartesi Machine boots Linux and drops into an interactive shell (the `sh` argument in the command-line).
 
-```{key=linux_interactive_ls replace=both enabled=yes}
+```{replace=cmdline_interactive_ls/both enabled=yes}
 # Hidden setup. The user-facing command is shown in the bash block above.
 # To capture this interactive session non-interactively, we feed `ls /bin`
 # followed by the VEOF character (^D, byte 0x04) on stdin. The guest TTY's
