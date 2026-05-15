@@ -259,6 +259,18 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_SHADOW_TLB_START, "AR_SHADOW_TLB_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_START, "AR_PMAS_START", -1);
     clua_setintegerfield(L, CM_AR_PMAS_LENGTH, "AR_PMAS_LENGTH", -1);
+    clua_setintegerfield(L, CM_PMA_EMPTY_DID, "PMA_EMPTY_DID", -1);
+    clua_setintegerfield(L, CM_PMA_MEMORY_DID, "PMA_MEMORY_DID", -1);
+    clua_setintegerfield(L, CM_PMA_SHADOW_STATE_DID, "PMA_SHADOW_STATE_DID", -1);
+    clua_setintegerfield(L, CM_PMA_FLASH_DRIVE_DID, "PMA_FLASH_DRIVE_DID", -1);
+    clua_setintegerfield(L, CM_PMA_CLINT_DID, "PMA_CLINT_DID", -1);
+    clua_setintegerfield(L, CM_PMA_HTIF_DID, "PMA_HTIF_DID", -1);
+    clua_setintegerfield(L, CM_PMA_PLIC_DID, "PMA_PLIC_DID", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_RX_BUFFER_DID, "PMA_CMIO_RX_BUFFER_DID", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_DID, "PMA_CMIO_TX_BUFFER_DID", -1);
+    clua_setintegerfield(L, CM_PMA_SHADOW_UARCH_STATE_DID, "PMA_SHADOW_UARCH_STATE_DID", -1);
+    clua_setintegerfield(L, CM_PMA_VIRTIO_DID, "PMA_VIRTIO_DID", -1);
+    clua_setintegerfield(L, CM_PMA_NVRAM_DID, "PMA_NVRAM_DID", -1);
     clua_setintegerfield(L, CM_AR_DTB_START, "AR_DTB_START", -1);
     clua_setintegerfield(L, CM_AR_DTB_LENGTH, "AR_DTB_LENGTH", -1);
     clua_setintegerfield(L, CM_AR_CLINT_START, "AR_CLINT_START", -1);

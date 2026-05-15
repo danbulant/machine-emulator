@@ -46,6 +46,7 @@
 #include "cm-version.h"
 #include "htif-constants.hpp"
 #include "htif-defines.h"
+#include "pmas-defines.h"
 #include "i-machine.hpp"
 #include "interpret.hpp"
 #include "json-util.hpp"
@@ -80,6 +81,18 @@ static_assert(AR_SHADOW_STATE_START_DEF == CM_AR_SHADOW_STATE_START);
 static_assert(AR_SHADOW_STATE_LENGTH_DEF == CM_AR_SHADOW_STATE_LENGTH);
 static_assert(AR_PMAS_START_DEF == CM_AR_PMAS_START);
 static_assert(AR_PMAS_LENGTH_DEF == CM_AR_PMAS_LENGTH);
+static_assert(PMA_EMPTY_DID_DEF == CM_PMA_EMPTY_DID);
+static_assert(PMA_MEMORY_DID_DEF == CM_PMA_MEMORY_DID);
+static_assert(PMA_SHADOW_STATE_DID_DEF == CM_PMA_SHADOW_STATE_DID);
+static_assert(PMA_FLASH_DRIVE_DID_DEF == CM_PMA_FLASH_DRIVE_DID);
+static_assert(PMA_CLINT_DID_DEF == CM_PMA_CLINT_DID);
+static_assert(PMA_HTIF_DID_DEF == CM_PMA_HTIF_DID);
+static_assert(PMA_PLIC_DID_DEF == CM_PMA_PLIC_DID);
+static_assert(PMA_CMIO_RX_BUFFER_DID_DEF == CM_PMA_CMIO_RX_BUFFER_DID);
+static_assert(PMA_CMIO_TX_BUFFER_DID_DEF == CM_PMA_CMIO_TX_BUFFER_DID);
+static_assert(PMA_SHADOW_UARCH_STATE_DID_DEF == CM_PMA_SHADOW_UARCH_STATE_DID);
+static_assert(PMA_VIRTIO_DID_DEF == CM_PMA_VIRTIO_DID);
+static_assert(PMA_NVRAM_DID_DEF == CM_PMA_NVRAM_DID);
 static_assert(AR_CLINT_START_DEF == CM_AR_CLINT_START);
 static_assert(AR_CLINT_LENGTH_DEF == CM_AR_CLINT_LENGTH);
 static_assert(AR_HTIF_START_DEF == CM_AR_HTIF_START);
