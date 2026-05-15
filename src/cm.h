@@ -620,6 +620,18 @@ CM_API cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
+/// \brief Obtains the revert root hash from the shadow state.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param hash Valid pointer to cm_hash structure that receives the hash.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_get_revert_root_hash(const cm_machine *m, cm_hash *hash);
+
+/// \brief Sets the revert root hash in the shadow state.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param hash Valid pointer to cm_hash structure with hash to store.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_set_revert_root_hash(cm_machine *m, const cm_hash *hash);
+
 /// \brief Obtains the hash of a node in the hash tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Address of node.

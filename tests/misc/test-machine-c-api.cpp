@@ -827,6 +827,43 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), result_hash, result_hash + sizeof(cm_hash));
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(get_revert_root_hash_null_machine_test) {
+    cm_hash result_hash;
+    cm_error error_code = cm_get_revert_root_hash(nullptr, &result_hash);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(get_revert_root_hash_null_hash_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_get_revert_root_hash(_machine, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_AUTO_TEST_CASE_NOLINT(set_revert_root_hash_null_machine_test) {
+    cm_hash hash{};
+    cm_error error_code = cm_set_revert_root_hash(nullptr, &hash);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(set_revert_root_hash_null_hash_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_set_revert_root_hash(_machine, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(revert_root_hash_round_trip_test, ordinary_machine_fixture) {
+    cm_hash original_hash;
+    cm_error error_code = cm_get_root_hash(_machine, &original_hash);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    error_code = cm_set_revert_root_hash(_machine, &original_hash);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+
+    cm_hash result_hash;
+    error_code = cm_get_revert_root_hash(_machine, &result_hash);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL_COLLECTIONS(original_hash, original_hash + sizeof(cm_hash), result_hash,
+        result_hash + sizeof(cm_hash));
+}
+
 BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
     const char *proof{};
     cm_error error_code = cm_get_proof(nullptr, 0, CM_HASH_TREE_LOG2_PAGE_SIZE, CM_HASH_TREE_LOG2_ROOT_SIZE, &proof);

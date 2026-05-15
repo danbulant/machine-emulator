@@ -869,6 +869,24 @@ cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {
     return cm_result_failure();
 }
 
+cm_error cm_get_revert_root_hash(const cm_machine *m, cm_hash *hash) try {
+    const auto *cpp_m = convert_from_c(m);
+    const cartesi::machine_hash cpp_hash = cpp_m->get_revert_root_hash();
+    convert_to_c(cpp_hash, hash);
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_set_revert_root_hash(cm_machine *m, const cm_hash *hash) try {
+    auto *cpp_m = convert_from_c(m);
+    const cartesi::machine_hash cpp_hash = convert_from_c(hash);
+    cpp_m->set_revert_root_hash(cpp_hash);
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int log2_size, cm_hash *hash) try {
     const auto *cpp_m = convert_from_c(m);
     const cartesi::machine_hash cpp_hash = cpp_m->get_node_hash(address, log2_size);

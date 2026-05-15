@@ -621,6 +621,30 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:get_revert_root_hash() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_get_revert_root_hash(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_hash revert_root_hash{};
+    if (cm_get_revert_root_hash(m.get(), &revert_root_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_cm_hash(L, &revert_root_hash);
+    return 1;
+}
+
+/// \brief This is the machine:set_revert_root_hash() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_set_revert_root_hash(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_hash revert_root_hash{};
+    clua_check_cm_hash(L, 2, &revert_root_hash);
+    if (cm_set_revert_root_hash(m.get(), &revert_root_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
 /// \brief This is the machine:get_node_hash() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_node_hash(lua_State *L) {
@@ -1256,6 +1280,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_hash_tree_stats", machine_obj_index_get_hash_tree_stats},
     {"get_reg_address", machine_obj_index_get_reg_address},
     {"get_root_hash", machine_obj_index_get_root_hash},
+    {"get_revert_root_hash", machine_obj_index_get_revert_root_hash},
+    {"set_revert_root_hash", machine_obj_index_set_revert_root_hash},
     {"get_node_hash", machine_obj_index_get_node_hash},
     {"get_runtime_config", machine_obj_index_get_runtime_config},
     {"is_empty", machine_obj_index_is_empty},

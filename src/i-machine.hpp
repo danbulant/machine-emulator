@@ -139,6 +139,16 @@ public:
         return do_get_root_hash();
     }
 
+    /// \brief Obtains the revert root hash from the shadow state.
+    machine_hash get_revert_root_hash() const {
+        return do_get_revert_root_hash();
+    }
+
+    /// \brief Sets the revert root hash in the shadow state.
+    void set_revert_root_hash(const_machine_hash_view hash) {
+        do_set_revert_root_hash(hash);
+    }
+
     /// \brief Obtains the root hash of the hash tree.
     machine_hash get_node_hash(uint64_t address, int log2_size) const {
         return do_get_node_hash(address, log2_size);
@@ -348,6 +358,8 @@ private:
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_target_size, int log2_root_size) const = 0;
     virtual machine_hash do_get_root_hash() const = 0;
+    virtual machine_hash do_get_revert_root_hash() const = 0;
+    virtual void do_set_revert_root_hash(const_machine_hash_view hash) = 0;
     virtual machine_hash do_get_node_hash(uint64_t address, int log2_size) const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;
     virtual void do_write_reg(reg w, uint64_t val) = 0;

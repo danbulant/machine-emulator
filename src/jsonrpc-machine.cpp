@@ -807,6 +807,18 @@ machine_hash jsonrpc_machine::do_get_root_hash() const {
     return hash;
 }
 
+machine_hash jsonrpc_machine::do_get_revert_root_hash() const {
+    machine_hash hash;
+    request("machine.get_revert_root_hash", std::tie(), hash);
+    return hash;
+}
+
+void jsonrpc_machine::do_set_revert_root_hash(const_machine_hash_view hash) {
+    bool result{};
+    auto b64 = encode_base64(hash);
+    request("machine.set_revert_root_hash", std::tie(b64), result);
+}
+
 machine_hash jsonrpc_machine::do_get_node_hash(uint64_t address, int log2_size) const {
     machine_hash hash;
     request("machine.get_node_hash", std::tie(address, log2_size), hash);

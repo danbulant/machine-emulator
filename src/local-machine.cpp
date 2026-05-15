@@ -112,6 +112,14 @@ machine_hash local_machine::do_get_root_hash() const {
     return get_machine()->get_root_hash();
 }
 
+machine_hash local_machine::do_get_revert_root_hash() const {
+    return get_machine()->get_revert_root_hash();
+}
+
+void local_machine::do_set_revert_root_hash(const_machine_hash_view hash) {
+    get_machine()->set_revert_root_hash(hash);
+}
+
 machine_hash local_machine::do_get_node_hash(uint64_t address, int log2_size) const {
     return get_machine()->get_node_hash(address, log2_size);
 }

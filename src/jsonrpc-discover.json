@@ -499,6 +499,39 @@
       }
     },
     {
+      "name": "machine.get_revert_root_hash",
+      "summary": "Obtains the revert root hash from the shadow state",
+      "params": [],
+      "result": {
+        "name": "hash",
+        "description": "Revert root hash",
+        "schema": {
+          "$ref": "#/components/schemas/Base64Hash"
+        }
+      }
+    },
+    {
+      "name": "machine.set_revert_root_hash",
+      "summary": "Sets the revert root hash in the shadow state",
+      "params": [
+        {
+          "name": "hash",
+          "description": "Revert root hash to store",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "True on success",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.get_proof",
       "summary": "Obtains a hash-tree proof for a range in the machine state",
       "params": [

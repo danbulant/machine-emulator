@@ -396,6 +396,14 @@ public:
     /// \returns The hash.
     machine_hash get_root_hash() const;
 
+    /// \brief Obtains the revert root hash from the shadow state.
+    /// \returns The hash.
+    machine_hash get_revert_root_hash() const;
+
+    /// \brief Sets the revert root hash in the shadow state.
+    /// \param hash Hash to store.
+    void set_revert_root_hash(const_machine_hash_view hash);
+
     /// \brief Obtains the hash of a node in the hash-tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.

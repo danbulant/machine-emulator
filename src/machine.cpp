@@ -1497,6 +1497,14 @@ machine_hash machine::get_root_hash() const {
     return m_ht.get_root_hash();
 }
 
+machine_hash machine::get_revert_root_hash() const {
+    return m_s->shadow.revert_root_hash;
+}
+
+void machine::set_revert_root_hash(const_machine_hash_view hash) {
+    std::ranges::copy(hash, m_s->shadow.revert_root_hash.begin());
+}
+
 std::string machine::get_address_name(uint64_t paddr) {
     if (paddr >= AR_UARCH_RAM_START && paddr - AR_UARCH_RAM_START < AR_UARCH_RAM_LENGTH) {
         return "uarch.ram";

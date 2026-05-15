@@ -549,6 +549,14 @@ do_test("should return expected value", function(machine)
     assert(root_hash == calculated_root_hash, "initial root hash does not match")
 end)
 
+print("\n\n test get_revert_root_hash and set_revert_root_hash")
+do_test("should round-trip correctly", function(machine)
+    local root_hash = machine:get_root_hash()
+    machine:set_revert_root_hash(root_hash)
+    local revert_hash = machine:get_revert_root_hash()
+    assert(root_hash == revert_hash, "revert root hash does not match hash that was set")
+end)
+
 print("\n\n test get_initial_config")
 do_test("should have expected values", function(machine)
     -- Check initial config
