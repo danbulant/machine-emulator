@@ -61,13 +61,22 @@ This is Cartesi's contribution to empowering application developers to express t
 
 ## What's in a machine
 
-Cartesi Machines are separated into a processor and a board.
+The key components of a Cartesi Machine are its main processor and a board.
 The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
 The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAM etc) and a number of devices.
 Memories and devices are mapped to the 64-bit physical address space of the Cartesi Machine.
 The amount of RAM, as well as the number, length, and position of the flash drives and NVRAMs in the address space can be chosen according to the needs of each particular application.
 The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its executions are reproducible.
 It can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
+
+In normal execution, the program being run by a Cartesi Machine is emulated by an _interpreter_ that has been compiled to run natively on the host computer.
+The execution of this program changes the registers and memories and interacts with the devices accessible to the main processor.
+The same interpreter code can be compiled to be run inside the _microarchitecture_ (uarch).
+The uarch can be seen as a separate emulator, with its own registers and memory, implementing a much narrower RISC-V ISA.
+The uarch's state is not visible to the main processor, but it has access to the entire state of the Cartesi Machine.
+In its pristine state, the uarch memory is loaded with the interpreter code, about to run one fetch-execute iteration of the main processor and then halt the uarch.
+Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
+This finer granularity is the basis for state-transition proofs, described in the [System architecture](#system-architecture) chapter.
 
 The initialization of a Cartesi Machine typically loads the Linux kernel into RAM, and a Linux root file-system (as a flash drive) from regular files in the host file-system.
 The Linux kernel `linux.bin`, is built by the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository.
@@ -90,7 +99,7 @@ After producing each response, the target application asks the machine to _yield
 The host extracts the response and _resumes_ the machine.
 When done with a given input, the target application once again asks the machine to yield control back to the host.
 The host then prepares the input for the next request, and _resumes_ the machine so the target application can service the next request in a new iteration of its loop.
-Inputs and responses are transferred in special memory ranges (_rollup_ memory ranges).
+Inputs and responses are transferred in special memory ranges (_CMIO_ memory ranges).
 Whatever state changes happen during the processing of a request will remain in effect when the next request is processed.
 Indeed, this is much like a server in which the target application can interact with the outside world.
 We say that a Cartesi Machine operating in this mode is a _Rolling Cartesi Machine_.
@@ -3304,25 +3313,26 @@ cartesi-machine \
 
 ## System architecture
 
-The RISC-V ISA, on which Cartesi Machines are based, consists of a minimal 32-bit integer instruction set to which several extensions can be added.
+The RISC-V ISA consists of a minimal integer instruction set to which several extensions can be added.
 The standard defines a privileged architecture with features commonly used by modern operating systems, such as multiple privilege levels, paged-based virtual-memory, timers, interrupts, exceptions and traps, etc.
 Implementations are free to select the combination of extensions that better suit their needs.
 
-The Cartesi Machine architecture can be separated into a processor and a board.
+The Cartesi Machine architecture can be separated into a main processor, board, and a microarchitecture (uarch).
 The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
-The board defines the surrounding environment with an assortment of memories (ROM, RAM, flash drives, rollup memory ranges) and a number of devices.
-To make verification possible, a Cartesi Machine maps its entire state to the physical address space in a well-defined way.
-This includes the internal states of the processor, the board, and of all attached devices.
-The contents of the address space therefore completely define the Cartesi Machine.
-Fortunately, this modification does not limit the operating system or the applications it hosts in any significant way.
+The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAMs, CMIO buffers etc) and a number of devices.
+The uarch includes its own smaller processor and memory, invisible to the main processor, but will full access into its inner working.
+It can drive the main processor at finer granularity that suitable for dispute resolution in the context of blockchains.
 
-Both the processor and board are implemented in the emulator.
+The Cartesi Machine maps its entire state to the physical address space in a well-defined way.
+This includes the internal states of the main processor, of the uarch processor, of all attached devices, and the contents of all memories.
+This state completely defines the Cartesi Machine.
+
 A full description of the RISC-V ISA is out of the scope of this documentation (See the volumes [1 and 2](https://riscv.org/technical/specifications/) of the ISA specification for details.)
-This section describes Cartesi's RISC-V architecture, the modifications made to support verification, the devices supported by the emulator, and the process the machine follows to boot the Linux kernel.
+This section describes the RISC-V architecture of the main processor and uarch, the modifications made to support verification, the devices supported by the emulator, and the process the machine follows to boot the Linux kernel.
 
-### The processor
+### The main processor
 
-Following RISC-V terminology, Cartesi Machines implement the `RV64IMAFDCZicsr_Zifencei` ISA.
+Following RISC-V terminology, the Cartesi Machine's main processor implements the `RV64IMAFDCZicsr_Zifencei` ISA.
 The letters after RV specify the extension set.
 This selection corresponds to a 64-bit machine, integer arithmetic with multiplication and division, atomic operations, single- and double-precision floating-point arithmetic, and compressed instructions, as well as the optional supervisor and user privilege levels.
 In addition, Cartesi Machines support the Sv39 mode of address translation and memory protection.
@@ -3519,12 +3529,68 @@ It remains set until the host clears it (either directly, or as a side effect of
 * Register&nbsp;`icycleinstret` holds the difference between `mcycle` and the architectural instruction count.
 * Register&nbsp;`iunrep` is non-zero in machines configured as unreproducible, a creation-time mode that enables host VirtIO devices in exchange for giving up state-hash verifiability.
 
+### The microarchitecture
+
+In contrast to the main processor, the uarch processor implements the much more restricted RV64I set.
+This includes only 52 instructions, the implementation of which can be directly translated to run in any programmable blockchain.
+It has 32 general-purpose integer registers (`uarch_x0`&hellip;`uarch_x31`), a program counter&nbsp;(`uarch_pc`), a cycle counter&nbsp;(`uarch_cycle`), and a halt flag&nbsp;(`uarch_halt_flag`).
+Like the main processor, the uarch makes its entire state available, externally and read-only, by mapping every register to its own 4KiB <i>uarch shadow</i> range.
+The mapping is given in the following table:
+
+```{.lua key=uarch_reg_addr replace=null enabled=yes outputs=uarch_halt_flag,uarch_cycle,uarch_pc,uarch_x0,uarch_x1,uarch_x31}
+local cartesi = require "cartesi"
+local names = {"uarch_halt_flag", "uarch_cycle", "uarch_pc",
+    "uarch_x0", "uarch_x1", "uarch_x31"}
+for _, name in ipairs(names) do
+    local f = assert(io.open(name, "w"))
+    f:write(string.format("0x%06x", cartesi.machine:get_reg_address(name)))
+    f:close()
+end
+```
+
+<center>
+<table>
+<tr>
+<th>Offset</th>
+<th>Register</th>
+<th>Offset</th>
+<th>Register</th>
+</tr>
+<tr>
+<td>[]{replace=uarch_reg_addr/uarch_halt_flag enabled=yes}</td>
+<td><tt>uarch_halt_flag</tt></td>
+<td>[]{replace=uarch_reg_addr/uarch_x0 enabled=yes}</td>
+<td><tt>uarch_x0</tt></td>
+</tr>
+<tr>
+<td>[]{replace=uarch_reg_addr/uarch_cycle enabled=yes}</td>
+<td><tt>uarch_cycle</tt></td>
+<td>[]{replace=uarch_reg_addr/uarch_x1 enabled=yes}</td>
+<td><tt>uarch_x1</tt></td>
+</tr>
+<tr>
+<td></td>
+<td></td>
+<td><tt>&hellip;</tt></td>
+<td><tt>&hellip;</tt></td>
+</tr>
+<tr>
+<td>[]{replace=uarch_reg_addr/uarch_pc enabled=yes}</td>
+<td><tt>uarch_pc</tt></td>
+<td>[]{replace=uarch_reg_addr/uarch_x31 enabled=yes}</td>
+<td><tt>uarch_x31</tt></td>
+</tr>
+</table>
+</center>
+
+In addition to being able to access all memory ranges and devices visible to the main processor, the uarch includes a private 2MiB of RAM.
+
 ### The board
 
 The interaction between board and processor happens through interrupts and the memory bus. Devices are mapped to the processor's physical address space.
 The mapping can be seen in the following table:
 
-```{.lua key=ar_table replace=null enabled=yes outputs=shadow,tlb,pmas,clint,htif,virtio,plic,cmio_rx,cmio_tx,dtb,ram_start,drive_start}
+```{.lua key=ar_table replace=null enabled=yes outputs=shadow,tlb,pmas,pmas_start,clint,htif,virtio,plic,cmio_rx,cmio_tx,dtb,ram_start,drive_start,uarch_shadow,uarch_ram}
 local c = require "cartesi"
 local function write(name, content)
     local f = assert(io.open(name, "w"))
@@ -3533,18 +3599,21 @@ local function write(name, content)
 end
 local function range_se(start, e) return string.format("0x%08x-0x%08x", start, e) end
 local function range_sl(start, len) return range_se(start, start + len - 1) end
-write("shadow",  range_se(c.AR_SHADOW_STATE_START,     c.AR_SHADOW_TLB_START - 1))
-write("tlb",     range_sl(c.AR_SHADOW_TLB_START,       c.AR_SHADOW_TLB_LENGTH))
-write("pmas",    range_sl(c.AR_PMAS_START,             c.AR_PMAS_LENGTH))
-write("clint",   range_sl(c.AR_CLINT_START,            c.AR_CLINT_LENGTH))
-write("htif",    range_sl(c.AR_HTIF_START,             c.AR_HTIF_LENGTH))
-write("virtio",  range_se(c.AR_FIRST_VIRTIO_START,     c.AR_LAST_VIRTIO_END - 1))
-write("plic",    range_sl(c.AR_PLIC_START,             c.AR_PLIC_LENGTH))
-write("cmio_rx", range_sl(c.AR_CMIO_RX_BUFFER_START,   1 << c.AR_CMIO_RX_BUFFER_LOG2_SIZE))
-write("cmio_tx", range_sl(c.AR_CMIO_TX_BUFFER_START,   1 << c.AR_CMIO_TX_BUFFER_LOG2_SIZE))
-write("dtb",     range_sl(c.AR_DTB_START,              c.AR_DTB_LENGTH))
-write("ram_start",   string.format("0x%x", c.AR_RAM_START))
-write("drive_start", string.format("0x%x", c.AR_DRIVE_START))
+write("shadow",       range_se(c.AR_SHADOW_STATE_START,      c.AR_SHADOW_TLB_START - 1))
+write("tlb",          range_sl(c.AR_SHADOW_TLB_START,        c.AR_SHADOW_TLB_LENGTH))
+write("pmas",         range_sl(c.AR_PMAS_START,              c.AR_PMAS_LENGTH))
+write("pmas_start",   string.format("0x%x",                  c.AR_PMAS_START))
+write("clint",        range_sl(c.AR_CLINT_START,             c.AR_CLINT_LENGTH))
+write("htif",         range_sl(c.AR_HTIF_START,              c.AR_HTIF_LENGTH))
+write("virtio",       range_se(c.AR_FIRST_VIRTIO_START,      c.AR_LAST_VIRTIO_END - 1))
+write("plic",         range_sl(c.AR_PLIC_START,              c.AR_PLIC_LENGTH))
+write("cmio_rx",      range_sl(c.AR_CMIO_RX_BUFFER_START,    1 << c.AR_CMIO_RX_BUFFER_LOG2_SIZE))
+write("cmio_tx",      range_sl(c.AR_CMIO_TX_BUFFER_START,    1 << c.AR_CMIO_TX_BUFFER_LOG2_SIZE))
+write("dtb",          range_sl(c.AR_DTB_START,               c.AR_DTB_LENGTH))
+write("ram_start",    string.format("0x%x",                  c.AR_RAM_START))
+write("drive_start",  string.format("0x%x",                  c.AR_DRIVE_START))
+write("uarch_shadow", range_sl(c.UARCH_SHADOW_START_ADDRESS, c.UARCH_SHADOW_LENGTH))
+write("uarch_ram",    range_sl(c.UARCH_RAM_START_ADDRESS,    c.UARCH_RAM_LENGTH))
 ```
 
 <center>
@@ -3564,6 +3633,14 @@ write("drive_start", string.format("0x%x", c.AR_DRIVE_START))
 <tr>
   <td> []{replace=ar_table/pmas enabled=yes} </td>
   <td> PMA Array </td>
+</tr>
+<tr>
+  <td> []{replace=ar_table/uarch_shadow enabled=yes} </td>
+  <td> Uarch shadow </td>
+</tr>
+<tr>
+  <td> []{replace=ar_table/uarch_ram enabled=yes} </td>
+  <td> Uarch RAM </td>
 </tr>
 <tr>
   <td> []{replace=ar_table/clint enabled=yes} </td>
@@ -3920,209 +3997,200 @@ Otherwise, the emulator will immediately return with no changes to its state.
 
 #### Rollup
 
-In order to interact with Cartesi Rollups, the host application controlling the emulator and the target application running inside the emulator  must follow an agreed-upon protocol, mediated by the HTIF Yield device.
+In order to interact with Cartesi Rollups, the host application controlling the emulator and the target application running inside the emulator must follow an agreed-upon protocol, mediated by the HTIF Yield device.
 
 The low-level view of what happens inside the machine is as follows:
 ```
 Initialize
+`reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+`length` = 0
 Repeat
-    `voucher_index` = 0
-    `notice_index` = 0
-    `reason` = HTIF_YIELD_REASON_RX_ACCEPTED
-    Yield manual with `reason` as `REASON` in `tohost`
-    If `DATA` in `fromhost` is `HTIF_YIELD_ADVANCE_STATE`
-        Read input metadata from Rollup Input Metadata
-        Read input data from Rollup RX Buffer
+    Yield manual with `reason` as `REASON` and `length` as `DATA` in `tohost`
+    If `DATA` in `fromhost` is HTIF_YIELD_REASON_ADVANCE_STATE
+        Read ABI-encoded EvmAdvance(...) from CMIO RX buffer
         Process advance-state request
-        For each voucher to emit
-            Write voucher data to Rollup TX Buffer
-            Write voucher hash to slot `voucher_index` in Rollup Voucher Hashes
-            `voucher_index` = `voucher_index` + 1
-            Yield automatic with HTIF_YIELD_REASON_TX_VOUCHER as `REASON` in `tohost`
-        End
-        For each notice to emit
-            Write notice data to Rollup TX Buffer
-            Write notice hash to slot `notice_index` in Rollup Notice Hashes
-            `notice_index` = `notice_index` + 1
-            Yield automatic with HTIF_YIELD_REASON_TX_NOTICE as `REASON` in `tohost`
+        For each output to emit (voucher, delegate-call voucher, or notice)
+            Write ABI-encoded output to CMIO TX buffer and its length to `length`
+            Add output hash to output-hashes Merkle tree
+            Yield automatic with HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT as `REASON` and `length` as `DATA` in `tohost`
         End
         For each report to emit
-            Write report data to Rollup TX Buffer
-            Yield automatic with HTIF_YIELD_REASON_TX_REPORT as `REASON` in `tohost`
+            Write raw report data to CMIO TX buffer and its length to `length`
+            Yield automatic with HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT as `REASON` and `length` as `DATA` in `tohost`
         End
         If exception to emit
-            Write exception data to Rollup TX Buffer
-            Yield automatic with HTIF_YIELD_REASON_TX_EXCEPTION as `REASON` in `tohost`
+            Write raw exception data to CMIO TX buffer and its length to `length`
+            `reason` = HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
         ElseIf input rejected
-            `reason` = HTIF_YIELD_REASON_RX_REJECTED
+            `length` = 0
+            `reason` = HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+        Else
+            Write output-hashes Merkle root to CMIO TX buffer
+            `length` = hash size
+            `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
         End
-    End
-    If `DATA` in `fromhost` is `HTIF_YIELD_INSPECT_STATE`
-        Read query data from Rollup RX Buffer
+    ElseIf `DATA` in `fromhost` is HTIF_YIELD_REASON_INSPECT_STATE
+        Read raw query from CMIO RX buffer
         Process inspect-state request
-        For each report
-            Write report data to Rollup TX Buffer
-            Yield automatic with HTIF_YIELD_REASON_TX_REPORT as `REASON` in `tohost`
+        For each report to emit
+            Write raw report data to CMIO TX buffer and its length to `length`
+            Yield automatic with HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT as `REASON` and `length` as `DATA` in `tohost`
         End
-        If exception
-            Write exception data to Rollup TX Buffer
-            Yield automatic with HTIF_YIELD_REASON_TX_EXCEPTION as `REASON` in `tohost`
-        ElseIf input rejected
-            `reason` = HTIF_YIELD_REASON_RX_REJECTED
+        If exception to emit
+            Write raw exception data to CMIO TX buffer and its length to `length`
+            `reason` = HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
+        Else
+            `length` = 0
+            `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
         End
+    Else
+        `length` = 0
+        `reason` = HTIF_YIELD_MANUAL_REASON_RX_REJECTED
     End
 End
 ```
-At a higher level, the target application running inside the emulator is supported by the `/dev/rollup` Linux device driver via its `ioctl` interface, or by even higher-level interfaces based on it, such as `/opt/cartesi/bin/rollup` command-line utility or the HTTP API exposed by the `/opt/cartesi/bin/rollup-http-server` command-line utility.
-It is the `/dev/rollup` device that copies data to and from all rollup memory ranges, and that uses the `/dev/yield` device to perform the required yields.
+At a higher level, the target application running inside the emulator is supported by the libcmt library or by even higher-level interfaces based on it, such as the `/usr/bin/rollup` command-line utility, the HTTP API exposed by the `/usr/bin/rollup-http-server` command-line utility, or a language-specific framework.
+The libcmt library handles ABI encoding and decoding, maintains the output-hashes Merkle tree in userspace, and uses the `/dev/cmio` and `/dev/yield` device drivers to move data to and from the CMIO buffers and perform the required yields.
+See [The libcmt library](#the-libcmt-library), [The /dev/cmio device](#the-devcmio-device), [The rollup command-line utility](#the-rollup-command-line-utility), and [The rollup HTTP server](#the-rollup-http-server) for the corresponding interfaces.
 
 There are two types of request: advance-state requests and inspect-state requests.
 The loop processes one request per iteration.
-To transition between requests, the application accepts or rejects the previous request by issuing a command to the HTIF yield device, or throws an exception.
-The return from the yield defines the type of the next request.
+To transition between requests, the application accepts the previous request, rejects it, or throws an exception.
+The return from the accept yield defines the type of the next request.
 
-When the application identifies an advance-state request, it obtains input medatada from the Rollup Input Metadata memory range, and input from the Rollup RX Buffer memory range.
-While processing advance-state requests, the application can emit vouchers, notices, reports, or exceptions.
-It writes the data for all these to the Rollup TX buffer memory range.
-Moreover, when emitting the ith voucher (respectively, notice) in response to a given input, it writes its hash to the ith 32-byte slot in the Rollup Voucher Hashes (respectively, Rollup Notice Hashes) memory range.
-It then issues the appropriate command to the HTIF yield device.
+When the application identifies an advance-state request, it reads the ABI-encoded input from the CMIO RX buffer.
+While processing advance-state requests, the application can emit outputs (vouchers, delegate-call vouchers, or notices) and reports, in any order.
+Outputs and reports are written to the CMIO TX buffer.
+Outputs contribute to the output-hashes Merkle tree maintained by libcmt.
+When the application is ready to accept the next input, libcmt writes the current output-hashes Merkle root to the CMIO TX buffer as part of the accept yield.
 
-When an application identifies an inspect-state request, it obtains the query from the Rollup RX buffer memory range.
-While processing inspect-state requests, the application can emit vouchers, or exceptions.
-It writes data for all these to the Rollup TX buffer memory range and sends the appropriate command to the HTIF yield device.
+When an application identifies an inspect-state request, it reads the raw query from the CMIO RX buffer.
+While processing inspect-state requests, the application can emit reports.
+Reports are written to the CMIO TX buffer and do not affect the output-hashes Merkle tree.
 
-The format for all these request and response data are as follows: <a name="rollup-format"></a>
+Instead of accepting or rejecting a request, the application can emit an exception to signal some unrecoverable error.
+The exception is also written to the CMIO TX buffer.
+
+All data exchanged through the CMIO buffers follows the Solidity ABI specification.
+Advance-state inputs arrive in the CMIO RX buffer as `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 inputIndex, bytes payload)`.
+Vouchers are encoded as `Voucher(address destination, uint256 value, bytes payload)`.
+Delegate-call vouchers are encoded as `DelegateCallVoucher(address destination, bytes payload)`.
+Notices are encoded as `Notice(bytes payload)`.
+Reports, inspect queries, and exceptions travel as raw bytes.
+
+In the host, the loop is as follows:
+```
+Save fresh fork of machine as a snapshot
+Repeat
+    Obtain the next request from an external source
+    If advance-state request
+        Write the current state hash to the state at AR_SHADOW_REVERT_ROOT_HASH_START
+        Write ABI-encoded EvmAdvance(...) to CMIO RX buffer and its length to `length`
+        Write HTIF_YIELD_REASON_ADVANCE_STATE to `REASON` and `length` as `DATA` in `fromhost`
+        Reset register `iflags_Y` to 0
+        While register `iflags_H` is 0 and register `iflags_Y` is 0 (neither halted nor manual yield)
+            Resume machine
+            If register `iflags_X` is set (automatic yield)
+                If `REASON` in `tohost` is HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
+                    `length` = `DATA` from `tohost`
+                    Read ABI-encoded output from CMIO TX buffer using `length`
+                End
+                If `REASON` in `tohost` is HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT
+                    `length` = `DATA` from `tohost`
+                    Read raw report data from CMIO TX buffer using `length`
+                End
+            End
+        End
+        If register `iflags_Y` is not 0 (machine yielded manual)
+            If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+                Replace machine with fresh fork of snapshot
+            End
+            If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+                `length` = `DATA` from `tohost` (length of hash)
+                Read output-hashes Merkle root from CMIO TX buffer using `length`
+                Replace snapshot with fresh fork of machine
+            End
+            If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
+                `length` = `DATA` from `tohost`
+                Read raw exception data from CMIO TX buffer using `length`
+                Abort
+            End
+        End
+        If register `iflags_H` is not 0 (machine is halted)
+            Abort
+        End
+    End
+    If inspect-state request
+        Write raw query to CMIO RX buffer and its length to `length`
+        Write HTIF_YIELD_REASON_INSPECT_STATE to `REASON` and `length` as `DATA` in `fromhost`
+        Reset register `iflags_Y` to 0
+        While register `iflags_H` is 0 and register `iflags_Y` is 0 (neither halted nor manual yield)
+            Resume machine
+            If register `iflags_X` is set (automatic yield)
+                If `REASON` in `tohost` is HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT
+                    `length` = `DATA` from `tohost`
+                    Read raw report data from CMIO TX buffer using `length`
+                End
+            End
+        End
+        Replace machine with fresh fork of snapshot
+    End
+End
+```
+The host controls the emulator via the C, Lua, or JSON-RPC APIs.
+It loops obtaining requests from an external source.
+Processing requests modifies the state of the machine.
+However, at the end of a request, the host may have to revert these changes.
+Therefore, the host keeps a snapshot of the state of the machine before any request is processed.
+
+For an advance-state request, the host first writes the current state hash to the machine state using `machine:set_revert_root_hash(machine:get_root_hash())`.
+(This, of course, changes the state so its hash is not what has just been written, but this is expected.)
+It then writes the request to the CMIO RX buffer and its type and length to the HTIF register `fromhost`, and unblocks the machine by clearing its `iflags_Y` register.
+The machine is now ready to be resumed.
+The host loops resuming the machine and collecting its outputs or reports every time it yields automatic.
+The target application is eventually done with the input.
+If it rejects the input, the host drops the current machine and replaces it with a copy of the snapshot.
+If it accepts the input, the host replaces the snapshot with a copy of the current machine, and collects the new output-hashes Merkle root.
+If it threw an exception or halted, the host aborts.
+
+For an inspect-state request, the loop is very similar.
+The differences are that only reports are collected (outputs are ignored), and that the machine is always reverted back to a copy of its snapshot.
+
+#### Address ranges
+
+A Cartesi Machine contains many address ranges.
+The ranges visible to code running inside the big machine are mapped at fixed positions in its 64-bit physical address space.
+These are the ranges listed in the [board mapping table](#the-board) at the start of this chapter, exposed to Lua via the `cartesi.AR_*` constants, and discoverable at runtime via the [PMA array](#pmas) described in the next subsection.
+
+The microarchitecture has its own private address ranges, which are not accessible from code running inside the big machine:
 
 <center>
 <table>
 <tr>
-<th colspan="2">Format for input metadata</th>
+  <th> Physical address </th>
+  <th> Mapping </th>
 </tr>
 <tr>
-<th>Offset (bytes)</th>
-<th>Field</th>
+  <td> []{replace=ar_table/uarch_shadow enabled=yes} </td>
+  <td> Microarchitecture shadow </td>
 </tr>
 <tr>
-<td><tt>0&ndash;31</tt></td>
-<td>message sender (address hash)</td>
-</tr>
-<tr>
-<td><tt>32&ndash;63</tt></td>
-<td>block number (number)</td>
-</tr>
-<tr>
-<td><tt>64&ndash;95</tt></td>
-<td>time stamp (number)</td>
-</tr>
-<tr>
-<td><tt>96&ndash;127</tt></td>
-<td>epoch index (number)</td>
-</tr>
-<tr>
-<td><tt>128&ndash;159</tt></td>
-<td>input index (number)</td>
-</tr>
-<tr>
-<th colspan="2">Format for voucher</th>
-</tr>
-<tr>
-<th>Offset (bytes)</th>
-<th>Field</th>
-</tr>
-<tr>
-<td><tt>0&ndash;31</tt></td>
-<td>address (address hash)</td>
-</tr>
-<tr>
-<td><tt>32&ndash;63</tt></td>
-<td>offset (number, always 64)</td>
-</tr>
-<tr>
-<td><tt>64&ndash;95</tt></td>
-<td>length (number)</td>
-</tr>
-<tr>
-<td><tt>96&ndash;96+length-1</tt></td>
-<td>payload (raw data)</td>
-</tr>
-<tr>
-<th colspan="2">Format for input, notice, report, and exception</th>
-</tr>
-<tr>
-<th>Offset (bytes)</th>
-<th>Field</th>
-</tr>
-<tr>
-<td><tt>0&ndash;31</tt></td>
-<td>offset (number, always 32)</td>
-</tr>
-<tr>
-<td><tt>32&ndash;63</tt></td>
-<td>length (number)</td>
-</tr>
-<tr>
-<td><tt>64&ndash;64+length-1</tt></td>
-<td>payload (raw data)</td>
+  <td> []{replace=ar_table/uarch_ram enabled=yes} </td>
+  <td> Microarchitecture RAM </td>
 </tr>
 </table>
 </center>
-All numbers are encoded as 256-bit big-endian integers.
-Address hashes are encoded in the least significant 160-bits of a zero-padded 256-bit big-endian integer.
 
-In the host, the loop is as follows:
-```
-While bit `H` in `iflags` is not set (machine has not halted)
-    Snapshot machine state
-    Resume machine
-    If bit `Y` in `iflags` is set (i.e. manual yield)
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_RX_REJECTED
-            Discard vouchers and notices emitted from previous request, if any
-            Rollback machine state
-        End
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_TX_EXCEPTION
-            Read exception data from Rollup TX Buffer
-            Discard vouchers and notices emitted from previous request, if any
-            Rollback machine state
-        End
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_RX_ACCEPTED
-            If previous request was advance-state
-                Read Rollup Voucher Hashes for previous request
-                Read Rollup Notice Hashes for previous request
-            End
-            Obtain the next request from an external source
-            If advance-state request
-                Clear Rollup Voucher Hashes
-                Clear Rollup Notice Hashes
-                Write input data to Rollup RX Buffer
-                Write input metadata to Rollup Input Metadata
-                Write HTIF_YIELD_ADVANCE_STATE to `DATA` in `fromhost`
-            End
-            If inspect-state request
-                Write query data to Rollup RX Buffer
-                Write HTIF_YIELD_INSPECT_STATE to `DATA` in `fromhost`
-            End
-            Clear `Y` bit in `iflags`
-        End
-    End
-    If bit `X` in `iflags` is set (i.e. automatic yield)
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_TX_VOUCHER
-            Read voucher data from rollup memory ranges
-        End
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_TX_NOTICE
-            Read notice data from rollup memory ranges
-        End
-        If `REASON` in `tohost` is HTIF_YIELD_REASON_TX_REPORT
-            Read report data from Rollup TX Buffer
-        End
-    End
-End
-```
-In production, the host application controlling the emulator is the Server Manager
-While prototyping, it can be the `cartesi-machine` command-line utility, or even a custom script using the Lua API.
+The microarchitecture shadow holds the uarch processor state.
+The microarchitecture RAM holds the uarch program that decodes and executes one big-machine instruction per uarch run before halting.
 
 #### PMAs
 
-The physical memory mapping is described by Physical Memory Attribute records (PMAs) that start at address `0x00000800` (the <i>board shadow</i>) .
+Every address range visible to code running inside the big machine has a corresponding entry in the array of Physical Memory Attribute records (PMAs).
+The PMA array occupies []{replace=ar_table/pmas enabled=yes} and starts at address []{replace=ar_table/pmas_start enabled=yes} (exposed as `cartesi.AR_PMAS_START`).
+This is how the RISC-V interpreter discovers the available ranges at runtime, regardless of whether it is compiled to run directly on the host, inside the microarchitecture, or inside a ZK prover.
+Address ranges private to the microarchitecture do not appear in the PMA array.
+
 Each PMA consists of 2 64-bit words.
 The first word gives the start of a range and the second word its length.
 These words are readable both internally and externally.
@@ -4175,6 +4243,18 @@ Bits `R`, `W`, and&nbsp;`X` mark read, write, and execute permissions, respectiv
 The `IR` and&nbsp;`IW` bits mark the range as idempotent for reads and writes, respectively.
 Finally, the `DID` gives the device id, which can have the following values:
 
+```{.lua key=pma_did replace=null enabled=yes outputs=PMA_EMPTY_DID,PMA_MEMORY_DID,PMA_SHADOW_STATE_DID,PMA_FLASH_DRIVE_DID,PMA_CLINT_DID,PMA_HTIF_DID,PMA_PLIC_DID,PMA_CMIO_RX_BUFFER_DID,PMA_CMIO_TX_BUFFER_DID,PMA_SHADOW_UARCH_STATE_DID,PMA_VIRTIO_DID,PMA_NVRAM_DID}
+local cartesi = require "cartesi"
+for _, n in ipairs({"PMA_EMPTY_DID", "PMA_MEMORY_DID", "PMA_SHADOW_STATE_DID",
+        "PMA_FLASH_DRIVE_DID", "PMA_CLINT_DID", "PMA_HTIF_DID", "PMA_PLIC_DID",
+        "PMA_CMIO_RX_BUFFER_DID", "PMA_CMIO_TX_BUFFER_DID",
+        "PMA_SHADOW_UARCH_STATE_DID", "PMA_VIRTIO_DID", "PMA_NVRAM_DID"}) do
+    local f = assert(io.open(n, "w"))
+    f:write(tostring(cartesi[n]))
+    f:close()
+end
+```
+
 <center>
 <table>
 <tr>
@@ -4182,48 +4262,52 @@ Finally, the `DID` gives the device id, which can have the following values:
   <th> Value </th>
 </tr>
 <tr>
-  <td><tt>PMA_MEMORY_DID</tt></td>
-  <td>0</td>
+  <td><tt>PMA_EMPTY_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_EMPTY_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_SHADOW_DID</tt></td>
-  <td>1</td>
+  <td><tt>PMA_MEMORY_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_MEMORY_DID enabled=yes}</td>
+</tr>
+<tr>
+  <td><tt>PMA_SHADOW_STATE_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_SHADOW_STATE_DID enabled=yes}</td>
 </tr>
 <tr>
   <td><tt>PMA_FLASH_DRIVE_DID</tt></td>
-  <td>2</td>
+  <td>[]{replace=pma_did/PMA_FLASH_DRIVE_DID enabled=yes}</td>
 </tr>
 <tr>
   <td><tt>PMA_CLINT_DID</tt></td>
-  <td>3</td>
+  <td>[]{replace=pma_did/PMA_CLINT_DID enabled=yes}</td>
 </tr>
 <tr>
   <td><tt>PMA_HTIF_DID</tt></td>
-  <td>4</td>
+  <td>[]{replace=pma_did/PMA_HTIF_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_DHD_DID</tt></td>
-  <td>5</td>
+  <td><tt>PMA_PLIC_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_PLIC_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_ROLLUP_RX_BUFFER_DID</tt></td>
-  <td>6</td>
+  <td><tt>PMA_CMIO_RX_BUFFER_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_CMIO_RX_BUFFER_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_ROLLUP_TX_BUFFER_DID</tt></td>
-  <td>7</td>
+  <td><tt>PMA_CMIO_TX_BUFFER_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_CMIO_TX_BUFFER_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_ROLLUP_INPUT_METADATA_DID</tt></td>
-  <td>8</td>
+  <td><tt>PMA_SHADOW_UARCH_STATE_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_SHADOW_UARCH_STATE_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_ROLLUP_VOUCHER_HASHES_DID</tt></td>
-  <td>9</td>
+  <td><tt>PMA_VIRTIO_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_VIRTIO_DID enabled=yes}</td>
 </tr>
 <tr>
-  <td><tt>PMA_ROLLUP_NOTICE_HASHES_DID</tt></td>
-  <td>10</td>
+  <td><tt>PMA_NVRAM_DID</tt></td>
+  <td>[]{replace=pma_did/PMA_NVRAM_DID enabled=yes}</td>
 </tr>
 </table>
 </center>
