@@ -11,9 +11,11 @@
 **/*.deb
 
 build
+tests/build
 third-party/downloads
 src/cartesi-jsonrpc-machine
 src/cartesi-hash-tree-hash
+doc/recipes/cache
 
 doc/html
 doc/api.md

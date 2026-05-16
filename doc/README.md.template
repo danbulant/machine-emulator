@@ -63,7 +63,7 @@ This is Cartesi's contribution to empowering application developers to express t
 
 The key components of a Cartesi Machine are its main processor and a board.
 The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
-The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAM etc) and a number of devices.
+The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAMs etc) and a number of devices.
 Memories and devices are mapped to the 64-bit physical address space of the Cartesi Machine.
 The amount of RAM, as well as the number, length, and position of the flash drives and NVRAMs in the address space can be chosen according to the needs of each particular application.
 The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its executions are reproducible.
@@ -438,8 +438,7 @@ The output is
 
 ### Persistent flash drives
 
-By default, the emulator does *not* modify the image files associated to any of its memory ranges (such the RAM and flash
-drives.)
+By default, the emulator does *not* modify the image files associated to any of its memory ranges (such as the RAM, flash drives, and NVRAMs).
 However, since these image files can be very large, the emulator does not pre-allocate any host memory for them.
 Instead, it uses the operating system's memory mapping capabilities.
 The operating system reads to host memory only those pages from the image file that are actually read by code executing in the target.
@@ -575,7 +574,7 @@ In particular, the section explains the _manual_ yield commands needed for prope
 The `cartesi-machine` utility can also be used to print Cartesi Machine state hashes.
 State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
 (See the [Hash view of states](#hash-view-of-state) for an explanation of Merkle trees.)
-Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM and ROM, of all flash drives, and of all other devices connected to the board.
+Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices connected to the board.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
 To obtain the state hash right before execution starts, use the command-line option `--initial-hash`.
@@ -2322,7 +2321,7 @@ The result is, as expected,
 ### State hashes
 
 State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 64-bit words.
-Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all the processor's CSRs and general-purpose registers, the contents of RAM and ROM, of all flash drives, and of all other devices or memory ranges connected to the board.
+Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all the processor's CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices or memory ranges connected to the board.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
 The following script shows how state hashes can be obtained from a Cartesi Machine instance:
@@ -4316,13 +4315,9 @@ The list of PMA records ends with an invalid PMA entry for which `length=0`.
 
 ### Linux setup
 
-By default, `pc` starts at `0x1000`, pointing to the start of the ROM region.
-Before control reaches the RAM image (and ultimately the Linux kernel), a small program residing in ROM builds a [<i>devicetree</i>](http://devicetree.org/) describing the hardware.
-Cartesi's ROM image `rom.bin` containing this program can be generated from the `rom/` directory of the [Cartesi Machine SDK](https://github.com/cartesi/machine-emulator-sdk).
-To do so, it goes over the PMA entries identifying the devices and their locations in the physical address space.
-It also looks for a null-terminated string, starting at the last 4k of the ROM region, that will be used as the command-line for the Linux kernel.
-Once the devicetree is ready, the ROM program sets register&nbsp;`x10` to 0 (the value of&nbsp;`mhartid`), `x11` to point to the devicetree (which it places at the end of the RAM region), and then jumps to RAM-base at&nbsp; address `0x80000000`.
-This is where the entry point of the RAM image is expected to reside.
+By default, `pc` starts at the beginning of RAM (address []{replace=ar_ram_start/stdout enabled=yes}), where the RAM image is loaded.
+The emulator builds a [<i>devicetree</i>](http://devicetree.org/) describing the hardware at instantiation time, derived from the machine configuration, and writes it into the DTB memory range immediately below RAM.
+The start address of the DTB ([]{replace=ar_dtb_start/stdout enabled=yes}) is pre-loaded in register&nbsp;`a1`, per the conventional RISC-V boot ABI.
 
 The `dtc` command-line utility can be used to inspect the devicetree:
 
@@ -4346,21 +4341,24 @@ Notice the specification of the root file-system as `root=/dev/pmem0` in the boo
 Also notice the command `dtc -I dtb -O dts /sys/firmware/fdt` coming directly from the `cartesi-machine` command line.
 
 Linux support for RISC-V is upstream in the [Linux kernel archives](https://www.kernel.org/).
-The kernel runs in supervisor mode, on top of a Supervisor Binary Interface (SBI) provided by a machine-mode shim: the Berkeley Boot Loader (BBL).
-The BBL is linked against the Linux kernel and this resulting RAM image is preloaded into RAM.
-Cartesi's RAM image `linux.bin` can be generated from the `kernel/` directory of the [Cartesi Machine SDK](https://github.com/cartesi/machine-emulator-sdk).
-The SBI provides a simple interface through which the kernel interacts with CLINT and HTIF.
-Besides implementing the SBI, the BBL also installs a trap that catches invalid instruction exceptions.
-This mechanism can be used, for example, to emulate floating-point instructions, although it is more efficient to setup the target toolchain to replace floating point instructions with calls to a soft-float implementation instead.
-After installing the trap, BBL switches to supervisor mode and cedes control to the kernel entry point.
+The kernel runs in supervisor mode, on top of a Supervisor Binary Interface (SBI) provided by a machine-mode shim: a [Cartesi fork](https://github.com/cartesi/opensbi) of [OpenSBI](https://github.com/riscv-software-src/opensbi), with Cartesi-specific extensions used by the kernel to talk to HTIF.
+Cartesi's RAM image `linux.bin` is an OpenSBI `fw_payload` bundle, with the kernel embedded as the payload, built from the [`machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository.
+OpenSBI occupies the first 512KiB of RAM, declared as a no-map region in the device tree so the kernel does not touch it.
+After self-initialization, OpenSBI switches to supervisor mode and cedes control to the kernel entry point.
 
-After completing its own initialization, the kernel mounts the root file-system and eventually cedes control to&nbsp;`/sbin/init`.
-Cartesi's root file-system `rootfs.ext2` can be generated from the `fs/` directory in the [Cartesi Machine SDK](https://github.com/cartesi/machine-emulator-sdk).
-The Cartesi-provided `/sbin/init` script scans all flash devices `/dev/mtdblock1`&ndash;`/dev/mtdblock7` for valid file-systems.
-When a file-system is found, the script obtains the corresponding `<label>` (set in the `mtdparts` kernel command-line parameter) by inspecting `/sys/block/mtdblock*/device/name` and mounts the file-system at `/mnt/<label>`.
-The kernel passes to `/sbin/init` as command-line parameters all arguments after the separator&nbsp;`--`&nbsp;in the `bootargs` string it found in the devicetree.
-The Cartesi-provided `/sbin/init` script concatenates all arguments into a string and executes the command in this string in a shell.
-When the shell returns, `/sbin/init` unmount all file-systems and gracefully halts the machine.
+```{.lua key=dtb_bootargs_root_part replace=null enabled=yes}
+local cartesi = require "cartesi"
+io.write(cartesi.DTB_BOOTARGS_ROOT_PART)
+```
+
+```{.lua key=dtb_bootargs_init_part replace=null enabled=yes}
+local cartesi = require "cartesi"
+io.write(cartesi.DTB_BOOTARGS_INIT_PART)
+```
+
+After completing its own initialization, the kernel mounts the root file-system (by default <tt>[]{replace=dtb_bootargs_root_part/stdout enabled=yes}</tt>) and cedes control to the program named by the&nbsp;`init=`&nbsp;parameter (by default <tt>[]{replace=dtb_bootargs_init_part/stdout enabled=yes}</tt>).
+Cartesi's root file-system `rootfs.ext2` is built from the [`machine-guest-tools`](https://github.com/cartesi/machine-guest-tools) repository, which also installs `cartesi-init` and the rollups user-space tooling.
+See [Initialization](#initialization) under the Target perspective for what `cartesi-init` does after the kernel hands off.
 
 # Blockchain perspective
 
@@ -4388,7 +4386,7 @@ Nevertheless, for smart contracts to delegate computations off-chain, they must 
 The key to solving these seemingly contradictory goals is the clever use of cryptographic hashes.
 
 Cartesi Machines are transparent in the sense that their entire state is exposed for external inspection.
-This includes the ROM, the RAM, all flash drives, general purpose registers, control and status registers, and even the internal state of all devices.
+This includes the RAM, all flash drives and NVRAMs, general purpose registers, control and status registers, and even the internal state of all devices.
 In fact, the entire machine state is mapped into the 64-bit physical memory address space of the Cartesi Machine.
 (The exact mapping is given in the [system architecture](#system-architecture) section of the target perspective.)
 This means that, right before a machine is executed, a cryptographic hash of its entire state can be generated.

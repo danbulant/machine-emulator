@@ -1,3 +1,5 @@
 Makefile
 README.md.template
 doxygen
+recipes/cache
+recipes/*.ext2
