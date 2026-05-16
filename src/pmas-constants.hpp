@@ -54,7 +54,7 @@ enum PMA_ISTART_masks : uint64_t {
     PMA_ISTART_START_MASK = UINT64_C(-1) << PMA_ISTART_START_SHIFT ///< Start of range
 };
 
-/// \brief PMA device ids
+/// \brief PMA driver ids
 enum class PMA_ISTART_DID : uint8_t {
     empty = PMA_EMPTY_DID_DEF,                           ///< DID for empty range
     memory = PMA_MEMORY_DID_DEF,                         ///< DID for memory

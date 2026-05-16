@@ -92,20 +92,20 @@ typedef enum cm_pmas_constant {
     CM_AR_DTB_LENGTH = 0x100000,
 } cm_pmas_constant;
 
-/// \brief Device IDs for PMA entries.
+/// \brief Driver IDs for PMA entries.
 typedef enum cm_pma_did {
-    CM_PMA_EMPTY_DID = 0,              ///< Device ID for empty range
-    CM_PMA_MEMORY_DID = 1,             ///< Device ID for memory
-    CM_PMA_SHADOW_STATE_DID = 2,       ///< Device ID for shadow state device
-    CM_PMA_FLASH_DRIVE_DID = 3,        ///< Device ID for flash drive device
-    CM_PMA_CLINT_DID = 4,              ///< Device ID for CLINT device
-    CM_PMA_HTIF_DID = 5,               ///< Device ID for HTIF device
-    CM_PMA_PLIC_DID = 6,               ///< Device ID for PLIC device
-    CM_PMA_CMIO_RX_BUFFER_DID = 7,     ///< Device ID for CMIO RX buffer
-    CM_PMA_CMIO_TX_BUFFER_DID = 8,     ///< Device ID for CMIO TX buffer
-    CM_PMA_SHADOW_UARCH_STATE_DID = 9, ///< Device ID for uarch shadow state device
-    CM_PMA_VIRTIO_DID = 10,            ///< Device ID for VirtIO devices
-    CM_PMA_NVRAM_DID = 11,             ///< Device ID for NVRAM
+    CM_PMA_EMPTY_DID = 0,              ///< Driver ID for empty range
+    CM_PMA_MEMORY_DID = 1,             ///< Driver ID for memory
+    CM_PMA_SHADOW_STATE_DID = 2,       ///< Driver ID for shadow state device
+    CM_PMA_FLASH_DRIVE_DID = 3,        ///< Driver ID for flash drive device
+    CM_PMA_CLINT_DID = 4,              ///< Driver ID for CLINT device
+    CM_PMA_HTIF_DID = 5,               ///< Driver ID for HTIF device
+    CM_PMA_PLIC_DID = 6,               ///< Driver ID for PLIC device
+    CM_PMA_CMIO_RX_BUFFER_DID = 7,     ///< Driver ID for CMIO RX buffer
+    CM_PMA_CMIO_TX_BUFFER_DID = 8,     ///< Driver ID for CMIO TX buffer
+    CM_PMA_SHADOW_UARCH_STATE_DID = 9, ///< Driver ID for uarch shadow state device
+    CM_PMA_VIRTIO_DID = 10,            ///< Driver ID for VirtIO devices
+    CM_PMA_NVRAM_DID = 11,             ///< Driver ID for NVRAM
 } cm_pma_did;
 
 /// \brief Error codes returned from the C API.

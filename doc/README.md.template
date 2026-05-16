@@ -4185,10 +4185,10 @@ The microarchitecture RAM holds the uarch program that decodes and executes one 
 
 #### PMAs
 
-Every address range visible to code running inside the big machine has a corresponding entry in the array of Physical Memory Attribute records (PMAs).
+Each address range visible to the main processor is described by an entry in the array of Physical Memory Attribute records (PMAs).
 The PMA array occupies []{replace=ar_table/pmas enabled=yes} and starts at address []{replace=ar_table/pmas_start enabled=yes} (exposed as `cartesi.AR_PMAS_START`).
-This is how the RISC-V interpreter discovers the available ranges at runtime, regardless of whether it is compiled to run directly on the host, inside the microarchitecture, or inside a ZK prover.
-Address ranges private to the microarchitecture do not appear in the PMA array.
+This is how the RISC-V interpreter discovers the available ranges at runtime, regardless of whether it is compiled to run directly on the host or inside a ZK prover.
+The microarchitecture's private ranges are not visible to the main processor and have no PMA entries, though a driver id is reserved for the uarch shadow state for consistency.
 
 Each PMA consists of 2 64-bit words.
 The first word gives the start of a range and the second word its length.
@@ -4240,7 +4240,7 @@ The meaning of each attribute field is as follows:
 The `M`, `IO`, and `E` bits are mutually exclusive, and respectively mark the range as memory, I/O mapped, or excluded.
 Bits `R`, `W`, and&nbsp;`X` mark read, write, and execute permissions, respectively.
 The `IR` and&nbsp;`IW` bits mark the range as idempotent for reads and writes, respectively.
-Finally, the `DID` gives the device id, which can have the following values:
+Finally, the `DID` gives the driver id, which can have the following values:
 
 ```{.lua key=pma_did replace=null enabled=yes outputs=PMA_EMPTY_DID,PMA_MEMORY_DID,PMA_SHADOW_STATE_DID,PMA_FLASH_DRIVE_DID,PMA_CLINT_DID,PMA_HTIF_DID,PMA_PLIC_DID,PMA_CMIO_RX_BUFFER_DID,PMA_CMIO_TX_BUFFER_DID,PMA_SHADOW_UARCH_STATE_DID,PMA_VIRTIO_DID,PMA_NVRAM_DID}
 local cartesi = require "cartesi"
