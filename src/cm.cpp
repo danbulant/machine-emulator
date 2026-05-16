@@ -107,9 +107,10 @@ static_assert(AR_DTB_START_DEF == CM_AR_DTB_START);
 static_assert(AR_DTB_LENGTH_DEF == CM_AR_DTB_LENGTH);
 static_assert(AR_DRIVE_START_DEF == CM_AR_DRIVE_START);
 static_assert(AR_DRIVE_OFFSET_DEF == CM_AR_DRIVE_OFFSET);
-static_assert(std::string_view{DTB_BOOTARGS_CONSOLE} == std::string_view{CM_DTB_BOOTARGS_CONSOLE});
-static_assert(std::string_view{DTB_BOOTARGS_UIO} == std::string_view{CM_DTB_BOOTARGS_UIO});
-static_assert(std::string_view{DTB_BOOTARGS_ROOT} == std::string_view{CM_DTB_BOOTARGS_ROOT});
+static_assert(std::string_view{DTB_BOOTARGS_CONSOLE_PART} == std::string_view{CM_DTB_BOOTARGS_CONSOLE_PART});
+static_assert(std::string_view{DTB_BOOTARGS_UIO_PART} == std::string_view{CM_DTB_BOOTARGS_UIO_PART});
+static_assert(std::string_view{DTB_BOOTARGS_ROOT_PART} == std::string_view{CM_DTB_BOOTARGS_ROOT_PART});
+static_assert(std::string_view{DTB_BOOTARGS_INIT_PART} == std::string_view{CM_DTB_BOOTARGS_INIT_PART});
 static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOOTARGS_INIT});
 
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);

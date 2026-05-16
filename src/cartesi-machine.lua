@@ -1627,7 +1627,8 @@ local options = {
             assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
             flash_drives[1] = nil
             flash_label_to_index.root = nil
-            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT:gsub("[^%w]", "%%%1"), "")
+            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT_PART:gsub("[^%w]", "%%%1"), "")
+            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_INIT_PART:gsub("[^%w]", "%%%1"), "")
             return true
         end,
     },

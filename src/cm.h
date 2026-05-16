@@ -42,10 +42,12 @@ static const uint64_t CM_UARCH_CYCLE_MAX = 1ULL << 20;
 static const uint64_t CM_AR_DRIVE_START = 0x80000000000000ULL;  ///< Start PMA for flash drives and NVRAMs
 static const uint64_t CM_AR_DRIVE_OFFSET = 0x10000000000000ULL; ///< PMA slot stride for flash drives and NVRAMs
 
-#define CM_DTB_BOOTARGS_CONSOLE "quiet earlycon=sbi console=hvc0 "
-#define CM_DTB_BOOTARGS_UIO "uio_pdrv_genirq.of_id=generic-uio "
-#define CM_DTB_BOOTARGS_ROOT "root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
-#define CM_DTB_BOOTARGS_INIT (CM_DTB_BOOTARGS_CONSOLE CM_DTB_BOOTARGS_UIO CM_DTB_BOOTARGS_ROOT)
+#define CM_DTB_BOOTARGS_CONSOLE_PART "quiet earlycon=sbi console=hvc0 "
+#define CM_DTB_BOOTARGS_UIO_PART "uio_pdrv_genirq.of_id=generic-uio "
+#define CM_DTB_BOOTARGS_ROOT_PART "root=/dev/pmem0 rw "
+#define CM_DTB_BOOTARGS_INIT_PART "init=/usr/sbin/cartesi-init"
+#define CM_DTB_BOOTARGS_INIT                                                                                           \
+    (CM_DTB_BOOTARGS_CONSOLE_PART CM_DTB_BOOTARGS_UIO_PART CM_DTB_BOOTARGS_ROOT_PART CM_DTB_BOOTARGS_INIT_PART)
 
 // -----------------------------------------------------------------------------
 // API enums and structures

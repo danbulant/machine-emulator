@@ -79,10 +79,12 @@ struct ram_config final {
 };
 
 /// \brief Build default DTB bootargs from its parts
-#define DTB_BOOTARGS_CONSOLE "quiet earlycon=sbi console=hvc0 "
-#define DTB_BOOTARGS_UIO "uio_pdrv_genirq.of_id=generic-uio "
-#define DTB_BOOTARGS_ROOT "root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
-#define DTB_BOOTARGS_INIT (DTB_BOOTARGS_CONSOLE DTB_BOOTARGS_UIO DTB_BOOTARGS_ROOT)
+#define DTB_BOOTARGS_CONSOLE_PART "quiet earlycon=sbi console=hvc0 "
+#define DTB_BOOTARGS_UIO_PART "uio_pdrv_genirq.of_id=generic-uio "
+#define DTB_BOOTARGS_ROOT_PART "root=/dev/pmem0 rw "
+#define DTB_BOOTARGS_INIT_PART "init=/usr/sbin/cartesi-init"
+#define DTB_BOOTARGS_INIT                                                                                              \
+    (DTB_BOOTARGS_CONSOLE_PART DTB_BOOTARGS_UIO_PART DTB_BOOTARGS_ROOT_PART DTB_BOOTARGS_INIT_PART)
 
 /// \brief DTB state config
 struct dtb_config final {
