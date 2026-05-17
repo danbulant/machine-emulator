@@ -554,7 +554,7 @@ the `cartesi-machine` utility receives control back from the emulator at every i
 :::note
 The `$'...'` form here is bash's ANSI-C-quoted string, used throughout the manual for entrypoint commands.
 It passes the contents to `cartesi-machine` as a single argument, leaves host-side variable references like `$i` unexpanded (so they reach the guest shell verbatim), and accepts `\'` as an escape for a single quote inside the string.
-This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocation seen later under [NVRAMs](#nvrams).
+This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocation seen later under [NVRAMs](#flash-drives-and-nvrams).
 :::
 
 By default, the emulator honors automatic yield requests from the target.
@@ -2413,7 +2413,7 @@ For example, `processor.registers.htif.tohost` becomes `htif_tohost`, `processor
 (The call `machine:read_reg("mcycle")` has already been encountered several times.)
 In addition, the pre-decoded `dev`, `cmd`, `reason`, and `data` fields of the `htif_tohost` and `htif_fromhost` registers are exposed by appending the field name (e.g. `htif_tohost_reason`).
 Most registers are part of the [RISC-V ISA](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf), and its [privileged architecture](https://content.riscv.org/wp-content/uploads/2017/05/riscv-privileged-v1.10.pdf).
-Cartesi-specific registers are described under the target perspective sections that cover the [processor](#the-processor) and [board](#the-board) of the Cartesi Machine architecture.
+Cartesi-specific registers are described under the target perspective sections that cover the [processor](#the-main-processor) and [board](#the-board) of the Cartesi Machine architecture.
 
 Conversely, any value in the state of a Cartesi Machine instance can be modified by the controlling program.
 In contrast to reading the state, writing to the state requires extreme care.
@@ -2627,7 +2627,7 @@ Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the
 
 Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` calldata blobs.
 The _block timestamp_ field is in seconds since the _Unix epoch_, and the _prev randao_ field is a 32-byte big-endian unsigned integer.
-(See the table in the target perspective [architecture](#rollup-format).)
+(See the table in the target perspective [architecture](#rollup).)
 
 Outputs come back as ABI-encoded `Voucher(address,uint256,bytes)` or `Notice(bytes)` calldata blobs.
 Reports, exceptions, and inspect-state queries are raw payload bytes with no ABI wrapping.
@@ -4383,7 +4383,7 @@ io.write(cartesi.DTB_BOOTARGS_INIT_PART)
 
 After completing its own initialization, the kernel mounts the root file-system (by default <tt>[]{replace=dtb_bootargs_root_part/stdout}</tt>) and cedes control to the program named by the&nbsp;`init=`&nbsp;parameter (by default <tt>[]{replace=dtb_bootargs_init_part/stdout}</tt>).
 Cartesi's root file-system `rootfs.ext2` is built from the [`machine-guest-tools`](https://github.com/cartesi/machine-guest-tools) repository, which also installs `cartesi-init` and the rollups user-space tooling.
-See [Initialization](#initialization) under the Target perspective for what `cartesi-init` does after the kernel hands off.
+See [Initialization](#initialization-1) under the Target perspective for what `cartesi-init` does after the kernel hands off.
 
 # Blockchain perspective
 
