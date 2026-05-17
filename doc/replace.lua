@@ -134,6 +134,12 @@
 --                       render as empty. ensure_defined errors if an
 --                       enabled block depends on a disabled one.
 --
+--   code=yes|no         Optional, inline Span only. Default yes wraps the
+--                       substituted value in an inline Code element (matches
+--                       backtick styling). Set code=no to emit plain text,
+--                       useful inside HTML markup like <sup>...</sup> where
+--                       monospace styling looks wrong.
+--
 --   replace=<value>     Required on every annotated block. See taxonomy below.
 --
 -- REPLACE= TAXONOMY
@@ -161,6 +167,8 @@
 --   Inline Span:        Only cross-block forms. The Span's inline content is
 --                       appended as a literal suffix to the rendered output
 --                       (idiom: insert punctuation after a substituted value).
+--                       Wrapped in inline Code by default; pass code=no to
+--                       emit plain text instead.
 --
 -- DOCS:BEGIN/END SEMANTICS
 --
@@ -804,15 +812,21 @@ local function process_span(el)
     if not replace then return el end
     assertf(not attr.include, "inline Span: include= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
+    local code = attr.code
     attr.replace = nil
     attr.enabled = nil
     attr.include = nil
+    attr.code = nil
     if not enabled then return el end
     local label = "inline Span replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
     if kind == "cross" then
         local suffix = pandoc.utils.stringify(el.content)
-        return pandoc.Code(cross_read(a, b, nil, label) .. suffix)
+        local text = cross_read(a, b, nil, label) .. suffix
+        if code == "no" or code == "false" or code == "0" then
+            return pandoc.Str(text)
+        end
+        return pandoc.Code(text)
     end
     error(label .. ": only cross-block replace= (K or K/<thing>) supported on inline Span")
 end

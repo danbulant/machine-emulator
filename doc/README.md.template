@@ -355,7 +355,7 @@ The start and length are set, respectively, by the `start:<number>` and `length:
 
 By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>55</sup>).
 Additional flash drives are automatically spaced uniformly within that second half of the address space.
-They are therefore separated by 2<sup>52</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
+They are therefore separated by 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
 (The machine will fail to instantiate if there is any overlap between the ranges occupied by multiple drives.)
 If you specify `start` of *any* drive, make sure to place it where it will not colide with the automatically assigned drives.
 
@@ -901,7 +901,7 @@ Since the leaves have size []{replace=hash_tree_constants/word_size} bytes, the 
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run vars=templates_store replace=source}
+```{.bash key=proofs_pristine_run vars=templates_store,input_addr->ar_drive_formula/input_addr replace=source}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 # docs:begin
@@ -910,19 +910,19 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof"
+    --initial-proof="address:$input_addr,log2_size:12,filename:pristine-input-proof"
 # docs:end
 ```
-Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address `0x80000000000000`.
+Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address []{replace=ar_drive_formula/drive_start}.
 The input NVRAM is therefore in the second slot.
-It is automatically spaced by 2<sup>52</sup> bytes relative to the first drive, so that its starting address is `0x90000000000000`.
+It is automatically spaced by 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup> bytes relative to the first drive, so that its starting address is []{replace=ar_drive_formula/input_addr}.
 
 The output of the command is
 ```{replace=proofs_pristine_run}
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{key=proofs_pristine_json vars=templates_store replace=both}
+```{key=proofs_pristine_json vars=templates_store,input_addr->ar_drive_formula/input_addr replace=both}
 rm -f calculator-template
 ln -s "$templates_store/calculator-template" calculator-template
 cartesi-machine \
@@ -930,12 +930,12 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof" \
+    --initial-proof="address:$input_addr,log2_size:12,filename:pristine-input-proof" \
     > /dev/null 2>&1
 cat pristine-input-proof
 ```
 The `root_hash` value [...]{replace=templates_trunc_hash/stdout} is the expected initial state hash seen in the output of the `cartesi-machine` command.
-The `address` value `40532396646334464` is the same as `0x90000000000000` in decimal.
+The `address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in decimal.
 The `log2_size` value `12` refers to the size of the 4KiB input NVRAM.
 The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash/stdout} in the proof gives the hash of the input NVRAM.
 
@@ -976,7 +976,7 @@ to obtain
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout} of the template's pristine NVRAM.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
-```{.bash key=proofs_input_json vars=templates_store replace=source}
+```{.bash key=proofs_input_json vars=templates_store,input_addr->ar_drive_formula/input_addr replace=source}
 rm -f calculator-template
 rm -rf input-proof input.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -986,9 +986,9 @@ truncate -s 4K input.raw
 cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
-    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
     --initial-hash \
-    --initial-proof="address:0x90000000000000,log2_size:12,filename:input-proof" \
+    --initial-proof="address:$input_addr,log2_size:12,filename:input-proof" \
     --max-mcycle=0
 # docs:end
 cat input-proof
@@ -1010,7 +1010,7 @@ Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in th
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=proofs_output_run outputs=output.raw vars=templates_store replace=source}
+```{.bash key=proofs_output_run outputs=output.raw vars=templates_store,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -1021,10 +1021,10 @@ truncate -s 4K input.raw
 cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
-    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
-    --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
+    --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="start:$output_addr,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof"
+    --final-proof="address:$output_addr,log2_size:12,filename:output-proof"
 # docs:end
 ```
 
@@ -1033,7 +1033,7 @@ This produces the output
 ```{replace=proofs_output_run}
 ```
 The contents of the `output-proof` are
-```{key=proofs_output_json vars=templates_store replace=both}
+```{key=proofs_output_json vars=templates_store,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=both}
 rm -f calculator-template
 rm -rf output-proof input.raw output.raw
 ln -s "$templates_store/calculator-template" calculator-template
@@ -1043,10 +1043,10 @@ truncate -s 4K input.raw
 cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
-    --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
-    --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
+    --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
+    --replace-memory-range="start:$output_addr,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof" \
+    --final-proof="address:$output_addr,log2_size:12,filename:output-proof" \
     > /dev/null 2>&1
 cat output-proof
 ```
@@ -1972,7 +1972,7 @@ memory_range_config ::= {
 </div>
 </div>
 
-```{.lua key=ar_drive_formula replace=null outputs=log2_drive_spacing}
+```{.lua key=ar_drive_formula replace=null outputs=log2_drive_spacing,drive_start,input_addr,output_addr,input_addr_dec}
 local c = require "cartesi"
 local o = c.AR_DRIVE_OFFSET
 local log2 = 0
@@ -1981,9 +1981,16 @@ while o > 1 do
     log2 = log2 + 1
 end
 io.write(string.format("0x%x + i*2^%d", c.AR_DRIVE_START, log2))
-local f = assert(io.open("log2_drive_spacing", "w"))
-f:write(tostring(log2))
-f:close()
+local function writefile(name, val)
+    local f = assert(io.open(name, "w"))
+    f:write(tostring(val))
+    f:close()
+end
+writefile("log2_drive_spacing", log2)
+writefile("drive_start",    string.format("0x%x", c.AR_DRIVE_START))
+writefile("input_addr",     string.format("0x%x", c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
+writefile("output_addr",    string.format("0x%x", c.AR_DRIVE_START + 2*c.AR_DRIVE_OFFSET))
+writefile("input_addr_dec", tostring(c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
 ```
 
 The <a href="#ram_config">`ram`</a> entry in `machine_config` has two fields.
@@ -4357,7 +4364,7 @@ The result is
 ```
 
 The `memory@80000000` section describes 64MiB of RAM starting at address `0x80000000`.
-The `pmem@80000000000000` describes flash drive 0: a memory region starting at address `0x80000000000000`, with compatible string `pmem-region`.
+The `pmem@80000000000000` describes flash drive 0: a memory region starting at address []{replace=ar_drive_formula/drive_start}, with compatible string `pmem-region`.
 This will eventually become available as `/dev/pmem0`.
 The `cmio` section specifies the starts and lengths of the CMIO memory ranges.
 The `yield` section specifies that the machine will process automatic and manual yields.
@@ -4432,7 +4439,7 @@ Cryptographic hash functions, such as Keccak-256, were designed *specifically* t
 :::
 
 The state hash of a Cartesi Machine is the root hash of a Merkle tree.
-Merkle trees are binary trees where a leaf node is labeled with the hash of a data block (In the case of Cartesi Machines, a block is simply one of the 2<sup>[]{replace=hash_tree_constants/log2_leaf_count}</sup> aligned []{replace=hash_tree_constants/word_size}-byte blocks in the machine's physical memory address space.) and an inner node is labeled with the hash of the concatenated labels of its two child nodes.
+Merkle trees are binary trees where a leaf node is labeled with the hash of a data block (In the case of Cartesi Machines, a block is simply one of the 2<sup>[]{replace=hash_tree_constants/log2_leaf_count code=no}</sup> aligned []{replace=hash_tree_constants/word_size}-byte blocks in the machine's physical memory address space.) and an inner node is labeled with the hash of the concatenated labels of its two child nodes.
 The root hash can be obtained from the `machine:get_root_hash()` method.
 In the command-line, the options `--initial-hash` and `--final-hash` of the `cartesi-machine` utility cause it to output the root hash of the Merkle tree as it is before the emulator starts running and after it is done running, respectively.
 
@@ -4496,7 +4503,7 @@ From the blockchain perspective, a [Cartesi Machine template](#cartesi-machine-t
 Instantiating the Cartesi Machine with a given input is simply the process of obtaining the state hash *M'* that results from replacing one or more of its input NVRAMs.
 Each replacement is the result of a splicing operation as described above.
 The splicing operation is particularly convenient if the input range length is a power of 2 and its start is aligned according to its length.
-This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing}</sup>.
+This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup>.
 
 #### Result extraction
 
