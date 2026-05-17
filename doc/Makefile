@@ -77,7 +77,8 @@ ifeq ($(DEV_ENV_HAS_DOCGEN),yes)
 template.d: README.md.template replace.lua | $(REPLACE_CACHE_DIR)
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -t plain \
-	    -M write-user-dependencies=README.md -M default-replace=false \
+	    -M write-user-dependencies=README.md \
+	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
 	    --lua-filter replace.lua README.md.template -o $@
 
 ifeq (,$(filter clean,$(MAKECMDGOALS)))
@@ -89,16 +90,16 @@ endif
 README.md: README.md.template replace.lua alerts.lua template.d
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -s -t gfm --toc \
+	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
 	    --lua-filter replace.lua --lua-filter alerts.lua \
-	    -M default-replace=false \
 	    README.md.template -o $@
 
 README.html: README.md README.md.template replace.lua alerts.lua github.template.html template.d
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown+emoji -s -t html5 --toc --mathjax \
+	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
 	    --lua-filter replace.lua --lua-filter alerts.lua \
 	    --template=github.template.html \
-	    -M default-replace=false \
 	    README.md.template -o $@
 
 else

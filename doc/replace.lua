@@ -188,6 +188,14 @@
 --   substitution. Bodies relying on exact byte-level capture should not use
 --   replace= to consume their output.
 --
+-- GLOBALS PSEUDO-KEY
+--
+--   Pandoc() writes every pandoc metadata variable whose name starts with a
+--   letter or underscore (hyphens are also allowed after the first character)
+--   to REPLACE_CACHE_DIR/globals/<name>. Use vars=VAR->globals/NAME
+--   (contents-form) to inject the value into a block body or a replace=source
+--   display. Pass the value on the pandoc command line with -M NAME=VALUE.
+--
 -- DEFAULT-REPLACE METADATA
 --
 --   Pass -M default-replace=true (or false) on the pandoc command line.
@@ -868,6 +876,7 @@ local function collect_codeblock(b)
     if not key then return end
     if not is_enabled(b.attr.attributes) then return end
     check_identifier(key, "key=" .. key)
+    assertf(key ~= "globals", "key=globals: 'globals' is a reserved pseudo-key")
     assertf(not pending[key], "key=%s: duplicate definition", key)
     local include = b.attr.attributes.include
     local body = b.text
@@ -921,6 +930,17 @@ function Pandoc(doc)
         local v = pandoc.utils.stringify(dr)
         default_enabled = v == "true" or v == "yes" or v == "1"
     end
+    local globals_dir = REPLACE_CACHE_DIR .. "/globals"
+    os.execute("mkdir -p '" .. globals_dir .. "'")
+    for k, v in pairs(doc.meta) do
+        if k:match("^[%a_][%w_%-]*$") then
+            local f = io.open(globals_dir .. "/" .. k, "w")
+            if f then f:write(pandoc.utils.stringify(v)) f:close() end
+        end
+    end
+    defined["globals"] = true
+    outputs_t["globals"] = {}
+    sources["globals"] = ""
     collect(doc.blocks)
     doc.blocks = walk_blocks(doc.blocks)
     if deps_target then
