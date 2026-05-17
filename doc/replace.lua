@@ -114,6 +114,14 @@
 --                       file invalidates the rule's primary target and cascades
 --                       to consumers declaring depends=<K>. outputs=, depends=,
 --                       and vars= are not allowed on include= keys.
+--                       docs:begin/docs:end marker lines are stripped from the
+--                       rendered output (infrastructure markers, not content).
+--                       Region-selecting form: include=<file>/<region>. The
+--                       whole value is tried as a file path first. If that
+--                       fails, the value is split on the last '/' into <file>
+--                       and <region>: only the lines within the named
+--                       docs:begin/docs:end region of <file> are rendered
+--                       (markers stripped).
 --
 --   enabled=yes|no      Optional. Controls whether this block is active.
 --                       When absent, the value of the -M default-replace=
@@ -387,6 +395,21 @@ end
 
 local function strip_null_markers(body, label)
     return process_null_regions(body, true, label)
+end
+
+-- Strip every docs:begin / docs:end marker line from body.
+-- Used for include= keys so infrastructure markers do not appear in output.
+local function strip_all_markers(body)
+    local scan = body:sub(-1) == "\n" and body or (body .. "\n")
+    local out = {}
+    for line in scan:gmatch("([^\n]*)\n") do
+        if not line:match("^%s*[#%-/]+%s*docs:%a+") then
+            out[#out + 1] = line
+        end
+    end
+    local result = table.concat(out, "\n")
+    if body:sub(-1) == "\n" then result = result .. "\n" end
+    return result
 end
 
 -- Extract a "docs:begin NAME" / "docs:end NAME" region from body.
@@ -853,8 +876,28 @@ local function collect_codeblock(b)
         assertf(body == "",
             "key=%s: include=%s: block body must be empty when include= is set",
             key, include)
-        include_abs = RECIPES_DIR .. "/" .. include
-        body = read_file(include_abs, "key=" .. key .. " include=" .. include)
+        -- Disambiguate FILE/<region> from a plain path: try the whole value as a
+        -- file path first. If that fails and the value contains a '/', split on
+        -- the last '/' and treat the RHS as a region name within the LHS file.
+        local file_path, region
+        local f = io.open(RECIPES_DIR .. "/" .. include, "r")
+        if f then
+            f:close()
+            file_path = include
+        else
+            local lhs, rhs = include:match("^(.+)/([^/]+)$")
+            assertf(lhs, "key=%s: include=%s: file not found", key, include)
+            file_path = lhs
+            region    = rhs
+        end
+        include_abs        = RECIPES_DIR .. "/" .. file_path
+        local file_content = read_file(include_abs, "key=" .. key .. " include=" .. include)
+        if region then
+            body = extract_region(file_content, region,
+                "key=" .. key .. " include=" .. include)
+        else
+            body = strip_all_markers(file_content)
+        end
     end
     pending[key] = {
         attr        = b.attr.attributes,
