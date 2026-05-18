@@ -27,6 +27,7 @@
 
 #include "assert-printf.hpp"
 #include "back-merkle-tree.hpp"
+#include "hash-tree-constants.hpp"
 #include "i-hasher.hpp"
 #include "machine-hash.hpp"
 #include "unique-c-ptr.hpp"
@@ -171,7 +172,7 @@ Options:
   --input=<filename>                    default: reads from standard input
   Gives the input filename.
 
-  --log2-word-size=<integer>            default: 3
+  --log2-word-size=<integer>            default: %d
   (> 0 and <= 64)
   Number of bytes subintended by each word, i.e., the number of bytes in the
   input data from which each hash is computed.
@@ -186,14 +187,14 @@ Options:
   --help
   Prints this message and returns.
 )",
-        name);
+        name, cartesi::HASH_TREE_LOG2_WORD_SIZE);
     exit(0);
 }
 
 int main(int argc, char *argv[]) try {
     const char *input_name = nullptr;
     const char *hash_function_name = "keccak256";
-    int log2_word_size = 3;
+    int log2_word_size = cartesi::HASH_TREE_LOG2_WORD_SIZE;
     int log2_leaf_size = 12;
     int log2_root_size = 0;
     // Process command line arguments
