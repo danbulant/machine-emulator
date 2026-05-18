@@ -60,6 +60,7 @@ FROM debian:trixie-20250811-slim
 ARG TARGETARCH
 
 COPY --from=debian-packager /usr/src/emulator/machine-emulator_${TARGETARCH}.deb machine-emulator.deb
+COPY tests/dependencies tests/dependencies.sha256 /usr/share/cartesi-machine/
 
 RUN apt-get update && \
     apt-get install -y ./machine-emulator.deb && \

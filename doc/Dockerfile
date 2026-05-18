@@ -1,5 +1,5 @@
 ARG TAG=0.20.0
-ARG GUEST_TOOLS_VERSION=v0.18.0-test2
+ARG GUEST_TOOLS_VERSION=v0.18.0-test3
 ARG GENEXT2FS_VERSION=v1.5.6
 
 FROM cartesi/machine-emulator:$TAG AS hex-builder
@@ -37,17 +37,18 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
 COPY --from=hex-builder /usr/local/bin/hex /usr/local/bin/hex
 COPY --from=xgenext2fs-builder /usr/local/bin/xgenext2fs /usr/local/bin/xgenext2fs
 
-COPY tests/dependencies tests/dependencies.sha256 /tmp/cartesi-images/
-RUN cd /tmp/cartesi-images && \
-    mkdir -p build/images && \
-    wget -nc -i dependencies -P build/images && \
+RUN mkdir -p /tmp/cartesi-images/build/images && \
+    cd /usr/share/cartesi-machine && \
+    wget -nc -i dependencies -P /tmp/cartesi-images/build/images && \
+    cd /tmp/cartesi-images && \
+    cp /usr/share/cartesi-machine/dependencies.sha256 . && \
     sha256sum --check dependencies.sha256 && \
     cd /usr/share/cartesi-machine/images && \
     mv /tmp/cartesi-images/build/images/linux-*.bin . && \
     ln -s "$(ls linux-*.bin)" linux.bin && \
     rm -rf /tmp/cartesi-images
 
-COPY doc/recipes/rootfs-docs.ext2 /usr/share/cartesi-machine/images/rootfs-docs.ext2
+COPY recipes/rootfs-docs.ext2 /usr/share/cartesi-machine/images/rootfs-docs.ext2
 RUN ln -s rootfs-docs.ext2 /usr/share/cartesi-machine/images/rootfs.ext2
 
 ENV DEV_ENV_HAS_DOCGEN=yes

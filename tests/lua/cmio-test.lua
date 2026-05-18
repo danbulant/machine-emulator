@@ -130,12 +130,12 @@ end
 
 local function setup_advance(machine, data)
     assert(data)
-    local reason = cartesi.CMIO_YIELD_REASON_ADVANCE_STATE
+    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
     next_input(machine, reason, data)
 end
 
 local function setup_inspect(machine, data)
-    local reason = cartesi.CMIO_YIELD_REASON_INSPECT_STATE
+    local reason = cartesi.HTIF_YIELD_REASON_INSPECT_STATE
     next_input(machine, reason, data)
 end
 
@@ -147,8 +147,8 @@ end
 local function check_output(machine, expected)
     assert(machine:read_reg("iflags_X") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
-    assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
-    assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
+    assert(cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC)
+    assert(reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
     if expected ~= output then
         local e <close> = assert(io.open("expected.bin", "wb"))
         local o <close> = assert(io.open("output.bin", "wb"))
@@ -163,16 +163,16 @@ end
 local function check_report(machine, expected)
     assert(machine:read_reg("iflags_X") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
-    assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
-    assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT)
+    assert(cmd == cartesi.HTIF_YIELD_CMD_AUTOMATIC)
+    assert(reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT)
     assert(expected == output)
 end
 
 local function check_exception(machine, expected)
     assert(machine:read_reg("iflags_Y") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
-    assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
-    assert(reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION)
+    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
+    assert(reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
 end
 
@@ -208,11 +208,11 @@ end
 local function check_finish(machine, output_hashes, expected_reason)
     local cmd, reason, output = machine:receive_cmio_request()
     assert(machine:read_reg("iflags_Y") ~= 0)
-    assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
+    assert(cmd == cartesi.HTIF_YIELD_CMD_MANUAL)
     assert(reason == expected_reason)
 
     -- only check for output-hashes-root-hash if the input was accepted
-    if expected_reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+    if expected_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
         assert(#output == cartesi.HASH_SIZE)
         check_outputs_root_hash(output, output_hashes)
     else
@@ -290,7 +290,7 @@ for _, dapp in pairs({ "ioctl", "http" }) do
 
                 -- finish
                 machine:run(MAX_MCYCLE)
-                check_finish(machine, hashes, cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED)
+                check_finish(machine, hashes, cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
             end
 
             return 0
@@ -314,7 +314,7 @@ for _, dapp in pairs({ "ioctl", "http" }) do
 
         -- finish
         machine:run(MAX_MCYCLE)
-        check_finish(machine, hashes, cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED)
+        check_finish(machine, hashes, cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
 
         return 0
     end, 0)

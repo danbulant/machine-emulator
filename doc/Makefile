@@ -64,7 +64,7 @@ run-docs-image: check-docs-image
 
 build-docs-image: | $(RECIPES_DIR)/rootfs-docs.ext2
 	$(MAKE) -C .. build-emulator-image TAG=$(TAG)
-	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(DOCS_IMAGE):$(TAG) -f $(CURDIR)/Dockerfile ..
+	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(DOCS_IMAGE):$(TAG) .
 
 $(REPLACE_CACHE_DIR):
 	mkdir -p $@

@@ -46,7 +46,6 @@
 #include "cm-version.h"
 #include "htif-constants.hpp"
 #include "htif-defines.h"
-#include "pmas-defines.h"
 #include "i-machine.hpp"
 #include "interpret.hpp"
 #include "json-util.hpp"
@@ -58,7 +57,9 @@
 #include "machine-runtime-config.hpp"
 #include "machine.hpp"
 #include "os-features.hpp"
+#include "pmas-defines.h"
 #include "ranges.hpp"
+#include "rtc-defines.h"
 #include "sha-256-hasher.hpp"
 #include "uarch-defines.h"
 
@@ -114,15 +115,7 @@ static_assert(std::string_view{DTB_BOOTARGS_INIT_PART} == std::string_view{CM_DT
 static_assert(std::string_view{DTB_BOOTARGS_INIT} == std::string_view{CM_DTB_BOOTARGS_INIT});
 
 static_assert(UARCH_CYCLE_MAX_DEF == CM_UARCH_CYCLE_MAX);
-
-static_assert(HTIF_YIELD_AUTOMATIC_REASON_PROGRESS_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS);
-static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT);
-static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT);
-static_assert(HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED);
-static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED);
-static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION);
-static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_CMIO_YIELD_REASON_ADVANCE_STATE);
-static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_CMIO_YIELD_REASON_INSPECT_STATE);
+static_assert(RTC_FREQ_DIV_DEF == CM_RTC_FREQ_DIV);
 
 static_assert(HTIF_DEV_HALT_DEF == CM_HTIF_DEV_HALT);
 static_assert(HTIF_DEV_CONSOLE_DEF == CM_HTIF_DEV_CONSOLE);

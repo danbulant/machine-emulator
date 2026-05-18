@@ -12,15 +12,14 @@
 
 build
 tests/build
+tests/fuzz/corpus
+tests/fuzz/corpus-config
+tests/fuzz/seed-corpus
 third-party/downloads
+third-party/riscv-arch-test/riscv-test-stats
 src/cartesi-jsonrpc-machine
 src/cartesi-hash-tree-hash
-doc/recipes/cache
-
-doc/html
-doc/api.md
-doc/html/
-doc/xml/
+doc/
 
 .git
 .github

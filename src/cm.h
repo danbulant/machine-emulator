@@ -62,6 +62,7 @@ typedef enum cm_constant {
     CM_FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
     CM_NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
     CM_MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
+    CM_RTC_FREQ_DIV = 8192,         ///< mtime increments once per this many mcycle increments
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).
@@ -159,24 +160,6 @@ typedef enum cm_access_log_type {
     CM_ACCESS_LOG_TYPE_ANNOTATIONS = 1, ///< Includes annotations
     CM_ACCESS_LOG_TYPE_LARGE_DATA = 2,  ///< Includes data larger than 8 bytes
 } cm_access_log_type;
-
-/// \brief Yield device commands.
-typedef enum cm_cmio_yield_command {
-    CM_CMIO_YIELD_COMMAND_AUTOMATIC,
-    CM_CMIO_YIELD_COMMAND_MANUAL,
-} cm_cmio_yield_command;
-
-/// \brief Yield reasons.
-typedef enum cm_cmio_yield_reason {
-    CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS = 1,  ///< Progress is available
-    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT = 2, ///< Output is available in tx buffer
-    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT = 4, ///< Report is available in tx buffer
-    CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED = 1,  ///< Input in rx buffer was accepted
-    CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED = 2,  ///< Input in rx buffer was rejected
-    CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION = 4, ///< Exception happened
-    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,       ///< Input in rx buffer is an advance state
-    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,       ///< Input in rx buffer is an inspect state
-} cm_cmio_yield_reason;
 
 /// \brief Sharing modes.
 typedef enum cm_sharing_mode {

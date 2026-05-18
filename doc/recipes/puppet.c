@@ -45,7 +45,7 @@ int main(void) {
     for (;;) {
         bool accept = true;
         bool should_exit = false;
-        if (finish.next_request_type == HTIF_YIELD_REASON_ADVANCE) {
+        if (finish.next_request_type == HTIF_YIELD_REASON_ADVANCE_STATE) {
             cmt_rollup_advance_t advance;
             if (cmt_rollup_read_advance_state(&rollup, &advance) < 0) break;
             cmt_abi_bytes_t data;
@@ -63,7 +63,7 @@ int main(void) {
             } else {
                 accept = false;
             }
-        } else if (finish.next_request_type == HTIF_YIELD_REASON_INSPECT) {
+        } else if (finish.next_request_type == HTIF_YIELD_REASON_INSPECT_STATE) {
             cmt_rollup_inspect_t inspect;
             if (cmt_rollup_read_inspect_state(&rollup, &inspect) < 0) break;
             cmt_rollup_emit_report(&rollup, &inspect.payload);

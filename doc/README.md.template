@@ -7,7 +7,7 @@ include-before: |
 # Introduction
 
 The Cartesi Machine is Cartesi's solution for verifiable computation.
-It was designed to bring mainstream scalability to descentralized applications and mainstream productivity to their developers.
+It was designed to bring mainstream scalability to decentralized applications and mainstream productivity to their developers.
 
 ## Scalability
 
@@ -19,7 +19,7 @@ This is possible because Cartesi Machines run off-chain, free of the overhead im
 
 In a typical scenario, one of the parties involved in an application will execute the Cartesi Machine off-chain and report its results to the blockchain.
 Different parties do not need to trust each other because the Cartesi platform includes an automatic dispute mechanism for Cartesi Machines.
-All interested parties repeat the computation off-chain and, if their results do not agree, they enter into a dispute, which the mechanism guarantees to be always won by an honest party against any dishonest party.
+All interested parties repeat the computation off-chain and, if their results do not agree, they enter into a dispute, which the mechanism guarantees to be always won by an honest party against any number of dishonest parties.
 
 To enable this dispute mechanism, Cartesi Machines are executed inside a special emulator that has three unique properties:
 
@@ -62,20 +62,20 @@ This is Cartesi's contribution to empowering application developers to express t
 ## What's in a machine
 
 The key components of a Cartesi Machine are its main processor and a board.
-The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
+The processor that performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers, implements a generous set of RISC-V extensions.
 The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAMs etc) and a number of devices.
 Memories and devices are mapped to the 64-bit physical address space of the Cartesi Machine.
 The amount of RAM, as well as the number, length, and position of the flash drives and NVRAMs in the address space can be chosen according to the needs of each particular application.
-The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its executions are reproducible.
+The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its execution is reproducible.
 It can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
 
-In normal execution, the program being run by a Cartesi Machine is emulated by an _interpreter_ that has been compiled to run natively on the host computer.
-The execution of this program changes the registers and memories and interacts with the devices accessible to the main processor.
+In normal execution, the Cartesi Machine emulator runs programs in an _interpreter_ that has been compiled to run natively on the host computer.
+The execution of this program modifies the registers and memories and interacts with the devices accessible to the main processor.
 The Cartesi Machine also includes a _microarchitecture_ (uarch).
-The uarch can be seen as a lower-level emulator, with its own registers and memory, implementing a much narrower RISC-V ISA.
+The uarch can be seen as a lower-level emulator, with its own separate registers and memory, implementing a much narrower RISC-V ISA than the main procesor.
 The uarch is not visible to the main processor, but code running in the uarch has access to the entire state of the Cartesi Machine, including the main processor and the entire board.
-The interpreter be compiled to an `uarch.bin` and run inside the microarchitecture.
-In its pristine state, the uarch memory is loaded with the interpreter code, about to run one fetch-execute iteration of the main processor and then halt the uarch.
+The interpreter for the Cartesi Machine can be compiled to an `uarch.bin` and run inside the microarchitecture.
+In its pristine state, the uarch memory is loaded with `uarch.bin`, in a state that is about to run one fetch-execute iteration of the main processor and then halt the uarch.
 Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
 This finer granularity is the basis for state-transition proofs, described in the [System architecture](#system-architecture) chapter.
 
@@ -432,7 +432,7 @@ cartesi-machine \
 ```
 Here, a flash drive with label `foo` is initialized with the contents of an `ext2` file-system in the image file `foo.ext2`.
 The Cartesi-provided `/sbin/init` mounts this as `/mnt/foo`.
-The command executed in the machine simply copies the contents of `/mnt/foo/bar` to the terminal.
+The command executed in the machine simply copies the contents of `/mnt/foo/bar.txt` to the terminal.
 The output is
 ```{replace=flash}
 ```
@@ -713,7 +713,7 @@ produces the output
 
 ### Running as root
 
-Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` script runs the target application (or any initial command) as user `uid=1000(dapp)` group `gid=1000(dapp)`.
+Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` script runs the target application (or any initial command) as []{replace=rarely_id/stdout}.
 This can be seen by running the command:
 ```{.bash key=rarely_id replace=source}
 cartesi-machine \
@@ -935,8 +935,8 @@ cartesi-machine \
 cat pristine-input-proof
 ```
 The `root_hash` value [...]{replace=templates_trunc_hash/stdout} is the expected initial state hash seen in the output of the `cartesi-machine` command.
-The `address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in decimal.
-The `log2_size` value `12` refers to the size of the 4KiB input NVRAM.
+The `target_address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in hexadecimal.
+The `log2_target_size` value `12` refers to the size of the 4KiB input NVRAM.
 The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash/stdout} in the proof gives the hash of the input NVRAM.
 
 The hash of the input NVRAM can be also computed externally with the `cartesi-hash-tree-hash` command-line utility.
@@ -1143,7 +1143,7 @@ For example, assuming the remote server has just been run:
 cartesi-jsonrpc-machine \
     --server-address=127.0.0.1:8080
 ```
-use the `cartesi-machine` command-line utility to instantiate and run a Cartesi Machine for 2^2O cycles:
+use the `cartesi-machine` command-line utility to instantiate and run a Cartesi Machine for 2^20 cycles:
 ```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/begin-client depends=cmdline_remote}
 srv_tmp=$(mktemp)
 cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
@@ -2279,7 +2279,7 @@ At each iteration, the script tries to advance the computation until the end of 
 A `BREAK_REASON_YIELDED_AUTOMATICALLY` return means the target ran a yield automatic command.
 That command can be called for different reasons.
 The reason and the associated data are available in the `htif_tohost_reason` and `htif_tohost_data` registers, which expose pre-decoded fields of the HTIF `tohost` register.
-The constant `cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS` corresponds to a progress report, in which case `htif_tohost_data` holds the progress in parts per mille.
+The constant `cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS` corresponds to a progress report, in which case `htif_tohost_data` holds the progress in per-mille.
 A `BREAK_REASON_REACHED_TARGET_MCYCLE` return means the chunk expired without a yield or halt.
 In that case the script bumps `max_mcycle` by another `CHUNK` and could perform any desired &ldquo;per-chunk&rdquo; tasks before looping.
 
@@ -2346,7 +2346,7 @@ The result is, as expected,
 
 ### State hashes
 
-State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 64-bit words.
+State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
 Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all the processor's CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices or memory ranges connected to the board.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
@@ -2623,8 +2623,8 @@ As expected, the Lua interface can also be used to feed requests to a Rolling Ca
 The target application (indirectly) raises the HTIF manual yield flag (`machine:read_reg("iflags_Y") ~= 0`) to notify the host it is done with the current request and ready for the next.
 While processing each request, it raises the HTIF automatic yield flag (`machine:read_reg("iflags_X") ~= 0`) for each new response it generates.
 In both cases, the host retrieves the yield _command_, _reason_, and request _data_ via `machine:receive_cmio_request()`.
-When transitioning between requests, the reason can take the values `cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED` (previous request was accepted), `cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED` (previous request was rejected), or `cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION` (an unrecoverable error was encountered).
-When generating a new response to a request, the reason can take the self-explanatory values `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT` (a voucher or notice) and `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT`.
+When transitioning between requests, the reason can take the values `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` (previous request was accepted), `cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED` (previous request was rejected), or `cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION` (an unrecoverable error was encountered).
+When generating a new response to a request, the reason can take the self-explanatory values `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` (a voucher or notice) and `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT`.
 
 The data associated with requests is sent to the machine in the CMIO memory range defined by the `memory_range_config` entry stored in the `machine_config` as `cmio.rx_buffer`.
 Conversely, the data associated with responses (or exceptions) is obtained from the machine in the `cmio.tx_buffer` memory range.
@@ -2656,14 +2656,14 @@ For each iteration, the script invokes `machine:run(math.maxinteger)` to run the
 When the call returns, it checks if the machine yielded manual.
 If so, it checks the reason for the yield.
 
-If the reason was `cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
+If the reason was `cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED`, the application accepted the previous request and is ready for the next.
 The script then attempts to obtain a mathematical expression from the console.
-If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, ...)`.
+If the user provides one, it creates a new snapshot, ABI-encodes the expression as `EvmAdvance` calldata with `cartesi.evmu`, and feeds the encoded input through `machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, ...)`.
 (The `payload` field is wrapped in `evmu.raw(...)` because `cartesi.evmu` treats unwrapped `bytes` arguments as hex-encoded strings.)
 If, however, the reason was anything else, the script rolls back the machine and continues with the next loop iteration.
 
 If the machine yielded automatic, the script once again checks for the yield reason.
-If the reason was `cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script decodes the data as a `Notice` calldata blob, extracts its `payload` field as raw bytes, and prints the formatted result to the console.
+If the reason was `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script decodes the data as a `Notice` calldata blob, extracts its `payload` field as raw bytes, and prints the formatted result to the console.
 
 Here is what a session looks like.
 First, open a separate shell into the same docker container (for example, by running `docker exec -it <container-name> /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
@@ -3130,7 +3130,7 @@ Unlike with flash drives, there is no page cache between the guest and the under
 
 Custom labels for flash drives and NVRAMs are published in the DTB `/aliases` node.
 The node also carries the auto-assigned aliases `flashdrive0` to `flashdrive7` and `nvram0` to `nvram7`.
-The `root` label is added by the `cartesi-machine` command-line utility as the custom label for `/dev/dev/pmem0`.
+The `root` label is added by the `cartesi-machine` command-line utility as the custom label for `/dev/pmem0`.
 The command-line utilities `flashdrive`, `nvram`, and `memoryrange`, installed by `machine-guest-tools` can translate
 these labels to the corresponding devices and their extents in physical memory.
 
@@ -3226,7 +3226,7 @@ The supporting headers (`abi.h`, `buf.h`, `io.h`, `keccak.h`, `merkle.h`, `util.
 The `rollup.h` API mirrors the lifecycle of a target application.
 `cmt_rollup_init()` opens `/dev/cmio` and maps the receive and transmit buffers.
 `cmt_rollup_finish()` accepts or rejects the previous request and blocks until the next one arrives.
-A field in the returned `cmt_rollup_finish_t` indicates whether the new request is an `HTIF_YIELD_REASON_ADVANCE` or an `HTIF_YIELD_REASON_INSPECT`.
+A field in the returned `cmt_rollup_finish_t` indicates whether the new request is an `HTIF_YIELD_REASON_ADVANCE_STATE` or an `HTIF_YIELD_REASON_INSPECT_STATE`.
 For an advance, `cmt_rollup_read_advance_state()` decodes the ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` payload from the receive buffer into a `cmt_rollup_advance_t` struct with one field per parameter.
 For an inspect, `cmt_rollup_read_inspect_state()` returns just the payload.
 
@@ -3318,7 +3318,7 @@ The reasons paired with `HTIF_YIELD_CMD_AUTOMATIC` are
 `HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` (a report has been written to the transmit buffer).
 
 The reasons paired with `HTIF_YIELD_CMD_MANUAL` are
-`HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` (the application has accepted the previous request and is ready for the next, and the host sets the `data` field on resume to `HTIF_YIELD_REASON_ADVANCE` or `HTIF_YIELD_REASON_INSPECT` to indicate the type of the freshly loaded input in the receive buffer),
+`HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED` (the application has accepted the previous request and is ready for the next, and the host sets the `data` field on resume to `HTIF_YIELD_REASON_ADVANCE_STATE` or `HTIF_YIELD_REASON_INSPECT_STATE` to indicate the type of the freshly loaded input in the receive buffer),
 `HTIF_YIELD_MANUAL_REASON_RX_REJECTED` (the application has rejected the previous request, and the host reverts the machine state and replies with the next request as above), and
 `HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION` (the application has emitted an exception payload to the transmit buffer and the machine cannot continue).
 
@@ -3349,8 +3349,8 @@ Implementations are free to select the combination of extensions that better sui
 The Cartesi Machine architecture can be separated into a main processor, board, and a microarchitecture (uarch).
 The processor performs the computations, executing the traditional fetch-execute loop while maintaining a variety of registers.
 The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAMs, CMIO buffers etc) and a number of devices.
-The uarch includes its own smaller processor and memory, invisible to the main processor, but will full access into its inner working.
-It can drive the main processor at finer granularity that suitable for dispute resolution in the context of blockchains.
+The uarch includes its own smaller processor and memory, invisible to the main processor, with full access into its inner workings.
+It can drive the main processor at a finer granularity that is suitable for dispute resolution in the context of blockchains.
 
 The Cartesi Machine maps its entire state to the physical address space in a well-defined way.
 This includes the internal states of the main processor, of the uarch processor, of all attached devices, and the contents of all memories.
@@ -3729,11 +3729,15 @@ The board maps four non-memory devices to the physical address space: CLINT, HTI
 
 #### CLINT
 
+```{.lua key=clint_rtc_freq_div replace=null}
+local cartesi = require "cartesi"
+io.write(cartesi.RTC_FREQ_DIV)
+```
 The Core Local Interruptor (or CLINT) controls the timer interrupt.
 The active addresses are&nbsp;`0x0200bff8`&nbsp;(`mtime`) and&nbsp;`0x02004000`&nbsp;(`mtimecmp`).
 The CLINT issues a hardware interrupt whenever&nbsp;`mtime` equals&nbsp;`mtimecmp`.
-Since Cartesi Machines must ensure reproducibility, the processor's clock and the timer are locked by a constant frequency divisor of&nbsp;`100`.
-In other words, `mtime` is incremented once for every 100 increments of&nbsp;`mcycle`.
+Since Cartesi Machines must ensure reproducibility, the processor's clock and the timer are locked by a constant frequency divisor of&nbsp;[]{replace=clint_rtc_freq_div}.
+In other words, `mtime` is incremented once for every []{replace=clint_rtc_freq_div} increments of&nbsp;`mcycle`.
 There is no notion of wall-clock time.
 
 #### HTIF
@@ -3958,7 +3962,7 @@ There are currently 3 supported reasons for automatic yields:
 </table>
 </center>
 
-To report `progress`, set `REASON=HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`, and `DATA=<permil>`, where `<permil>` gives the progress in parts per thousand.
+To report `progress`, set `REASON=HTIF_YIELD_AUTOMATIC_REASON_PROGRESS`, and `DATA=<permil>`, where `<permil>` gives the progress in per-mille.
 The other reasons for automatic yield signal the production of Cartesi Rollups responses.
 `REASON=HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT` denotes the production of an output (a voucher, delegate-call voucher, or notice) and `REASON=HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT` denotes the production of a report.
 In both cases, the target writes the payload to the CMIO TX buffer and `DATA` carries the payload length in bytes.

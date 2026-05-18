@@ -3,3 +3,4 @@ README.md.template
 doxygen
 recipes/cache
 recipes/*.ext2
+!recipes/rootfs-docs.ext2

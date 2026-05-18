@@ -69,7 +69,7 @@ while machine:read_reg("iflags_H") == 0 do
     machine:run(math.maxinteger)
     if machine:read_reg("iflags_Y") ~= 0 then
         local _, reason = machine:receive_cmio_request()
-        if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             commit()
             stderr("type expression\n")
             local expr = io.read()
@@ -77,8 +77,8 @@ while machine:read_reg("iflags_H") == 0 do
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
             snapshot()
-            machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
-        elseif i > 0 and reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
+            machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
+        elseif i > 0 and reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             rollback()
         else
@@ -87,7 +87,7 @@ while machine:read_reg("iflags_H") == 0 do
         end
     elseif machine:read_reg("iflags_X") ~= 0 then
         local _, reason, data = machine:receive_cmio_request()
-        if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+        if reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
             stderr("result is\n")
             fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
         end

@@ -17,7 +17,7 @@ repeat
     -- Check if machine yielded automatic with a progress report
     if
         break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
-        and machine:read_reg("htif_tohost_reason") == cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS
+        and machine:read_reg("htif_tohost_reason") == cartesi.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
     then
         local permil = machine:read_reg("htif_tohost_data")
         -- Show progress feedback
