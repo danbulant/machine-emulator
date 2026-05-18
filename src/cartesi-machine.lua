@@ -2224,8 +2224,9 @@ echo "
                 if entry.mount then
                     config.dtb.init = config.dtb.init
                         .. string.format(
-                            'busybox mkdir -p "%s" && busybox mount "$dev" "%s"\n',
+                            'busybox mkdir -p "%s" && busybox mount%s "$dev" "%s"\n',
                             entry.mount,
+                            entry.read_only and " -o ro" or "",
                             entry.mount
                         )
                 end
