@@ -51,7 +51,10 @@ docs-image-exec: check-docs-image
 		$(DOCS_IMAGE):$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
 
 run-docs-image: check-docs-image
-	docker run --hostname playground --rm \
+	docker run \
+        --hostname playground \
+        --name playground \
+        --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \

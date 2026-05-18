@@ -66,22 +66,23 @@ The processor that performs the computations, executing the traditional fetch-ex
 The board defines the surrounding environment with an assortment of memories (RAM, flash drives, NVRAMs etc) and a number of devices.
 Memories and devices are mapped to the 64-bit physical address space of the Cartesi Machine.
 The amount of RAM, as well as the number, length, and position of the flash drives and NVRAMs in the address space can be chosen according to the needs of each particular application.
-The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its execution is reproducible.
-It can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
+The Cartesi Machine emulator is a program that carefully implements the Cartesi Machine architecture so that its execution is reproducible in production.
+During development, a variety of convenient devices can be added to the Cartesi Machine that makes prototyping more ergonomic.
+The emulator can be built from the [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository.
 
 In normal execution, the Cartesi Machine emulator runs programs in an _interpreter_ that has been compiled to run natively on the host computer.
 The execution of this program modifies the registers and memories and interacts with the devices accessible to the main processor.
 The Cartesi Machine also includes a _microarchitecture_ (uarch).
 The uarch can be seen as a lower-level emulator, with its own separate registers and memory, implementing a much narrower RISC-V ISA than the main procesor.
 The uarch is not visible to the main processor, but code running in the uarch has access to the entire state of the Cartesi Machine, including the main processor and the entire board.
-The interpreter for the Cartesi Machine can be compiled to an `uarch.bin` and run inside the microarchitecture.
-In its pristine state, the uarch memory is loaded with `uarch.bin`, in a state that is about to run one fetch-execute iteration of the main processor and then halt the uarch.
+The same interpreter source-code for the Cartesi Machine that runs on the host can also be compiled to an `uarch.bin` binary that is about to run one fetch-execute iteration of the main processor and then halt the uarch.
+In its pristine state, the uarch memory is loaded with this `uarch.bin`.
 Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
 This finer granularity is the basis for state-transition proofs, described in the [System architecture](#system-architecture) chapter.
 
 The initialization of a Cartesi Machine typically loads the Linux kernel into RAM, and a Linux root file-system (as a flash drive) from regular files in the host file-system.
 The Linux kernel `linux.bin`, is built by the [`cartesi/machine-linux-image`](https://github.com/cartesi/machine-linux-image) repository.
-After it is done with its own initialization, the Linux kernel cedes control to the `/sbin/init` program in the root file-system.
+After it is done with its own initialization, the Linux kernel cedes control to the `/usr/sbin/cartesi-init` program in the root file-system.
 The root file-system `rootfs.ext2` contains all the data files and programs that make up Linux distribution.
 It is built by the [`cartesi/machine-rootfs-image`](https://github.com/cartesi/machine-rootfs-image) repository.
 The components of the target application can reside in the root file-system itself, or in their own, separate file-systems.
@@ -115,8 +116,7 @@ In a nutshell, Cartesi Rollups uses the blockchain to maintain a public record o
 Both the order and the inputs carried by these requests are recorded and made available in an indisputable fashion.
 Since Cartesi Machines are deterministic, and since the inputs are agreed upon, the state of a Rolling Cartesi Machine can be advanced in a well-defined way, always producing the same set of responses, no matter who runs it.
 
-Advancing the state of a Rolling Cartesi Machine can produce four types of response: _vouchers_, _notices_, _reports_, and
-_exceptions_.
+Advancing the state of a Rolling Cartesi Machine can produce four types of response: _vouchers_, _notices_, _reports_, and _exceptions_.
 Vouchers allow a Rolling Cartesi Machine to interact back with the blockchain.
 A voucher issued by the target application may, for example, grant a user the right to withdraw tokens locked into a custodial smart contract.
 Notices are used to register noteworthy changes to the state of the target application.
@@ -145,25 +145,29 @@ Cartesi Machines can be seen from 3 different perspectives:
 - _The blockchain perspective_ &mdash;
   This is the view smart contracts have of Cartesi Machines.
   It consists almost exclusively of the manipulation of cryptographic hashes of the state of Cartesi Machines and parts thereof.
-  In particular, using only hash operations, the blockchain can verify assertions concerning the contents of the state, and can obtain the state hash that results from modifications to the state (including the execution of RISC-V instructions).
+  In particular, using only hash operations, the blockchain can verify assertions concerning the contents of the state, and can obtain the state hash that results from modifications to the state.
+  Notably, this includes direct verification by the blockchain of RISC-V instructions performed by the uarch, and ZK proofs of batches of RISC-V instructions performed by the main processor.
 
 As with every computer, the level of knowledge required to interact with Cartesi Machines depends on the nature of the application being created.
 Simple applications will require target developers to code a few scripts invoking pre-installed software components, require host developers to simply fill out a configuration file specifying the location of the components needed to build a Cartesi Machine, and require blockchain developers to simply instantiate one of the high-level contracts provided by Cartesi.
-At the other extreme are the developers working inside Cartesi, who regularly write, build, and deploy custom software components to run in the target, or even change the Linux kernel to support Cartesi-specific devices. Additionally, these developers programmatically control the creation and execution of Cartesi Machines in the host, and must also understand and use the hash-based state manipulation primitives the blockchain needs.
+At the other extreme are the developers contributing to the Cartesi ecosystem, who regularly write, build, and deploy custom software components to run in the target, or even change the Linux kernel to support Cartesi-specific devices. Additionally, these developers programmatically control the creation and execution of Cartesi Machines in the host, and must also understand and use the hash-based state manipulation primitives the blockchain needs.
 
 Although Cartesi's goal is to shield platform users from as much complexity as possible, there is value in making information available to the greatest extent possible. To that end, this documentation of Cartesi Machines aims to provide enough information to cover all 3 perspectives, at all depths of understanding.
 
 # The host perspective
 
 Cartesi's reference off-chain implementation of a Cartesi Machine is based on software emulation.
-The emulator is written in C/C++ with POSIX dependencies restricted to the terminal, process, and memory-mapping facilities.
+The emulator is written in C++23 with well-insulated POSIX dependencies.
 The [`cartesi/machine-emulator`](https://github.com/cartesi/machine-emulator) repository can be used to build and install the Cartesi Machine emulator.
-It is written as a C++ class, but can be accessed in a variety of different ways.
+The emulator is implemented by a C++ class that can be accessed in a variety of different ways.
 
 When linked to a C++ application, the emulator can be controlled directly via the interface of the `cartesi::machine` class.
 C applications can control the emulator in a similar way, by means of a matching C API defined in the include file `cm.h`.
-The emulator can also be accessed from the Lua programming language, via a `cartesi` module that exposes a `cartesi.machine` interface to Lua programs.
+The C API is stable and complete.
+It is the basis for the creation of binds in other programming languagesm most notably the Lua programming language.
+The emulator can be accessed via a `cartesi` module that exposes a `cartesi.machine` interface to Lua programs.
 Additionally, Cartesi provides a JSON-RPC server that can run a Cartesi Machine instance that is controlled remotely.
+The server supports JSON-RPC discovery so client libraries can be generated automatically.
 Finally, there is a command-line utility (written in Lua) that can configure and run Cartesi Machines for rapid prototyping.
 The C, C++, Lua APIs as well as the command-line utility can seamlessly instantiate local emulators or connect to remote JSON-RPC servers.
 
@@ -188,7 +192,10 @@ docker pull $image
 ```
 
 ```{.bash key=docker_run replace=source vars=image->globals/docs_image}
-docker run --hostname playground --rm \
+docker run \
+    --hostname playground \
+    --name playground \
+    --rm \
     -e USER=$$(id -u -n) \
     -e GROUP=$$(id -g -n) \
     -e UID=$$(id -u) \
@@ -291,11 +298,11 @@ The output is
 ```
 
 It shows the listing of directory `/bin/` inside the root file-system.
-The listing was produced by the command that follows the `--` separator in the command line.
-The Linux kernel passes this unmodified to `/sbin/init`, and the Cartesi-provided `/sbin/init` script executes the command before gracefully halting the machine.
+The listing was produced by the entrypoint command that follows the `--` separator in the command line.
+By a method explained in great detail later on (see [The target perspective initialization](#initialization-1)) the entrypoint is picked up by the Cartesi-provided `/usr/sbin/cartesi-init`, which executes it before gracefully halting the machine.
 
 :::note
-In many of the documentation examples, the utilities invoked from the command-line executed by a Cartesi Machine are in the default search path for executables. (This is setup by the Cartesi-provided `/sbin/init` script itself.)
+In many of the documentation examples, the utilities invoked from the command-line executed by a Cartesi Machine are in the default search path for executables. (This is setup by the Cartesi-provided `/usr/sbin/cartei-init` script itself.)
 When in doubt, or when using your own executables installed in custom locations, make sure to invoke them by using their full paths (e.g., `/bin/ls` or `/bin/sh` instead of simply `ls` and `sh`.)
 :::
 
@@ -307,9 +314,9 @@ User interaction with a Cartesi Machine via the console is, after all, not repro
 Nevertheless, during development, it is often convenient to directly interact with the emulator, as if using a computer console.
 
 The command-line option `-i` (short for `--htif-console-getchar`) instructs the emulator to monitor the console for input, and to make this input available to the Linux kernel.
-Typically, this option will be used in conjunction with the `--` separator and the command `sh`, causing the Cartesi-provided `/sbin/init` script to drop into an interactive shell.
+Typically, this option will be used in conjunction with the `--` separator and the command `sh`, causing the Cartesi-provided `/usr/sbin/cartesi-init` script to drop into an interactive shell.
 Interaction with the shell enables the exploration of the Linux distribution from the inside.
-Exiting the shell returns control back to `/sbin/init`, which then gracefully halts the machine.
+Exiting the shell returns control back to `/usr/sbin/cartesi-init`, which then gracefully halts the machine.
 
 For example, if an interactive session is started with the following command
 ```{.bash key=cmdline_interactive_ls_shown replace=source}
@@ -328,7 +335,7 @@ The output is
 # character (^D, byte 0x04) into the emulator. The guest TTY's line
 # discipline turns ^D into a 0-byte read, so the shell exits cleanly
 # without an `exit` command, and ^D itself is not echoed. input_fd:0
-# routes the pipe to the console; /sbin/init halts the machine when the
+# routes the pipe to the console; /usr/sbin/cartesi-init halts the machine when the
 # user shell exits.
 printf 'ls /bin\n\x04' | cartesi-machine \
     --no-init-splash \
@@ -348,14 +355,42 @@ This dynamic balancing act is sure to vary between executions and across differe
 
 The command-line option `--flash-drive=label:<label>,data_filename:<filename>` can be used to add between 1 and 8 flash drives to the Cartesi Machine.
 Here, the string `<label>` is the *label* for the flash drive, and `<filename>` points to an *image file* with the initial contents of the flash drive.
-When the image file contains a valid file-system, the cartesi-provided `/sbin/init` script will mount it at `/mnt/<label>`.
+When the image file contains a valid file-system, the `cartesi-machine` command-line utility instructs `/usr/sbin/cartesi-init` to mount it at `/mnt/<label>`.
 
 To enable transparency, Cartesi Machine flash drives are mapped into the machine's 64-bit address space.
 The start and length are set, respectively, by the `start:<number>` and `length:<number>` parameters to `--flash-drive`.
 
-By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>55</sup>).
+```{.lua key=ar_drive_formula replace=null outputs=log2_drive_offset,log2_drive_start,drive_start,input_addr,output_addr,input_addr_dec}
+local c = require "cartesi"
+local o = c.AR_DRIVE_OFFSET
+local log2_drive_offset = 0
+while o > 1 do
+    o = o >> 1
+    log2_drive_offset = log2_drive_offset + 1
+end
+io.write(string.format("0x%x + i*2^%d", c.AR_DRIVE_START, log2_drive_offset))
+local o = c.AR_DRIVE_START
+local log2_drive_start = 0
+while o > 1 do
+    o = o >> 1
+    log2_drive_start = log2_drive_start + 1
+end
+local function writefile(name, val)
+    local f = assert(io.open(name, "w"))
+    f:write(tostring(val))
+    f:close()
+end
+writefile("log2_drive_offset", log2_drive_offset)
+writefile("log2_drive_start", log2_drive_start)
+writefile("drive_start",    string.format("0x%x", c.AR_DRIVE_START))
+writefile("input_addr",     string.format("0x%x", c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
+writefile("output_addr",    string.format("0x%x", c.AR_DRIVE_START + 2*c.AR_DRIVE_OFFSET))
+writefile("input_addr_dec", tostring(c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
+```
+
+By default, the start of the first flash drive (which typically holds the root file-system) is set to the beginning of the second half of the address space (i.e., at offset 2<sup>[]{replace=ar_drive_formula/log2_drive_start code=no}</sup>).
 Additional flash drives are automatically spaced uniformly within that second half of the address space.
-They are therefore separated by 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
+They are therefore separated by 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup> bytes, which &ldquo;should be enough separation for everyone&rdquo;.
 (The machine will fail to instantiate if there is any overlap between the ranges occupied by multiple drives.)
 If you specify `start` of *any* drive, make sure to place it where it will not colide with the automatically assigned drives.
 
@@ -431,7 +466,7 @@ cartesi-machine \
 # docs:end
 ```
 Here, a flash drive with label `foo` is initialized with the contents of an `ext2` file-system in the image file `foo.ext2`.
-The Cartesi-provided `/sbin/init` mounts this as `/mnt/foo`.
+The Cartesi-provided `/usr/sbin/cartesi-init` mounts this as `/mnt/foo`.
 The command executed in the machine simply copies the contents of `/mnt/foo/bar.txt` to the terminal.
 The output is
 ```{replace=flash}
@@ -450,11 +485,11 @@ The image files are never written to.
 (The `--dump-address-ranges` command-line option can be used to inspect the modified copies for debugging purposes. See below.)
 
 :::note
-Commands started by the Cartesi-provided `/sbin/init` run as the unprivileged user `dapp`.
+The entrypoint commands executed by the Cartesi-provided `/usr/sbin/cartesi-init` run as the unprivileged user `dapp`.
 By default, every flash drive is mounted with the ownership and permissions baked into its image file, which typically means its root directory is owned by `root`.
 As a result, `dapp` can read the drive but cannot write to it.
 To allow writes, pass `user:dapp` to the `--flash-drive` command-line option so the emulator changes the owner of the drive's mount point to `dapp` after mounting.
-Alternatively, the `--user=root` command-line option causes `/sbin/init` to run commands as `root`, which can write to the drive without any ownership changes.
+Alternatively, the `--user=root` command-line option causes `/usr/sbin/cartesi-init` to run commands as `root`, which can write to the drive without any ownership changes.
 For safety, running as `dapp` is preferred.
 :::
 
@@ -536,46 +571,12 @@ produces the output
 Note the execution was interrupted before the splash screen was even completed.
 The ability to limit computation to an arbitrary number of cycles is fundamental to the verifiability of Cartesi Machines, as is explained in detail under the [blockchain perspective](#verification-game).
 
-### Progress feedback
-
-A target application can inform the host of its progress by using a Cartesi-specific `/dev/yield` Linux device.
-Within the target, the Linux device can be controlled in the command-line with the utility `/opt/cartesi/bin/yield`, pre-installed in the root file-system `rootfs.ext2`.
-The progress feedback is accessed via the `automatic progress <permil>` command-line option.
-
-For example, during the execution of the loop,
-```bash
-cartesi-machine \
-    --no-init-splash \
-    -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
-```
-the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
-(The directory `/opt/cartesi/bin/`, where `yield` resides, is in the default search path for executable setup by `/sbin/init`.)
-
-:::note
-The `$'...'` form here is bash's ANSI-C-quoted string, used throughout the manual for entrypoint commands.
-It passes the contents to `cartesi-machine` as a single argument, leaves host-side variable references like `$i` unexpanded (so they reach the guest shell verbatim), and accepts `\'` as an escape for a single quote inside the string.
-This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocation seen later under [NVRAMs](#flash-drives-and-nvrams).
-:::
-
-By default, the emulator honors automatic yield requests from the target.
-Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
-Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
-```
-Progress:  44.00
-```
-This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or JSON-RPC interfaces, where Cartesi Machines typically run disconnected from the console.
-In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
-Its handling by `cartesi-machine`, which does have access to the console, is simply to help with prototyping and debugging.
-
-The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](#system-architecture).
-In particular, the section explains the _manual_ yield commands needed for proper operation of Cartesi Rollups.
-
 ### State hashes
 
 The `cartesi-machine` utility can also be used to print Cartesi Machine state hashes.
 State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
 (See the [Hash view of states](#hash-view-of-state) for an explanation of Merkle trees.)
-Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices connected to the board.
+Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all processor CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices connected to the board, and even the state of the uarch.
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
 To obtain the state hash right before execution starts, use the command-line option `--initial-hash`.
@@ -655,10 +656,10 @@ To store a machine to a given `<directory>`, use the command-line option `--stor
 (In `<directory>`, the `%h` escape will be replaced by the state hash in hex.)
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec/stdout}
-```{.bash key=persistent_machine_cmd replace=source vars=cycles->cycles_htif_putchar/stderr,hash->state_hashes_final_limit_exec/stdout}
+```{.bash key=persistent_machine_cmd replace=source vars=cycles->cycles_htif_putchar/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
-    --store="machine-$hash"
+    --store="machine-%h"
 ```
 
 ```{.bash key=machine_dirname vars=state_hashes_final_limit_exec replace=null}
@@ -713,10 +714,11 @@ produces the output
 
 ### Running as root
 
-Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/sbin/init` script runs the target application (or any initial command) as []{replace=rarely_id/stdout}.
-This can be seen by running the command:
+Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/usr/sbin/cartesi-init` script runs the entrypoint command as []{replace=rarely_id/stdout}.
+This can be seen by running:
 ```{.bash key=rarely_id replace=source}
 cartesi-machine \
+	--quiet \
     --no-init-splash \
     -- id
 ```
@@ -726,6 +728,7 @@ It shows the user and group are indeed `dapp`.
 To instead run your target application as `uid=0(root) gid=0(root)`, pass the `--user=root` command-line option, which init honors by running the entrypoint as `root`:
 ```{.bash key=rarely_user_root replace=source}
 cartesi-machine \
+	--quiet \
     --no-init-splash \
     --user=root \
     -- id
@@ -735,22 +738,32 @@ This produces the output:
 ```
 It shows the user and group are now `root`.
 
-Although running as root is not recommended, the feature can be used to perform setup tasks that require
-elevated permissions.
+Running as root is not recommended.
+To perform perform setup tasks that require elevated permissions, use instead the `--append-init` command-line option:
 
-```{.bash key=calc_pipeline replace=null}
-$'readmmap input | lua5.4 -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+```{.bash key=rarely_append_init replace=source}
+cartesi-machine \
+	--quiet \
+    --no-init-splash \
+	--append-init="echo Before init ends: && id" \
+    -- "echo After entrypoint starts: && id"
 ```
+This produces the output:
+```{replace=rarely_append_init}
+```
+
+The `--append-init-file=<filename>` command-line option works like `--append-init`, but appends to init the entire contents of file `<filename>`.
+
 
 ### Cartesi Machine templates
 
 *Templates* are one of the key uses for Cartesi Machines stored to disk.
-Cartesi Machine templates are machines in which the contents of one or more flash drives are still unknown.
-To put it another way, Cartesi Machine templates behave like functions whose parameters are the yet-to-be-defined contents of one or more flash drives.
+Cartesi Machine templates are machines in which the contents of one or more flash drives or NVRAMs are still unknown.
+To put it another way, Cartesi Machine templates behave like functions whose parameters are the yet-to-be-defined contents of these drives.
 
-As discussed in detail under [the blockchain perspective](#hash-view-of-state), starting from template hashes, the hashes of the flash drives, and a small amount of [additional information](#sibling-hashes), it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
+As discussed in detail under [the blockchain perspective](#hash-view-of-state), starting from template hashes, the hashes of the drives, and a small amount of [additional information](#sibling-hashes), it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
 This is how a smart contract can specify a computation to be performed off-chain over arbitrary input.
-Starting from the template hash, and in possession of the flash drive hashes, it instantiates the template, generating the initial state hash for the corresponding Cartesi Machine.
+Starting from the template hash, and in possession of the drive hashes, it instantiates the template, generating the initial state hash for the corresponding Cartesi Machine.
 
 As an example, consider a Cartesi Machine that operates as an arbitrary-precision arithmetic expression evaluator.
 The machine will take the expression in text format from an input NVRAM labelled `input`, and will copy the output in text format into an output NVRAM labelled `output` (`shared`, of course, so the output persists after the emulator is done).
@@ -759,7 +772,11 @@ NVRAMs bind directly to a memory-backed UIO device exposed inside the guest as `
 Unlike flash drives, they have no file-system layer and no page cache between the guest and the underlying memory range, so writes are immediately visible to the emulator and there is no need to flush a cache before snapshotting.
 This makes NVRAMs faster than flash drives for cases where the guest only needs raw access to a region of bytes.
 
-Because UIO devices do not support ordinary `read()` or `write()` against the device file, the guest utilities include the `readmmap` and `writemmap` tools to read and write NVRAMs.
+```{.bash key=calc_pipeline replace=null}
+$'readmmap input | lua5.4 -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
+```
+
+Because UIO devices do not support ordinary `read()` or `write()` against the device file, the machine guest utilities include the `readmmap` and `writemmap` tools to read and write NVRAMs.
 They resolve the label, `mmap()` the device, and copy bytes to/from standard input or standard output.
 Both also work on flash drives.
 
@@ -780,6 +797,12 @@ cartesi-machine \
     -- $pipeline
 # docs:end
 ```
+
+:::note
+The `$'...'` form here is bash's ANSI-C-quoted string, used throughout the manual for entrypoint commands.
+It passes the contents to `cartesi-machine` as a single argument, leaves host-side variable references like `$i` unexpanded (so they reach the guest shell verbatim), and accepts `\'` as an escape for a single quote inside the string.
+This last property matters when the entrypoint wraps a single-quoted sub-command, such as a `lua5.4 -e '...'` invocations.
+:::
 
 Using the `truncate` command-line utility, the session creates a 4KiB file `output.raw` containing only zeros to serve as the output drive image.
 Then, it creates the `input.raw` file for use as the input drive image containing the expression `6*2^1024 + 3*2^512\n` to be evaluated.
@@ -915,7 +938,7 @@ cartesi-machine \
 ```
 Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address []{replace=ar_drive_formula/drive_start}.
 The input NVRAM is therefore in the second slot.
-It is automatically spaced by 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup> bytes relative to the first drive, so that its starting address is []{replace=ar_drive_formula/input_addr}.
+It is automatically spaced by 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup> bytes relative to the first drive, so that its starting address is []{replace=ar_drive_formula/input_addr}.
 
 The output of the command is
 ```{replace=proofs_pristine_run}
@@ -1004,7 +1027,7 @@ cat $proofs_input_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
 ```
-The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout} differs from [...]{replace=templates_trunc_hash/stdout} obtained for template, as expected.
+The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout} differs from [...]{replace=templates_trunc_hash/stdout} obtained for the template, as expected.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
@@ -1083,7 +1106,7 @@ Remote Cartesi Machines are managed by the `cartesi-jsonrpc-machine` server.
 The server exposes a JSON-RPC interface through which the `cartesi-machine` command-line utility (or any other software) can control the machine remotely.
 
 To avoid confusion, it is best to run the server and client in separate shells in the playground container.
-Leaving the existing shell for the client, open a separate shell for the server (For example, by running `docker exec -it <container-name> /bin/bash`), then run
+Leaving the existing shell for the client, open a separate shell for the server (For example, by running `docker exec -it playground /bin/bash`), then run
 ```bash
 cartesi-jsonrpc-machine \
     --server-address=127.0.0.1:8080
@@ -1129,12 +1152,12 @@ and the following output on the server shell
 ```{replace=cmdline_remote/server}
 ```
 
-The client first connects to the remote address and prints out the version returned by the server.
+The client first connects to the remote address and prints the connection status.
 It then asks the server to instantiate a machine (by sending the configuration over) and run it.
 The machine that runs in the server prints out the splash screen, boots Linux, and cedes control to the
-Cartesi-provided `/sbin/init` script.
-The `/sbin/init` script figures out there is nothing to do and halts the machine.
-The client detects the machine is halted and shuts down the server, as requested.
+Cartesi-provided `/usr/sbin/cartesi-init` script.
+The `/usr/sbin/cartesi-init` script figures out there is nothing to do and halts the machine.
+The client detects the machine is halted and shuts down the server, as requested, printing the final message.
 
 When it is desirable to leave the server running and preserve the instantiated machine, omit the `--remote-shutdown`
 command-line option and add the `--no-remote-destroy`.
@@ -1174,7 +1197,7 @@ mv "$srv_tmp" begin-end-server
 The client shell shows:
 ```{replace=cmdline_remote_end/begin-client}
 ```
-To continue execution of the same Cartesi Machine until it ends, rather than instantiating a new one, use the `cartesi-machine` command-line utility with the option `--no-remote-create`:
+To continue execution of the same Cartesi Machine until it halts, rather than instantiating a new one, use the `cartesi-machine` command-line utility with the option `--no-remote-create`:
 ```{.bash replace=cmdline_remote_end/source/end-client}
 ```
 The client shell now shows:
@@ -1197,20 +1220,21 @@ Nevertheless, in debugging or prototyping tasks, the `cartesi-machine` command-l
 To use this functionality, the developer creates a sequence of advance-state requests as numbered files, or a single inspect-state request as a file, and instructs the `cartesi-machine` command-line utility to feed them to the target application.
 As each request is processed, the utility stores the responses as separate files.
 
-An advance-state request is a single ABI-encoded `EvmAdvance` payload carrying the fields important for the operation of Cartesi Rollups (_chain id_, _application contract_, _message sender_, _block number_, _block timestamp_, _previous randao_, _input index_, and _input payload_).
+An advance-state request is a single ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blob carrying the fields important for the operation of Cartesi Rollups.
 Recall that, as responses, the target application can issue _vouchers_, _notices_, _reports_, and _exceptions_.
 In contrast, an inspect-state request carries only a _query_ and, as response, produces only reports and exceptions.
 The query in an inspect-state request consists of an application-specific payload.
 
-Target applications running inside Rolling Cartesi Machines communicate with the outside world using the Cartesi-specific `/dev/cmio` Linux device.
-The device can be accessed directly, via `ioctl` calls to the driver, via the `/opt/cartesi/bin/rollup` command-line utility, or by means of an HTTP service.
-The `/dev/cmio` device owns an rx buffer and a tx buffer that are used to pass data in and out of the machine, and uses the `/dev/yield` device to return control to the host and notify it of important events.
+Target applications running inside Rolling Cartesi Machines communicate with the outside world through the `/dev/cmio` Linux character device, which the Cartesi-extended kernel exposes as a single user-space endpoint for the yield sub-device of HTIF, the machine's Host-Target Interface.
+Data flows through two board-level memory regions, the _CMIO RX buffer_ (host to target) and the _CMIO TX buffer_ (target to host).
+Applications typically use a higher-level layer: the `libcmt` library when a language binding is available, the `/usr/bin/rollup-http-server` daemon otherwise, or the `/usr/bin/rollup` command-line utility for shell-driven workflows.
+Tooling and tests can also drive the device directly through its `ioctl` interface.
 
 In a nutshell, the process is as follows.
-When the target application attempts to obtain the next request from the device, the `/dev/cmio` device uses the `/dev/yield` device to issue a _manual_ yield command that returns control to the host (in our case, the `cartesi-machine` command-line utility).
-The host then copies the next request to the rx buffer and resumes the machine, so the device can pass the request over to the target application for processing.
-When the target application asks the device to output data (a voucher, notice, report, or exception), the `/dev/cmio` device copies the data to the tx buffer, then uses the `/dev/yield` device to issue an _automatic_ yield command that notifies the host that a new output is available.
-The host can then collect the output (in our case, saving it to files or printing it to the terminal) and resume the machine so the target application can continue processing the request.
+To obtain the next request, the target application issues a _manual_ yield through `/dev/cmio`, returning control to the host (in our case, the `cartesi-machine` command-line utility).
+The host writes the next request into the CMIO RX buffer and resumes the machine, so the target application can read and process it.
+When the target application emits an output (a voucher, notice, report, or exception), it writes the payload to the CMIO TX buffer and issues an _automatic_ yield through `/dev/cmio`, which momentarily returns control to the host so it can collect the output (in our case, saving it to a file or printing it to the terminal) before resuming the machine.
+(See [the target perspective](#system-architecture) for the underlying HTIF protocol and yield semantics.)
 
 To help debugging applications, developers can obtain from Cartesi Rollups, as files, the inputs associated to each advance-state request, so the sequence can be replayed locally in the command line.
 When prototyping, developers can create their own files simulating requests that test the behavior of their target application under customized conditions.
@@ -1242,7 +1266,8 @@ cartesi-machine \
     --remote-address=127.0.0.1:8080 \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
-    --cmio-inspect-state \
+    --cmio-inspect-state=hashes \
+	--final-hash \
     -- /home/dapp/puppet
 # docs:end client
 } > client 2>&1
@@ -1317,12 +1342,13 @@ By default, the input file name is `input-%i.bin`, where `%i` is replaced by the
 The input index progressively takes the values in the (open ended) range given by parameters `input_index_begin=<number>` and `input_index_end=<number>`.
 In the example, two advance-state requests will be performed: one for input 1 and one for input 2.
 The file names therefore match those of the encoded files present in the working directory.
-The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it loads the request data into the rx buffer.
+The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it loads the request data into the CMIO RX buffer.
 The command-line option `--cmio-inspect-state` causes the utility to create an inspect-state request right after all advance-state requests have been carried out (if any).
 By default, the query is loaded from a file `query.bin`.
 The target application is just `puppet`, which acts on whatever payloads it is fed.
 The payload of `input-1.bin` is `notice:hello from input 1`, so the `puppet` will emit a single notice and accept.
-The payload of `input-2.bin` does not match any known verb, so the `puppet` will reject the advance-state request and the client will roll the machine state back.
+The payload of `input-2.bin` does not match any known verb, so the `puppet` will reject the advance-state request and the client will roll the machine state back, discarding any side-effects from its processing.
+The contents of `query.bin` do not matter (it will be simply echoed), but once again the state of the machine reverts after it is processed.
 
 As a result of these commands, the server shell shows nothing (the `--no-init-splash` option passed to the client suppresses the splash that the remote machine would otherwise print on boot).
 The client shell shows a lot more activity:
@@ -1339,6 +1365,10 @@ cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES
 
 ```{.bash key=rolling_puppet_hash_after_input1 vars=rolling_puppet replace=null}
 cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
+```
+
+```{.bash key=rolling_puppet_hash_after_input1_accepted vars=rolling_puppet replace=null}
+cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 2' 1 | $RECIPES_DIR/trunc8.sh
 ```
 
 ```{.bash key=rolling_puppet_input1_tx_output vars=rolling_puppet replace=null}
@@ -1362,27 +1392,25 @@ cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted/stdout}) signals the point at which the target application made its first call to `cmt_rollup_finish`.
-In other words, the application is _ready_.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted/stdout}) signals the point at which the target application attempted to process its first request.
 
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1/stdout}, loads file `input-1.bin` into the rx buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1/stdout}, and resumes the machine.
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1/stdout}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1/stdout}, and resumes the machine.
 The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
 The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_input1_tx_output/stdout}, returning control to the client.
-The client reads the tx buffer and stores the output as `input-1-output-0.bin`.
+The client reads the CMIO TX buffer and stores the output as `input-1-output-0.bin`.
 The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_input1_rx_accepted/stdout} signals that the `puppet` is done processing input index 1 and has accepted it.
 
 The client then loads input index 2 and resumes the machine.
-The payload `something the puppet does not understand` does not match any of the recognised verbs, so the `puppet` sets `accept_previous_request = false` on its next call to `cmt_rollup_finish`.
-The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected/stdout} causes the client to roll the machine state back.
-In production, when an input to an advance-state request is rejected, the Cartesi Node rolls back the Rolling Cartesi Machine to the state it was before the input was processed.
-Moreover, all vouchers and notices are deleted (the reports are preserved).
-To make prototyping realistic, the `cartesi-machine` client also rolls the state back when an input is rejected by the target.
-This can be confirmed by the fact that the cycle count and state hash following the rejection match those before input 2 was loaded.
+The payload `something the puppet does not understand` does not match any of the recognised verbs, so the `puppet` rejects the request.
+The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected/stdout} causes the client to roll the machine state back to what it was before the input was processed.
+This can be confirmed by the fact that the cycle count and state hash following the rejection remain []{replace=rolling_puppet_input1_rx_accepted/stdout}:[...]{replace=rolling_puppet_hash_after_input1_accepted/stdout}.
 
 With both advance-state requests handled, the client moves to the inspect-state request.
-It loads `query.bin` into the rx buffer and resumes the machine so the `puppet` can respond.
+It loads `query.bin` into the CMIO RX buffer and resumes the machine so the `puppet` can respond.
 The `automatic yield tx-report` at cycle []{replace=rolling_puppet_query_tx_report/stdout} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted/stdout}, the client simply shuts down the remote Cartesi Machine server and exits.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted/stdout}, the client reverts the state of the machine back to what it was before the query was processed.
+(Note the final cycle count and state hash are still []{replace=rolling_puppet_input1_rx_accepted/stdout}:[...]{replace=rolling_puppet_hash_after_input1_accepted/stdout}.)
+Since there is nothing else to do, the client shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
 ```{.bash key=rolling_puppet_all_bins vars=rolling_puppet replace=source}
@@ -1668,6 +1696,32 @@ In production, these error messages should have been captured and output as a re
 This is an advanced section, not needed by regular users of the Cartesi platform.
 :::
 
+A target application can inform the host of its progress by using a Cartesi-specific `/dev/yield` Linux device.
+Within the target, the Linux device can be controlled in the command-line with the utility `/opt/cartesi/bin/yield`, pre-installed in the root file-system `rootfs.ext2`.
+The progress feedback is accessed via the `automatic progress <permil>` command-line option.
+
+For example, during the execution of the loop,
+```bash
+cartesi-machine \
+    --no-init-splash \
+    -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
+```
+the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
+(The directory `/opt/cartesi/bin/`, where `yield` resides, is in the default search path for executable setup by `/usr/sbin/cartesi-init`.)
+
+By default, the emulator honors automatic yield requests from the target.
+Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
+Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
+```
+Progress:  44.00
+```
+This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or JSON-RPC interfaces, where Cartesi Machines typically run disconnected from the console.
+In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
+Its handling by `cartesi-machine`, which does have access to the console, is simply to help with prototyping and debugging.
+
+The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](#system-architecture).
+In particular, the section explains the _manual_ yield commands needed for proper operation of Cartesi Rollups.
+
 The command-line option `--append-bootargs=<string>` can be used to append any `<string>` to the kernel command-line.
 A detailed description of all kernel command-line parameters is beyond the scope of this document.
 Please refer to the appropriate [section of the kernel documentation](https://www.kernel.org/doc/html/v5.5/admin-guide/kernel-parameters.html).
@@ -1676,6 +1730,7 @@ For example, to prevent clutter in the console, the `cartesi-machine` utility au
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
 ```{.bash key=rarely_append_bootargs_loglevel replace=source}
 cartesi-machine \
+    --quiet \
     --no-init-splash \
     --append-bootargs="loglevel=8"
 ```
@@ -1971,27 +2026,6 @@ memory_range_config ::= {
 
 </div>
 </div>
-
-```{.lua key=ar_drive_formula replace=null outputs=log2_drive_spacing,drive_start,input_addr,output_addr,input_addr_dec}
-local c = require "cartesi"
-local o = c.AR_DRIVE_OFFSET
-local log2 = 0
-while o > 1 do
-    o = o >> 1
-    log2 = log2 + 1
-end
-io.write(string.format("0x%x + i*2^%d", c.AR_DRIVE_START, log2))
-local function writefile(name, val)
-    local f = assert(io.open(name, "w"))
-    f:write(tostring(val))
-    f:close()
-end
-writefile("log2_drive_spacing", log2)
-writefile("drive_start",    string.format("0x%x", c.AR_DRIVE_START))
-writefile("input_addr",     string.format("0x%x", c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
-writefile("output_addr",    string.format("0x%x", c.AR_DRIVE_START + 2*c.AR_DRIVE_OFFSET))
-writefile("input_addr_dec", tostring(c.AR_DRIVE_START + 1*c.AR_DRIVE_OFFSET))
-```
 
 The <a href="#ram_config">`ram`</a> entry in `machine_config` has two fields.
 Field `length` gives the amount of RAM in bytes (RAM always starts at offset `0x80000000`).
@@ -2632,7 +2666,7 @@ The host does not need to access these ranges directly.
 The call `machine:send_cmio_response(reason, data)` writes _data_ into `cmio.rx_buffer`, records the reason and length in `htif_fromhost`, and clears `iflags_Y` so the machine can resume.
 Conversely, the _data_ value returned by `machine:receive_cmio_request()` is the contents of `cmio.tx_buffer` at the yield.
 
-Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` calldata blobs.
+Advance-state inputs are passed as ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blobs.
 The _block timestamp_ field is in seconds since the _Unix epoch_, and the _prev randao_ field is a 32-byte big-endian unsigned integer.
 (See the table in the target perspective [architecture](#rollup).)
 
@@ -3227,7 +3261,7 @@ The `rollup.h` API mirrors the lifecycle of a target application.
 `cmt_rollup_init()` opens `/dev/cmio` and maps the receive and transmit buffers.
 `cmt_rollup_finish()` accepts or rejects the previous request and blocks until the next one arrives.
 A field in the returned `cmt_rollup_finish_t` indicates whether the new request is an `HTIF_YIELD_REASON_ADVANCE_STATE` or an `HTIF_YIELD_REASON_INSPECT_STATE`.
-For an advance, `cmt_rollup_read_advance_state()` decodes the ABI-encoded `EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)` payload from the receive buffer into a `cmt_rollup_advance_t` struct with one field per parameter.
+For an advance, `cmt_rollup_read_advance_state()` decodes the ABI-encoded `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)` calldata blob from the CMIO RX buffer into a `cmt_rollup_advance_t` struct with one field per parameter.
 For an inspect, `cmt_rollup_read_inspect_state()` returns just the payload.
 
 While processing a request, the application emits zero or more outputs.
@@ -4105,7 +4139,7 @@ Instead of accepting or rejecting a request, the application can emit an excepti
 The exception is also written to the CMIO TX buffer.
 
 All data exchanged through the CMIO buffers follows the Solidity ABI specification.
-Advance-state inputs arrive in the CMIO RX buffer as `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 inputIndex, bytes payload)`.
+Advance-state inputs arrive in the CMIO RX buffer as `EvmAdvance(uint256 chainId, address appContract, address msgSender, uint256 blockNumber, uint256 blockTimestamp, uint256 prevRandao, uint256 index, bytes payload)`.
 Vouchers are encoded as `Voucher(address destination, uint256 value, bytes payload)`.
 Delegate-call vouchers are encoded as `DelegateCallVoucher(address destination, bytes payload)`.
 Notices are encoded as `Notice(bytes payload)`.
@@ -4507,7 +4541,7 @@ From the blockchain perspective, a [Cartesi Machine template](#cartesi-machine-t
 Instantiating the Cartesi Machine with a given input is simply the process of obtaining the state hash *M'* that results from replacing one or more of its input NVRAMs.
 Each replacement is the result of a splicing operation as described above.
 The splicing operation is particularly convenient if the input range length is a power of 2 and its start is aligned according to its length.
-This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_spacing code=no}</sup>.
+This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup>.
 
 #### Result extraction
 
