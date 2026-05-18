@@ -200,9 +200,11 @@
 --
 --   Pandoc() writes every pandoc metadata variable whose name starts with a
 --   letter or underscore (hyphens are also allowed after the first character)
---   to REPLACE_CACHE_DIR/globals/<name>. Use vars=VAR->globals/NAME
---   (contents-form) to inject the value into a block body or a replace=source
---   display. Pass the value on the pandoc command line with -M NAME=VALUE.
+--   to REPLACE_CACHE_DIR/globals/<name>. Pass the value on the pandoc command
+--   line with -M NAME=VALUE. Use vars=VAR->globals/NAME (contents-form) to
+--   inject the value into a block body or a replace=source display, or
+--   replace=globals/NAME to render the value as the block's content
+--   (replace=globals/NAME/path yields the absolute path of the file).
 --
 -- DEFAULT-REPLACE METADATA
 --
@@ -686,6 +688,11 @@ local function cross_read(K, thing, vars_spec, label)
     local sub_path = thing:match("^(.+)/path$")
     if sub_path then
         return REPLACE_CACHE_DIR .. "/" .. K .. "/" .. sub_path
+    end
+    -- globals/NAME renders the value of `-M NAME=...`.
+    if K == "globals" then
+        check_identifier(thing:gsub("%-", "_"), label .. ": globals/" .. thing)
+        return read_output(K, thing, label)
     end
     if thing == "source" then
         assertf(sources[K], "%s: replace=source: source not stored for '%s'", label, K)

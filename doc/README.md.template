@@ -1319,16 +1319,16 @@ We see
 
 #### Running a simple target application
 
-The command-line utility `/home/dapp/puppet`, pre-installed in the root file-system `rootfs.ext2`, is a small Rolling Cartesi Machine application built directly against `libcmt`.
+The command-line utility `/home/dapp/puppet`, pre-installed in the root file-system `rootfs.ext2` available in the []{replace=globals/docs_image} Docker image, is a small Rolling Cartesi Machine application built directly against `libcmt`.
 Its source is shown later under [The libcmt library](#the-libcmt-library).
 The `puppet` interprets each advance-state payload as a command.
-A payload of the form `notice:<data>`, `report:<data>`, or `voucher:<data>` causes the named output to be emitted with `<data>`.
-A payload of the form `exception:<data>` halts the machine.
+A payload of the form `notice:<data>` or `voucher:<data>` causes the named output to be emitted with `<data>`, and likewise for `report:<data>`.
+A payload of the form `exception:<data>` halts the machine with `<data>` as the error message.
 Any payload that does not match a known verb causes the advance-state request to be rejected.
 Inspect-state queries are echoed back as a single report.
 
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
-The server provides the fork functionality the client uses to roll the machine state back when an input is rejected.
+The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
 ```{.bash replace=rolling_puppet/source/server}
 ```
@@ -1392,24 +1392,27 @@ cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted/stdout}) signals the point at which the target application attempted to process its first request.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted}) signals the point at which the target application attempted to obtain its first request.
 
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1/stdout}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1/stdout}, and resumes the machine.
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1}, and resumes the machine.
 The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
-The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_input1_tx_output/stdout}, returning control to the client.
+The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_input1_tx_output}, returning control to the client.
 The client reads the CMIO TX buffer and stores the output as `input-1-output-0.bin`.
-The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_input1_rx_accepted/stdout} signals that the `puppet` is done processing input index 1 and has accepted it.
+The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_input1_rx_accepted} signals that the `puppet` is done processing input index 1 and has accepted it.
 
+```{.bash key=rolling_puppet_revert_cycle_hash replace=null vars=cycle->rolling_puppet_input1_rx_accepted/stdout,hash->rolling_puppet_hash_after_input1_accepted/stdout}
+echo -n $cycle:$hash
+```
 The client then loads input index 2 and resumes the machine.
 The payload `something the puppet does not understand` does not match any of the recognised verbs, so the `puppet` rejects the request.
-The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected/stdout} causes the client to roll the machine state back to what it was before the input was processed.
-This can be confirmed by the fact that the cycle count and state hash following the rejection remain []{replace=rolling_puppet_input1_rx_accepted/stdout}:[...]{replace=rolling_puppet_hash_after_input1_accepted/stdout}.
+The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected} causes the client to roll the machine state back to what it was before the input was processed.
+This can be confirmed by the fact that the cycle count and state hash before the query remain [...]{replace=rolling_puppet_revert_cycle_hash}.
 
 With both advance-state requests handled, the client moves to the inspect-state request.
 It loads `query.bin` into the CMIO RX buffer and resumes the machine so the `puppet` can respond.
-The `automatic yield tx-report` at cycle []{replace=rolling_puppet_query_tx_report/stdout} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted/stdout}, the client reverts the state of the machine back to what it was before the query was processed.
-(Note the final cycle count and state hash are still []{replace=rolling_puppet_input1_rx_accepted/stdout}:[...]{replace=rolling_puppet_hash_after_input1_accepted/stdout}.)
+The `automatic yield tx-report` at cycle []{replace=rolling_puppet_query_tx_report} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted}, the client reverts the state of the machine back to what it was before the query was processed.
+(Note the final cycle count and state hash are still [...]{replace=rolling_puppet_revert_cycle_hash}.)
 Since there is nothing else to do, the client shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
@@ -1419,7 +1422,7 @@ ln -s $rolling_puppet/*.bin .
 ls *.bin
 # docs:end
 ```
-```{.bash replace=rolling_puppet_all_bins/stdout}
+```{.bash replace=rolling_puppet_all_bins}
 ```
 
 #### Decoding responses
@@ -1468,12 +1471,6 @@ As an example, we will create a Rolling Cartesi Machine template for an arbitrar
 We will, once again, rely on the `bc` command-line utility to perform the computations.
 To interact with the `/dev/cmio` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/opt/cartesi/bin/rollup` command-line utility.
 
-Shell scripts become surprisingly powerful with the help of the `rollup`, `hex`, and `jq` command-line utilities.
-A `bc`-based arbitrary precision application, for example, might look like this:
-```{key=rolling_calc_sh replace=both}
-cat "$RECIPES_DIR/calc.sh"
-```
-
 The `rollup` command-line utility supports the commands `accept`, `reject`, `voucher`, `notice`, `report`, and `exception`.
 It uses JSON objects as inputs and outputs.
 The `accept` and `reject` commands accept or reject the previous request and output the next request.
@@ -1507,14 +1504,21 @@ and the output (not used by `calc.sh`) gives the index of the just-output notice
 }
 ```
 
+Shell scripts become surprisingly powerful with the help of the `rollup`, `hex`, and `jq` command-line utilities.
+A `bc`-based arbitrary precision application, for example, might look like this:
+```{key=rolling_calc_sh replace=both}
+cat "$RECIPES_DIR/calc.sh"
+```
+
 The loop in the `calc.sh` script calls `rollup finish` to obtain the next request (and accept or reject the previous).
 It uses `jq` to extract the `request_type` field and, if it is an `"advance_state"` request, it uses `jq` again to extract the `"payload"` field inside the `"data"` field.
 The hex-encoded payload is decoded back to bytes by `hex --decode` and passed to `bc`, which outputs the result split into lines terminated by `\`.
-The `tr` utility joins the lines back together.
+Unfortunately, `bc` does not exit with an error when it detects one.
+Instead, it prints a message to the error stream and exits successfully.
+The `grep .` exits with an error in that case, because the output stream of `bc` will be empty.
+Otherwise, `grep .` simply passes the output through unchanged.
+In that case, `tr` utility joins the lines back together.
 The joined result is hex-encoded by `hex --encode` and fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice`.
-
-We add the command line option `--assert-rolling-template` to help catch errors.
-When enabled, it will cause `cartesi-machine` to exit with a status-code reporting failure if the generated machine is not Rolling Cartesi Machine template compatible.
 
 To use `calc.sh` in a Rolling Cartesi Machine template, first create a file-system with the program:
 ```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
@@ -1608,6 +1612,9 @@ wait "$srv_pid"
 mv "$srv_tmp" server
 ```
 
+We add the command line option `--assert-rolling-template` to help catch errors.
+When enabled, it will cause `cartesi-machine` to exit with a status-code reporting failure if the generated machine is not a Rolling Cartesi Machine template.
+
 The result is as follows
 ```{replace=rolling_calc_template/template}
 ```
@@ -1618,7 +1625,7 @@ In production, if the target application finds an irrecoverable error during ini
 In that case, the `cartesi-machine` command-line utility will detect the exception, print it to the console, and exit with a status-code reporting failure.
 :::
 
-To test the template, create a couple advance-state requests:
+To test the template, create a couple of advance-state requests:
 ```bash
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
