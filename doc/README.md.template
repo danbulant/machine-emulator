@@ -1717,7 +1717,7 @@ the `cartesi-machine` utility receives control back from the emulator at every i
 (The directory `/opt/cartesi/bin/`, where `yield` resides, is in the default search path for executable setup by `/usr/sbin/cartesi-init`.)
 
 By default, the emulator honors automatic yield requests from the target.
-Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but doing so prevents Rolling Cartesi Machines from generating outputs.
+Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but be careful since doing so would _also_ prevent Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
 ```
 Progress:  44.00
@@ -1726,12 +1726,12 @@ This feature is most useful when the emulator is controlled programmatically, vi
 In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
 Its handling by `cartesi-machine`, which does have access to the console, is simply to help with prototyping and debugging.
 
-The protocols followed by the `yield` utility to interact with the `/dev/yield` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](#system-architecture).
+The protocols followed by the `yield` utility to interact with the `/dev/cmio` driver and by the driver itself to communicate with the HTIF device are explained in detail under the [target perspective](#system-architecture).
 In particular, the section explains the _manual_ yield commands needed for proper operation of Cartesi Rollups.
 
 The command-line option `--append-bootargs=<string>` can be used to append any `<string>` to the kernel command-line.
 A detailed description of all kernel command-line parameters is beyond the scope of this document.
-Please refer to the appropriate [section of the kernel documentation](https://www.kernel.org/doc/html/v5.5/admin-guide/kernel-parameters.html).
+Please refer to the appropriate [section of the kernel documentation](https://www.kernel.org/doc/html/v6.5/admin-guide/kernel-parameters.html).
 
 For example, to prevent clutter in the console, the `cartesi-machine` utility automatically adds the `quiet` option to the kernel command-line, disabling most log messages.
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
@@ -1752,7 +1752,11 @@ For example, running the `cartesi-machine` command-line utility with no argument
 equivalent to running the command
 
 ```{.bash key=default_bootargs replace=null}
-cartesi-machine --max-mcycle=0 --store-json-config | jq -r '.dtb.bootargs'
+cartesi-machine \
+    --no-init-splash \
+    --max-mcycle=0 \
+    --store-json-config | \
+        jq -r '.dtb.bootargs'
 ```
 ```{.bash key=no_bootargs_equiv replace=source vars=bootargs->default_bootargs/stdout}
 cartesi-machine \
@@ -1795,10 +1799,11 @@ Each span produces a file `<start>--<length>.bin`.
 Every other byte in the address space has value 0.
 This is useful to inspect the entire state of the machine from outside the emulator.
 
-The command-line options `--store-config` and `--load-config` store or load a file with information that can be used to initialize the exact same Cartesi Machine that the `cartesi-machine` command-line utility will use.
+The command-line options `--store-config` and `--load-config` store or load a Lua file with information that can be used to initialize the exact same Cartesi Machine that the `cartesi-machine` command-line utility will use.
 The format of these configuration files is explained in detail under the [Lua interface](#lua-interface) to Cartesi Machines.
 In particular,  the `--store-config` option, without arguments, dumps to screen all the options used to define the Cartesi Machine.
 This information can be very useful when debugging problems.
+JSON counterparts `--store-json-config` and `--load-json-config` are also available.
 
 The remaining options in the command-line utility `cartesi-machine` are mostly useful for low-level tests and debugging.
 As such, they require some context.
@@ -1809,34 +1814,36 @@ In a nutshell, both parties started from a Cartesi Machine that has a known and 
 (E.g., an agreed upon template that was instantiated with an agreed upon input drive.)
 At the end of the computation, these parties now disagree on the state hash for the halted machine.
 The state hash evolves as the machine executes steps in its fetch-execute loop.
-The first stage of the verification game therefore searches for the *step of disagreement*: the particular cycle such that the parties agree on the state hash before the step, but disagree on the state hash after the step.
-Once this step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the step, including cryptographic proofs for every value read from or written to the state.
-This log proves to the blockchain that the execution of the step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
+The first stage of the verification game therefore searches for the *step of disagreement*: the particular main processor cycle such that the parties agree on the state hash before the step, but disagree on the state hash after the step.
+When the microarchitecture is in use, every main processor instruction can also be implemented by a sequence of uarch instructions in the uarch interpreter, and a single uarch step is one of those micro-instructions.
+So the search is refined to find the *uarch step of disagreement*: the particular uarch cycle such that the parties agree on the state hash before the uarch step, but disagree on the state hash after the uarch step.
+Once this uarch step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the uarch step, including cryptographic proofs for every value read from or written to the state.
+This log proves to the blockchain that the execution of the uarch step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
 
-The `--log-step-uarch` command-line option instructs `cartesi-machine` to dump to screen a user-friendly version of the access log produced by a single uarch step.
-When the microarchitecture is in use, every big-machine instruction is implemented by a sequence of uarch instructions in the uarch interpreter, and a single uarch step is one of those micro-instructions.
-
-For the sake of completeness, consider again the example in which the Cartesi Machine was stopped while it drew the splash screen.
-The big-machine instruction about to execute is the `sd` that writes a putchar command to HTIF's `tohost` CSR.
-That single big-machine instruction expands into many uarch instructions.
-The one that actually triggers the host to emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and `a0 = 0x0a`.
-The recipe `find-uarch-putchar-ecall.lua` (under `doc/recipes/`) takes the big-machine mcycle just before the splash-screen newline and advances the uarch one cycle at a time until the next uarch instruction is that putchar `ecall`, writing the matching uarch_cycle to its stderr.
 ```{.bash key=cycles_uarch_putchar_ecall vars=nothing,cycles->cycles_htif_putchar/stderr replace=null}
 ln -sf "$nothing/config-nothing-to-do.lua" .
 lua5.4 $RECIPES_DIR/find-uarch-putchar-ecall.lua $cycles > /dev/null
 ```
-The mcycle from `find-htif-putchar.lua` and the uarch_cycle from `find-uarch-putchar-ecall.lua` are then enough to tell `cartesi-machine` to stop just before the putchar `ecall` and log that single uarch step
+
+Consider again the example in which the Cartesi Machine was stopped while it drew the splash screen.
+The main processor instruction about to execute when `mcycle` is []{replace=cycles_htif_putchar/stderr} is the `sd` that writes a putchar command to HTIF's `tohost` CSR.
+That single main processor instruction expands into many uarch instructions.
+The one that actually triggers the host to emit a character is an `ecall` with `a7 = UARCH_ECALL_FN_PUTCHAR` and `a0 = 0x0a`.
+This happens when `uarch_cycle` is []{replace=cycles_uarch_putchar_ecall/stderr}.
+
+The `--max-mcycle` and `-max-uarch-cycle` options tell `cartesi-machine` to stop just before the putchar `ecall`.
+The `--log-step-uarch` command-line option instructs `cartesi-machine` to then dump to screen a user-friendly version of the access log produced by a single uarch step:
 ```{.bash key=rarely_log_uarch_putchar replace=source vars=cycles->cycles_htif_putchar/stderr,ucycles->cycles_uarch_putchar_ecall/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
     --max-uarch-cycle=$ucycles \
-    --log-step-uarch > /dev/null
+    --log-step-uarch
 ```
 producing the log
 ```{replace=rarely_log_uarch_putchar/stderr}
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
-It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's uarch interpreter implements the big-machine fetch-execute loop.
+It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's uarch interpreter implements the main processor fetch-execute loop.
 The material is therefore beyond the scope of this document.
 
 This particular example, however, was hand-picked for illustration purposes.
@@ -1852,10 +1859,11 @@ lua5.4 -e 'local c = require "cartesi"; io.write(string.format("start:0x%x,lengt
 ```
 The command-line options `--cmio-rx-buffer=<key>:<value>...` and `--cmio-tx-buffer=<key>:<value>...` configure backing-store options for the two memory ranges used by the `/dev/cmio` device.
 The RX buffer occupies []{replace=cmio_rx_buffer_range/stdout} and the TX buffer occupies []{replace=cmio_tx_buffer_range/stdout}.
-Their addresses and lengths are fixed and cannot be overridden.
+Although their addresses and lengths are fixed and cannot be overridden, their backing storage can be configured.
 See the [target perspective](#system-architecture) for details on how these buffers are used by Cartesi Rollups, and the section on [Rolling Cartesi Machines](#rolling-cartesi-machines) for the request/response data flow.
+
 Automatic and manual yields are enabled by default.
-Opt out with `--no-htif-yield-automatic` or `--no-htif-yield-manual` (note that disabling automatic yield prevents Rolling Cartesi Machines from generating outputs).
+Disable them with `--no-htif-yield-automatic` or `--no-htif-yield-manual` (note that disabling automatic yield prevents Rolling Cartesi Machines from generating outputs).
 
 ## Lua interface
 
@@ -4233,10 +4241,10 @@ The differences are that only reports are collected (outputs are ignored), and t
 #### Address ranges
 
 A Cartesi Machine contains many address ranges.
-The ranges visible to code running inside the big machine are mapped at fixed positions in its 64-bit physical address space.
+The address ranges visible to the main processor are mapped at fixed positions in its 64-bit physical address space.
 These are the ranges listed in the [board mapping table](#the-board) at the start of this chapter, exposed to Lua via the `cartesi.AR_*` constants, and discoverable at runtime via the [PMA array](#pmas) described in the next subsection.
 
-The microarchitecture has its own private address ranges, which are not accessible from code running inside the big machine:
+The microarchitecture has its own private address ranges, which are not accessible to the main processor:
 
 <center>
 <table>
@@ -4256,7 +4264,7 @@ The microarchitecture has its own private address ranges, which are not accessib
 </center>
 
 The microarchitecture shadow holds the uarch processor state.
-The microarchitecture RAM holds the uarch program that decodes and executes one big-machine instruction per uarch run before halting.
+The microarchitecture RAM holds the uarch program that decodes and executes one main processor instruction per uarch run before halting.
 
 #### PMAs
 
