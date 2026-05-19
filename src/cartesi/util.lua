@@ -174,7 +174,18 @@ function _M.parse_boolean(b)
     return nil
 end
 
-function _M.parse_options(s, all, keys)
+-- String-shaped kinds: all parsed identically as strings, but the subtype
+-- carries a hint used by bash completion to pick the right candidates.
+local string_kinds = {
+    string = true,
+    file = true,
+    dir = true,
+    hostport = true,
+    netif = true,
+}
+_M.string_kinds = string_kinds
+
+function _M.parse_options(keys, all, opts)
     local function escape(v)
         -- replace escaped \, :, and , with something "safe"
         v = string.gsub(v, "%\\%\\", "\0")
@@ -188,7 +199,7 @@ function _M.parse_options(s, all, keys)
     end
     -- split at commas and validate key
     local options = {}
-    string.gsub(escape(s) .. ",", "(.-)%,", function(o)
+    string.gsub(escape(opts) .. ",", "(.-)%,", function(o)
         local k, v = string.match(o, "(.-):(.*)")
         if k and v then
             k = unescape(k)
@@ -213,7 +224,7 @@ function _M.parse_options(s, all, keys)
             v = _M.parse_number(v)
             if v == nil then error(string.format("invalid number for option %q in '%s'", k, all)) end
             options[k] = v
-        elseif keys[k] == "string" then
+        elseif string_kinds[keys[k]] then
             if v == nil then error(string.format("missing string for option %q in '%s'", k, all)) end
             options[k] = v
         elseif type(keys[k]) == "table" then
@@ -222,6 +233,202 @@ function _M.parse_options(s, all, keys)
         end
     end)
     return options
+end
+
+-- Recover the human-readable flag name from a Lua pattern. Strips ^/$, the
+-- %- escape, the value tail starting at %= (or raw =), and capture parens.
+local function flag_from_pattern(pattern)
+    return (
+        pattern
+            :gsub("^%^", "")
+            :gsub("%$$", "")
+            :gsub("%%%-", "-")
+            :gsub("%%=.*$", "")
+            :gsub("=.*$", "")
+            :gsub("[%(%)%?]", "")
+    )
+end
+
+local function pattern_takes_value(pattern) return pattern:find("%%=") ~= nil or pattern:find("=") ~= nil end
+
+local function pattern_value_optional(pattern) return pattern:find("%%=%?") ~= nil or pattern:find("=%?") ~= nil end
+
+-- Sentinels for subkey value kinds that bash completes specially.
+local SUBKEY_KIND_SENTINEL = {
+    file = "__file__",
+    dir = "__dir__",
+    number = "__number__",
+    string = "__string__",
+    hostport = "__string__",
+    netif = "__string__",
+}
+
+-- Reduce one options-table entry to a completion descriptor.
+local function describe_option(entry)
+    local pattern, hint = entry[1], entry[3]
+    local flag = flag_from_pattern(pattern)
+    if flag == "" or not flag:match("^%-") then return nil end
+    local has_value = pattern_takes_value(pattern)
+    local desc = {
+        flag = flag,
+        kind = has_value and "string" or "bare",
+        optional = pattern_value_optional(pattern),
+    }
+    if type(hint) == "string" then
+        if hint:sub(-1) == "?" then
+            desc.kind = hint:sub(1, -2)
+            desc.optional = true
+        else
+            desc.kind = hint
+        end
+    elseif type(hint) == "table" then
+        desc.kind = "compound"
+        desc.subkeys = {}
+        desc.subkey_values = {}
+        for k, v in pairs(hint) do
+            desc.subkeys[#desc.subkeys + 1] = k
+            if type(v) == "table" then
+                local vals = {}
+                for ek in pairs(v) do
+                    vals[#vals + 1] = ek
+                end
+                table.sort(vals)
+                desc.subkey_values[k] = vals
+            elseif v == "boolean" then
+                desc.subkey_values[k] = { "true", "false" }
+            else
+                desc.subkey_values[k] = SUBKEY_KIND_SENTINEL[v] or "__string__"
+            end
+        end
+        table.sort(desc.subkeys)
+    end
+    return desc
+end
+
+local function bash_quote(s) return "'" .. (s:gsub("'", "'\\''")) .. "'" end
+
+local bash_completion_function = [==[
+_cartesi_complete() {
+    local cur="${COMP_WORDS[$COMP_CWORD]}"
+    local line="${COMP_LINE:0:$COMP_POINT}"
+    local logical="${line##*[[:space:]]}"
+    COMPREPLY=()
+
+    if [[ "$logical" != -* ]]; then
+        COMPREPLY=( $(compgen -f -- "$cur") )
+        return
+    fi
+
+    if [[ "$logical" != *=* ]]; then
+        local f k
+        for f in "${!_cm_flag_kind[@]}"; do
+            if [[ "$f" == "$logical"* ]]; then
+                k="${_cm_flag_kind[$f]}"
+                if [[ "$k" == "bare" ]]; then
+                    # Trailing space so cursor moves on. compopt -o nospace
+                    # below suppresses bash's auto-space, so we add it ourselves.
+                    COMPREPLY+=("$f ")
+                else
+                    COMPREPLY+=("$f=")
+                    [[ -n "${_cm_flag_optional[$f]:-}" ]] && COMPREPLY+=("$f ")
+                fi
+            fi
+        done
+        compopt -o nospace 2>/dev/null
+        return
+    fi
+
+    local flag="${logical%%=*}"
+    local rest="${logical#*=}"
+    local kind="${_cm_flag_kind[$flag]:-}"
+
+    local cur_partial="$cur"
+    while [[ "$cur_partial" == [=:]* ]]; do
+        cur_partial="${cur_partial:1}"
+    done
+
+    case "$kind" in
+        file) COMPREPLY=( $(compgen -f -- "$cur_partial") ); compopt -o nospace 2>/dev/null ;;
+        dir)  COMPREPLY=( $(compgen -d -- "$cur_partial") ); compopt -o nospace 2>/dev/null ;;
+        number|hostport|netif|string) ;;
+        compound)
+            local last_segment="${rest##*,}"
+            if [[ "$last_segment" == *:* ]]; then
+                local subkey="${last_segment%%:*}"
+                local val_prefix="${last_segment#*:}"
+                local values="${_cm_subkey_values[${flag},${subkey}]:-}"
+                case "$values" in
+                    __file__) COMPREPLY=( $(compgen -f -- "$val_prefix") ); compopt -o nospace 2>/dev/null ;;
+                    __dir__)  COMPREPLY=( $(compgen -d -- "$val_prefix") ); compopt -o nospace 2>/dev/null ;;
+                    __number__|__string__|"") ;;
+                    *)        COMPREPLY=( $(compgen -W "$values" -- "$val_prefix") ) ;;
+                esac
+            else
+                local subkeys="${_cm_compound_keys[$flag]:-}"
+                local partial="$last_segment"
+                local prefix="${cur_partial%$partial}"
+                local matched=( $(compgen -W "$subkeys" -- "$partial") )
+                local i
+                for i in "${!matched[@]}"; do
+                    matched[$i]="${prefix}${matched[$i]}:"
+                done
+                COMPREPLY=("${matched[@]}")
+                compopt -o nospace 2>/dev/null
+            fi
+            ;;
+    esac
+}
+]==]
+
+-- Walk an options table and emit a self-contained bash completion script
+-- registering the given program names. Writes to io.stdout.
+function _M.dump_bash_completion(options, program_names)
+    local flags = {}
+    local ordered = {}
+    for _, entry in ipairs(options) do
+        local d = describe_option(entry)
+        if d then
+            local prev = flags[d.flag]
+            if prev then
+                if prev.kind == "bare" and d.kind ~= "bare" then
+                    prev.kind, prev.subkeys, prev.subkey_values = d.kind, d.subkeys, d.subkey_values
+                    prev.optional = true
+                elseif d.kind == "bare" and prev.kind ~= "bare" then
+                    prev.optional = true
+                else
+                    prev.optional = prev.optional or d.optional
+                end
+            else
+                flags[d.flag] = d
+                ordered[#ordered + 1] = d.flag
+            end
+        end
+    end
+    table.sort(ordered)
+
+    local w = function(s) io.write(s, "\n") end
+
+    w("# bash completion for " .. table.concat(program_names, ", "))
+    w("# Generated by cartesi.util.dump_bash_completion. Do not edit by hand.")
+    w("declare -gA _cm_flag_kind=()")
+    w("declare -gA _cm_flag_optional=()")
+    w("declare -gA _cm_compound_keys=()")
+    w("declare -gA _cm_subkey_values=()")
+    for _, flag in ipairs(ordered) do
+        local d = flags[flag]
+        w(string.format("_cm_flag_kind[%s]=%s", bash_quote(flag), bash_quote(d.kind)))
+        if d.optional then w(string.format("_cm_flag_optional[%s]=1", bash_quote(flag))) end
+        if d.subkeys then
+            w(string.format("_cm_compound_keys[%s]=%s", bash_quote(flag), bash_quote(table.concat(d.subkeys, " "))))
+            for _, k in ipairs(d.subkeys) do
+                local v = d.subkey_values[k]
+                local val_str = type(v) == "table" and table.concat(v, " ") or v
+                w(string.format("_cm_subkey_values[%s,%s]=%s", bash_quote(flag), bash_quote(k), bash_quote(val_str)))
+            end
+        end
+    end
+    w(bash_completion_function)
+    w("complete -F _cartesi_complete " .. table.concat(program_names, " "))
 end
 
 local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end

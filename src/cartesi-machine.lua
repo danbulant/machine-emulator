@@ -45,6 +45,10 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
+  --bash-completion
+    print a bash completion script for this program to stdout and exit.
+    Install with: source <(cartesi-machine --bash-completion)
+
   --assert-version=<major>.<minor>[.<patch>]
     exit with failure in case the cartesi machine emulator version mismatches
 
@@ -898,8 +902,8 @@ local function set_empty_omitted_filenames(f)
     bs.dpt_filename = bs.dpt_filename or ""
 end
 
-local function parse_memory_range(opts, all, accepted)
-    local f = util.parse_options(opts, all, accepted)
+local function parse_memory_range(keys, all, opts)
+    local f = util.parse_options(keys, all, opts)
     f.backing_store = {
         data_filename = f.data_filename,
         dht_filename = f.dht_filename,
@@ -942,15 +946,21 @@ local function override_memory_range(entry, opts)
     entry_bs.truncate = override_bool(entry_bs.truncate, opts_bs.truncate)
 end
 
-local function parse_backing_store(opts, all, def)
-    local f = util.parse_options(opts, all, {
-        data_filename = "string",
-        dht_filename = "string",
-        dpt_filename = "string",
-        shared = "boolean",
-        create = "boolean",
-        truncate = "boolean",
-    })
+-- Backing-store sub-keys shared by every plain backing-store option (--ram=,
+-- --dtb=, --processor=, --uarch-ram=, --uarch-processor=, --pmas=,
+-- --cmio-rx-buffer=, --cmio-tx-buffer=). Referenced as the bash-completion
+-- hint on each of those option entries.
+local backing_store_keys = {
+    data_filename = "file",
+    dht_filename = "file",
+    dpt_filename = "file",
+    shared = "boolean",
+    create = "boolean",
+    truncate = "boolean",
+}
+
+local function parse_backing_store(keys, all, opts, def)
+    local f = util.parse_options(keys, all, opts)
     if def then
         for i, v in pairs(def) do
             if f[i] == nil then f[i] = v end
@@ -1122,7 +1132,14 @@ end
 --   second entry is a callback
 --     if callback returns true, the option is accepted.
 --     if callback returns false, the option is rejected.
-local options = {
+--   optional third entry is a bash-completion hint: a string like "file",
+--     "dir", "number", "hostport", "netif" (trailing `?` means the value is
+--     optional, i.e. the flag accepts both bare and `=value` forms), or a
+--     util.parse_options keys spec for compound `key:val,...` arguments. If
+--     present, the dispatcher forwards it to the callback as a first
+--     leading argument (callbacks that ignore the hint declare `_`).
+local options -- forward decl so --bash-completion can reach it via closure
+options = {
     {
         "^%-h$",
         function()
@@ -1137,6 +1154,19 @@ local options = {
             print_help()
             os.exit()
             -- return true
+        end,
+    },
+    {
+        "^%-%-bash%-completion$",
+        function()
+            -- Register the canonical names plus whatever the user invoked
+            -- this script as (e.g. ./cartesi-machine), so `source <(...)`
+            -- works from any invocation path.
+            local progs = { "cartesi-machine", "cartesi-machine.lua" }
+            local self = arg[0]
+            if self and self ~= progs[1] and self ~= progs[2] then progs[#progs + 1] = self end
+            util.dump_bash_completion(options, progs)
+            os.exit()
         end,
     },
     {
@@ -1198,11 +1228,12 @@ local options = {
     },
     {
         "^%-%-dtb%-image%=(.+)$",
-        function(opts)
+        function(_, opts)
             dtb.backing_store = dtb.backing_store or {}
             dtb.backing_store.data_filename = opts
             return true
         end,
+        "file",
     },
     {
         "^%-%-no%-bootargs$",
@@ -1224,24 +1255,27 @@ local options = {
     },
     {
         "^(%-%-dtb%=(.+))$",
-        function(all, opts)
-            dtb.backing_store = parse_backing_store(opts, all, dtb.backing_store)
+        function(keys, all, opts)
+            dtb.backing_store = parse_backing_store(keys, all, opts, dtb.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^(%-%-processor%=(.+))$",
-        function(all, opts)
-            processor.backing_store = parse_backing_store(opts, all, processor.backing_store)
+        function(keys, all, opts)
+            processor.backing_store = parse_backing_store(keys, all, opts, processor.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^(%-%-uarch%-processor%=(.+))$",
-        function(all, opts)
-            uarch.processor.backing_store = parse_backing_store(opts, all, uarch.processor.backing_store)
+        function(keys, all, opts)
+            uarch.processor.backing_store = parse_backing_store(keys, all, opts, uarch.processor.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^%-%-ram%-length%=(.+)$",
@@ -1252,10 +1286,11 @@ local options = {
     },
     {
         "^%-%-ram%-image%=(.+)$",
-        function(opts)
+        function(_, opts)
             ram.backing_store.data_filename = opts
             return true
         end,
+        "file",
     },
     {
         "^%-%-no%-ram%-image$",
@@ -1266,42 +1301,40 @@ local options = {
     },
     {
         "^(%-%-ram%=(.+))$",
-        function(all, opts)
-            ram.backing_store = parse_backing_store(opts, all, ram.backing_store)
+        function(keys, all, opts)
+            ram.backing_store = parse_backing_store(keys, all, opts, ram.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^(%-%-pmas%=(.+))$",
-        function(all, opts)
-            pmas.backing_store = parse_backing_store(opts, all, pmas.backing_store)
+        function(keys, all, opts)
+            pmas.backing_store = parse_backing_store(keys, all, opts, pmas.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^%-%-uarch%-ram%-image%=(.+)$",
-        function(opts)
+        function(_, opts)
             uarch.ram.backing_store.data_filename = opts
             return true
         end,
+        "file",
     },
     {
         "^(%-%-uarch%-ram%=(.+))$",
-        function(all, opts)
-            uarch.ram.backing_store = parse_backing_store(opts, all, uarch.ram.backing_store)
+        function(keys, all, opts)
+            uarch.ram.backing_store = parse_backing_store(keys, all, opts, uarch.ram.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^(%-%-hash%-tree%=(.+))$",
-        function(all, opts)
-            local h = util.parse_options(opts, all, {
-                hash_function = "string",
-                sht_filename = "string",
-                phtc_filename = "string",
-                phtc_size = "number",
-                shared = "boolean",
-            })
+        function(keys, all, opts)
+            local h = util.parse_options(keys, all, opts)
             h.sht_filename = h.sht_filename or ""
             h.phtc_filename = h.phtc_filename or ""
             h.hash_function = h.hash_function or "keccak256"
@@ -1310,6 +1343,13 @@ local options = {
             end
             return true
         end,
+        {
+            hash_function = { keccak256 = "keccak256", sha256 = "sha256" },
+            sht_filename = "file",
+            phtc_filename = "file",
+            phtc_size = "number",
+            shared = "boolean",
+        },
     },
     {
         "^%-%-unreproducible$",
@@ -1372,20 +1412,8 @@ local options = {
     },
     {
         "^(%-%-console%-io%=(.+))$",
-        function(all, opts)
-            local c = util.parse_options(opts, all, {
-                output_destination = "string",
-                output_flush_mode = "string",
-                output_buffer_size = "number",
-                output_fd = "number",
-                output_filename = "string",
-                input_source = "string",
-                input_buffer_size = "number",
-                input_fd = "number",
-                input_filename = "string",
-                tty_cols = "number",
-                tty_rows = "number",
-            })
+        function(keys, all, opts)
+            local c = util.parse_options(keys, all, opts)
             if c.output_fd then
                 assert(
                     c.output_destination == nil or c.output_destination == "to_fd",
@@ -1424,6 +1452,36 @@ local options = {
             if c.tty_rows then console.tty_rows = c.tty_rows end
             return true
         end,
+        {
+            output_destination = {
+                to_null = "to_null",
+                to_stdout = "to_stdout",
+                to_stderr = "to_stderr",
+                to_fd = "to_fd",
+                to_file = "to_file",
+                to_buffer = "to_buffer",
+            },
+            output_flush_mode = {
+                when_full = "when_full",
+                every_char = "every_char",
+                every_line = "every_line",
+            },
+            output_buffer_size = "number",
+            output_fd = "number",
+            output_filename = "file",
+            input_source = {
+                from_null = "from_null",
+                from_stdin = "from_stdin",
+                from_fd = "from_fd",
+                from_file = "from_file",
+                from_buffer = "from_buffer",
+            },
+            input_buffer_size = "number",
+            input_fd = "number",
+            input_filename = "file",
+            tty_cols = "number",
+            tty_rows = "number",
+        },
     },
     {
         "^%-%-no%-htif%-yield%-manual$",
@@ -1443,22 +1501,8 @@ local options = {
     },
     {
         "^(%-%-flash%-drive%=(.+))$",
-        function(all, opts)
-            local f = parse_memory_range(opts, all, {
-                label = "string",
-                data_filename = "string",
-                dht_filename = "string",
-                dpt_filename = "string",
-                shared = "boolean",
-                create = "boolean",
-                truncate = "boolean",
-                length = "number",
-                start = "number",
-                read_only = "boolean",
-                mount = "string",
-                mke2fs = "boolean",
-                user = "string",
-            })
+        function(keys, all, opts)
+            local f = parse_memory_range(keys, all, opts)
             if f.label and flash_label_to_index[f.label] then
                 local prev_f = flash_drives[flash_label_to_index[f.label]]
                 override_memory_range(prev_f, f)
@@ -1471,23 +1515,26 @@ local options = {
             end
             return true
         end,
+        {
+            label = "string",
+            data_filename = "file",
+            dht_filename = "file",
+            dpt_filename = "file",
+            shared = "boolean",
+            create = "boolean",
+            truncate = "boolean",
+            length = "number",
+            start = "number",
+            read_only = "boolean",
+            mount = "string",
+            mke2fs = "boolean",
+            user = "string",
+        },
     },
     {
         "^(%-%-nvram%=(.+))$",
-        function(all, opts)
-            local f = parse_memory_range(opts, all, {
-                label = "string",
-                data_filename = "string",
-                dht_filename = "string",
-                dpt_filename = "string",
-                shared = "boolean",
-                create = "boolean",
-                truncate = "boolean",
-                length = "number",
-                start = "number",
-                read_only = "boolean",
-                user = "string",
-            })
+        function(keys, all, opts)
+            local f = parse_memory_range(keys, all, opts)
             if f.label and nvram_label_to_index[f.label] then
                 local prev_f = nvrams[nvram_label_to_index[f.label]]
                 override_memory_range(prev_f, f)
@@ -1498,36 +1545,42 @@ local options = {
             end
             return true
         end,
+        {
+            label = "string",
+            data_filename = "file",
+            dht_filename = "file",
+            dpt_filename = "file",
+            shared = "boolean",
+            create = "boolean",
+            truncate = "boolean",
+            length = "number",
+            start = "number",
+            read_only = "boolean",
+            user = "string",
+        },
     },
     {
         "^(%-%-replace%-memory%-range%=(.+))$",
-        function(all, opts)
-            local f = parse_memory_range(opts, all, {
-                label = "string",
-                data_filename = "string",
-                dht_filename = "string",
-                dpt_filename = "string",
-                shared = "boolean",
-                length = "number",
-                start = "number",
-                read_only = "boolean",
-            })
+        function(keys, all, opts)
+            local f = parse_memory_range(keys, all, opts)
             memory_range_replace[#memory_range_replace + 1] = f
             return true
         end,
+        {
+            label = "string",
+            data_filename = "file",
+            dht_filename = "file",
+            dpt_filename = "file",
+            shared = "boolean",
+            length = "number",
+            start = "number",
+            read_only = "boolean",
+        },
     },
     {
         "^(%-%-cmio%-advance%-state%=(.+))$",
-        function(all, opts)
-            local r = util.parse_options(opts, all, {
-                input = "string",
-                input_index_begin = "number",
-                input_index_end = "number",
-                output_hashes_root_hash = "string",
-                output = "string",
-                report = "string",
-                hashes = "boolean",
-            })
+        function(keys, all, opts)
+            local r = util.parse_options(keys, all, opts)
             r.input = r.input or "input-%i.bin"
             r.input_index_begin = r.input_index_begin or 0
             r.input_index_end = r.input_index_end or 0
@@ -1538,20 +1591,30 @@ local options = {
             cmio_advance = r
             return true
         end,
+        {
+            input = "file",
+            input_index_begin = "number",
+            input_index_end = "number",
+            output_hashes_root_hash = "file",
+            output = "file",
+            report = "file",
+            hashes = "boolean",
+        },
     },
     {
         "^(%-%-cmio%-inspect%-state%=(.+))$",
-        function(all, opts)
-            local r = util.parse_options(opts, all, {
-                query = "string",
-                report = "string",
-                hashes = "boolean",
-            })
+        function(keys, all, opts)
+            local r = util.parse_options(keys, all, opts)
             r.query = r.query or "query.bin"
             r.report = r.report or "query-report-%o.bin"
             cmio_inspect = r
             return true
         end,
+        {
+            query = "file",
+            report = "file",
+            hashes = "boolean",
+        },
     },
     {
         "^%-%-cmio%-inspect%-state$",
@@ -1566,14 +1629,13 @@ local options = {
     },
     {
         "^(%-%-concurrency%=(.+))$",
-        function(all, opts)
-            local c = util.parse_options(opts, all, {
-                update_hash_tree = "number",
-            })
+        function(keys, all, opts)
+            local c = util.parse_options(keys, all, opts)
             c.update_hash_tree = assert(c.update_hash_tree, "invalid update_hash_tree number in " .. all)
             concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
+        { update_hash_tree = "number" },
     },
     {
         "^%-%-skip%-version%-check$",
@@ -1593,32 +1655,34 @@ local options = {
     },
     {
         "^(%-%-initial%-proof%=(.+))$",
-        function(all, opts)
-            local p = util.parse_options(opts, all, {
-                address = "number",
-                log2_size = "number",
-                filename = "string",
-            })
+        function(keys, all, opts)
+            local p = util.parse_options(keys, all, opts)
             p.cmdline = all
             assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
             initial_proof[#initial_proof + 1] = p
             return true
         end,
+        {
+            address = "number",
+            log2_size = "number",
+            filename = "file",
+        },
     },
     {
         "^(%-%-final%-proof%=(.+))$",
-        function(all, opts)
+        function(keys, all, opts)
             if not opts then return false end
-            local p = util.parse_options(opts, all, {
-                address = "number",
-                log2_size = "number",
-                filename = "string",
-            })
+            local p = util.parse_options(keys, all, opts)
             p.cmdline = all
             assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
             final_proof[#final_proof + 1] = p
             return true
         end,
+        {
+            address = "number",
+            log2_size = "number",
+            filename = "file",
+        },
     },
     {
         "^%-%-no%-root%-flash%-drive$",
@@ -1634,7 +1698,7 @@ local options = {
     },
     {
         "^%-%-dump%-address%-ranges(%=?)(%g*)$",
-        function(opts, v)
+        function(_, opts, v)
             if not opts then return false end
             if opts == "=" then
                 if not v or #v < 1 then return false end
@@ -1646,6 +1710,7 @@ local options = {
             end
             return true
         end,
+        "dir?",
     },
     {
         "^%-%-assert%-rolling%-template$",
@@ -1714,25 +1779,26 @@ local options = {
     },
     {
         "^%-%-create%=(.*)$",
-        function(opts)
+        function(_, opts)
             if not opts or #opts < 1 then return false end
             create_dir = opts
             return true
         end,
+        "dir",
     },
     {
         "^%-%-load%=(([^,]+),?(.*))$",
         function(all, dir, opts)
             if not all or not dir then return false end
             if #opts > 0 then
-                local o = util.parse_options(opts, all, {
-                    clone = "string",
+                local o = util.parse_options({
+                    clone = "dir",
                     sharing = {
                         none = cartesi.SHARING_NONE,
                         config = cartesi.SHARING_CONFIG,
                         all = cartesi.SHARING_ALL,
                     },
-                })
+                }, all, opts)
                 clone_dir = o.clone
                 load_sharing = o.sharing
                 if clone_dir and not load_sharing then load_sharing = cartesi.SHARING_ALL end
@@ -1746,13 +1812,13 @@ local options = {
         function(all, dir, opts)
             if not all or not dir then return false end
             if #opts > 0 then
-                local o = util.parse_options(opts, all, {
+                local o = util.parse_options({
                     sharing = {
                         none = cartesi.SHARING_NONE,
                         config = cartesi.SHARING_CONFIG,
                         all = cartesi.SHARING_ALL,
                     },
-                })
+                }, all, opts)
                 store_sharing = o.sharing
             end
             store_dir = dir
@@ -1777,7 +1843,7 @@ local options = {
     },
     {
         "^%-%-remote%-fork(%=?)(.*)$",
-        function(opts, v)
+        function(_, opts, v)
             if not opts then return false end
             if opts == "=" then
                 if not v or #v < 1 then return false end
@@ -1789,6 +1855,7 @@ local options = {
             end
             return true
         end,
+        "hostport?",
     },
     {
         "^%-%-remote%-health%-check$",
@@ -1882,7 +1949,7 @@ local options = {
     },
     {
         "^%-%-store%-config(%=?)(%g*)$",
-        function(opts, v)
+        function(_, opts, v)
             if not opts then return false end
             if opts == "=" then
                 if not v or #v < 1 then return false end
@@ -1894,10 +1961,11 @@ local options = {
             end
             return true
         end,
+        "file?",
     },
     {
         "^%-%-store%-json%-config(%=?)(%g*)$",
-        function(opts, v)
+        function(_, opts, v)
             if not opts then return false end
             if opts == "=" then
                 if not v or #v < 1 then return false end
@@ -1909,38 +1977,43 @@ local options = {
             end
             return true
         end,
+        "file?",
     },
     {
         "^%-%-load%-config%=(%g*)$",
-        function(opts)
+        function(_, opts)
             if not opts or #opts < 1 then return false end
             load_config = opts
             return true
         end,
+        "file",
     },
     {
         "^%-%-load%-json%-config%=(%g*)$",
-        function(opts)
+        function(_, opts)
             if not opts or #opts < 1 then return false end
             load_json_config = opts
             return true
         end,
+        "file",
     },
     {
         "^(%-%-cmio%-rx%-buffer%=(.+))$",
-        function(all, opts)
+        function(keys, all, opts)
             if not opts then return false end
-            cmio.rx_buffer.backing_store = parse_backing_store(opts, all, cmio.rx_buffer.backing_store)
+            cmio.rx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.rx_buffer.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^(%-%-cmio%-tx%-buffer%=(.+))$",
-        function(all, opts)
+        function(keys, all, opts)
             if not opts then return false end
-            cmio.tx_buffer.backing_store = parse_backing_store(opts, all, cmio.tx_buffer.backing_store)
+            cmio.tx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.tx_buffer.backing_store)
             return true
         end,
+        backing_store_keys,
     },
     {
         "^%-%-no%-init%-splash$",
@@ -1991,13 +2064,14 @@ local options = {
     },
     {
         "^%-%-append%-init%-file%=(.+)$",
-        function(opts)
+        function(_, opts)
             local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
             append_init = append_init .. contents
             return true
         end,
+        "file",
     },
     {
         "^%-%-append%-entrypoint%=(.+)$",
@@ -2008,17 +2082,18 @@ local options = {
     },
     {
         "^%-%-append%-entrypoint%-file%=(.+)$",
-        function(opts)
+        function(_, opts)
             local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
             append_entrypoint = append_entrypoint .. contents
             return true
         end,
+        "file",
     },
     {
         "^%-%-gdb(%=?)(.*)$",
-        function(eq, address)
+        function(_, eq, address)
             if eq == "=" and address ~= "" then
                 gdb_address = address
                 return true
@@ -2028,6 +2103,7 @@ local options = {
             end
             return false
         end,
+        "hostport?",
     },
     {
         ".*",
@@ -2043,15 +2119,17 @@ local options = {
     },
 }
 
-local function tryoption(handler, ...)
-    if select(1, ...) ~= nil then return handler(...) end
+local function tryoption(handler, hint, ...)
+    if select(1, ...) == nil then return false end
+    if hint == nil then return handler(...) end
+    return handler(hint, ...)
 end
 
 -- Process command line options
 for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
         for _, option in ipairs(options) do
-            if tryoption(option[2], a:match(option[1])) then break end
+            if tryoption(option[2], option[3], a:match(option[1])) then break end
         end
     else
         exec_arguments[#exec_arguments + 1] = a
@@ -2723,8 +2801,8 @@ if max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if log_step_uarch then
-    assert(config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
-    stderr("Gathering micro step log: please wait\n")
+    assert(config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
+    stderr("Gathering uarch step log: please wait\n")
     util.dump_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if log_reset_uarch then
