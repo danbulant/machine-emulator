@@ -294,7 +294,7 @@ cartesi-machine \
 echo ...
 ```
 The output is
-```{replace=ls/stdout}
+```{replace=ls}
 ```
 
 It shows the listing of directory `/bin/` inside the root file-system.
@@ -602,7 +602,7 @@ cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh 0 \
     | $RECIPES_DIR/trunc8.sh
 ```
-The initial state hash [...]{replace=state_hashes_initial/stdout} is the Merkle tree root hash for the initial Cartesi Machine state.
+The initial state hash [...]{replace=state_hashes_initial} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
 
 ```{.bash key=state_hashes_final_limit_exec vars=cycles->cycles_htif_putchar/stderr,state_hashes_limit_exec replace=null}
@@ -610,7 +610,7 @@ cat $state_hashes_limit_exec/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
-In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec/stdout} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_htif_putchar/stderr}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial/stdout}.
+In other words, the &ldquo;final state hash&rdquo; [...]{replace=state_hashes_final_limit_exec} is the &ldquo;only&rdquo; possible outcome for the `--final-hash` at cycle []{replace=cycles_htif_putchar/stderr}, given the result of the `--initial-hash` operation was [...]{replace=state_hashes_initial}.
 
 :::info
 The scare quotes around &ldquo;only&rdquo; are pedantic.
@@ -645,8 +645,8 @@ cat $state_hashes_no_limit/both \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
-However, the final state hash [...]{replace=state_hashes_final_no_limit/stdout} now pertains to cycle []{replace=state_hashes_cycles_no_limit/stdout}, where the machine is halted.
-This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{replace=state_hashes_initial/stdout}.
+However, the final state hash [...]{replace=state_hashes_final_no_limit} now pertains to cycle []{replace=state_hashes_cycles_no_limit}, where the machine is halted.
+This is the &ldquo;only&rdquo; possible state hash for a *halted* machine that started from state hash [...]{replace=state_hashes_initial}.
 
 ### Persistent Cartesi Machines
 
@@ -655,7 +655,7 @@ A stored machine can later be loaded to continue its execution from where it lef
 To store a machine to a given `<directory>`, use the command-line option `--store=<directory>`.
 (In `<directory>`, the `%h` escape will be replaced by the state hash in hex.)
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
-For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec/stdout}
+For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec}
 ```{.bash key=persistent_machine_cmd replace=source vars=cycles->cycles_htif_putchar/stderr}
 cartesi-machine \
     --max-mcycle=$cycles \
@@ -665,7 +665,7 @@ cartesi-machine \
 ```{.bash key=machine_dirname vars=state_hashes_final_limit_exec replace=null}
 printf 'machine-%s/' "$(cat $state_hashes_final_limit_exec/stdout)"
 ```
-This command creates a directory []{replace=machine_dirname/stdout}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
+This command creates a directory []{replace=machine_dirname}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
 Every image file is copied into the directory, so no external dependencies remain.
 
 :::note
@@ -693,9 +693,9 @@ produces the output
 ```
 Note that, other than `--load`, no initialization command-line options were used.
 These initializations were used to define the machine before it was stored: their values are implicitly encoded in the stored state.
-The machine continues from where it left off, and reaches the same final state hash [...]{replace=state_hashes_final_no_limit/stdout}, as if it had never been interrupted.
+The machine continues from where it left off, and reaches the same final state hash [...]{replace=state_hashes_final_no_limit}, as if it had never been interrupted.
 
-Note also that the initial state hash [...]{replace=state_hashes_final_limit_exec/stdout} after `--load` matches the final state hash before `--store`.
+Note also that the initial state hash [...]{replace=state_hashes_final_limit_exec} after `--load` matches the final state hash before `--store`.
 After all, they are state hashes concerning the state of the same machine at the same cycle.
 `--load` verifies the archive format version recorded in the stored machine, and the pre-store and post-load state hashes are equal because the same machine state is restored.
 
@@ -714,7 +714,7 @@ produces the output
 
 ### Running as root
 
-Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/usr/sbin/cartesi-init` script runs the entrypoint command as []{replace=rarely_id/stdout}.
+Starting at version 4.0 of `rootfs.ext2`, the Cartesi-provided `/usr/sbin/cartesi-init` script runs the entrypoint command as []{replace=rarely_id}.
 This can be seen by running:
 ```{.bash key=rarely_id replace=source}
 cartesi-machine \
@@ -862,7 +862,7 @@ we can see from the output
 ```{.bash key=templates_trunc_hash vars=templates_hash replace=null}
 cat $templates_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
-that the stored template hash is [...]{replace=templates_trunc_hash/stdout}.
+that the stored template hash is [...]{replace=templates_trunc_hash}.
 
 Templates are typically used by programs that control the emulator with the C++, Lua, or JSON-RPC interfaces.
 
@@ -957,10 +957,10 @@ cartesi-machine \
     > /dev/null 2>&1
 cat pristine-input-proof
 ```
-The `root_hash` value [...]{replace=templates_trunc_hash/stdout} is the expected initial state hash seen in the output of the `cartesi-machine` command.
+The `root_hash` value [...]{replace=templates_trunc_hash} is the expected initial state hash seen in the output of the `cartesi-machine` command.
 The `target_address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in hexadecimal.
 The `log2_target_size` value `12` refers to the size of the 4KiB input NVRAM.
-The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash/stdout} in the proof gives the hash of the input NVRAM.
+The `target_hash` value [...]{replace=proofs_pristine_input_trunc_hash} in the proof gives the hash of the input NVRAM.
 
 The hash of the input NVRAM can be also computed externally with the `cartesi-hash-tree-hash` command-line utility.
 The utility can produce the hash of any file with a power-of-2 size.
@@ -975,7 +975,7 @@ head -c 0 | cartesi-hash-tree-hash --log2-root-size=12
 cat $proofs_pristine_input_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
-```{replace=proofs_pristine_input_hash/stdout}
+```{replace=proofs_pristine_input_hash}
 ```
 As expected, the hash values match.
 
@@ -993,10 +993,10 @@ echo "6*2^1024 + 3*2^512" | cartesi-hash-tree-hash --log2-root-size=12
 cat $proofs_input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
-```{replace=proofs_input_raw_hash/stdout}
+```{replace=proofs_input_raw_hash}
 ```
 
-Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash/stdout} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash/stdout} of the template's pristine NVRAM.
+Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=proofs_input_raw_trunc_hash} of the desired `input.raw` image rather than hash [...]{replace=proofs_pristine_input_trunc_hash} of the template's pristine NVRAM.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
 ```{.bash key=proofs_input_json vars=templates_store,input_addr->ar_drive_formula/input_addr replace=source}
@@ -1027,7 +1027,7 @@ cat $proofs_input_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
 ```
-The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash/stdout} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash/stdout} differs from [...]{replace=templates_trunc_hash/stdout} obtained for the template, as expected.
+The `target_hash` value [...]{replace=proofs_input_raw_trunc_hash} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=proofs_input_roothash} differs from [...]{replace=templates_trunc_hash} obtained for the template, as expected.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
@@ -1079,7 +1079,7 @@ cat $proofs_output_json/stdout \
     | $RECIPES_DIR/find-hash.sh root_hash \
     | $RECIPES_DIR/trunc8.sh
 ```
-Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash/stdout} output by the `cartesi-machine` command-line utility.
+Note how the `root_hash` field in the proof matches the final state hash [...]{replace=proofs_output_roothash} output by the `cartesi-machine` command-line utility.
 
 To see that the `target_hash` field matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
 ```{.bash key=proofs_output_raw_hash vars=proofs_output_run replace=source}
@@ -1090,7 +1090,7 @@ cartesi-hash-tree-hash --log2-root-size=12 < output.raw
 # docs:end
 ```
 to obtain
-```{replace=proofs_output_raw_hash/stdout}
+```{replace=proofs_output_raw_hash}
 ```
 
 The `cartesi-machine` command-line utility accepts an arbitrary number of `--initial-proof` and `--final-proof` parameters.
@@ -1314,7 +1314,7 @@ ls *.bin
 # docs:end
 ```
 We see
-```{.bash key=encoded_bins_ls replace=rolling_puppet_encoded_bins/stdout}
+```{.bash key=encoded_bins_ls replace=rolling_puppet_encoded_bins}
 ```
 
 #### Running a simple target application
@@ -1436,7 +1436,7 @@ ln -s $rolling_puppet/*.bin .
 cartesi-rollup-data.lua decode advance < input-1.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_advance/stdout}
+```{replace=rolling_puppet_decode_advance}
 ```
 The payload field carries the hex encoding of the bytes `notice:hello from input 1`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 1`.
 
@@ -1448,7 +1448,7 @@ ln -s $rolling_puppet/*.bin .
 cartesi-rollup-data.lua decode notice < input-1-output-0.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_notice/stdout}
+```{replace=rolling_puppet_decode_notice}
 ```
 ```{.bash key=rolling_puppet_decode_report vars=rolling_puppet replace=source}
 ln -s $rolling_puppet/*.bin .
@@ -1456,7 +1456,7 @@ ln -s $rolling_puppet/*.bin .
 cartesi-rollup-data.lua decode report < query-report-0.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_report/stdout}
+```{replace=rolling_puppet_decode_report}
 ```
 Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
 A voucher carries a _destination_, a _value_, and a _payload_.
@@ -1690,7 +1690,7 @@ cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
 # docs:end
 ```
 to produce
-```{replace=rolling_calc_decode/stdout}
+```{replace=rolling_calc_decode}
 ```
 The server shell shows only the error message output by `bc` and `rollup`.
 In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
@@ -1703,8 +1703,8 @@ In production, these error messages should have been captured and output as a re
 This is an advanced section, not needed by regular users of the Cartesi platform.
 :::
 
-A target application can inform the host of its progress by using a Cartesi-specific `/dev/yield` Linux device.
-Within the target, the Linux device can be controlled in the command-line with the utility `/opt/cartesi/bin/yield`, pre-installed in the root file-system `rootfs.ext2`.
+A target application can inform the host of its progress by using the Cartesi-specific `/dev/cmio` Linux device.
+Within the target, the device can be controlled from the shell with the `/usr/bin/yield` utility, pre-installed in the root file-system `rootfs.ext2`.
 The progress feedback is accessed via the `automatic progress <permil>` command-line option.
 
 For example, during the execution of the loop,
@@ -1714,7 +1714,7 @@ cartesi-machine \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 ```
 the `cartesi-machine` utility receives control back from the emulator at every iteration, when the target executes the `yield` utility.
-(The directory `/opt/cartesi/bin/`, where `yield` resides, is in the default search path for executable setup by `/usr/sbin/cartesi-init`.)
+(The directory `/usr/bin/`, where `yield` resides, is in the default `PATH`.)
 
 By default, the emulator honors automatic yield requests from the target.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but be careful since doing so would _also_ prevent Rolling Cartesi Machines from generating outputs.
@@ -1858,7 +1858,7 @@ lua5.4 -e 'local c = require "cartesi"; io.write(string.format("start:0x%x,lengt
 lua5.4 -e 'local c = require "cartesi"; io.write(string.format("start:0x%x,length:2<<%d", c.AR_CMIO_TX_BUFFER_START, c.AR_CMIO_TX_BUFFER_LOG2_SIZE - 1))'
 ```
 The command-line options `--cmio-rx-buffer=<key>:<value>...` and `--cmio-tx-buffer=<key>:<value>...` configure backing-store options for the two memory ranges used by the `/dev/cmio` device.
-The RX buffer occupies []{replace=cmio_rx_buffer_range/stdout} and the TX buffer occupies []{replace=cmio_tx_buffer_range/stdout}.
+The RX buffer occupies []{replace=cmio_rx_buffer_range} and the TX buffer occupies []{replace=cmio_tx_buffer_range}.
 Although their addresses and lengths are fixed and cannot be overridden, their backing storage can be configured.
 See the [target perspective](#system-architecture) for details on how these buffers are used by Cartesi Rollups, and the section on [Rolling Cartesi Machines](#rolling-cartesi-machines) for the request/response data flow.
 
@@ -2050,7 +2050,7 @@ This is where the RAM image `linux.bin` generated by the [`machine-linux-image`]
 
 The <a href="#dtb_config">`dtb`</a> entry in `machine_config` has four fields.
 Field `bootargs` is the kernel command-line string passed to Linux at boot.
-Its default value is []{replace=default_bootargs/stdout}, which boots Linux quietly and runs the Cartesi-provided `cartesi-init` script as init.
+Its default value is []{replace=default_bootargs}, which boots Linux quietly and runs the Cartesi-provided `cartesi-init` script as init.
 Field `init` is a shell snippet appended to `cartesi-init`'s setup phase, executed as `root` before the entrypoint.
 Field `entrypoint` is the user-mode command that `cartesi-init` runs after setup, by default as user `dapp`.
 This is what the `cartesi-machine` command-line utility appends to when arguments are passed after `--`.
@@ -2062,7 +2062,7 @@ The `flash_drive` entry in `machine_config` is a list of <a href="#memory_range_
 The same shape is reused by the `nvram` entry, also a list of `memory_range_config` entries.
 Fields `start` and `length` give the start and length of the entry in the machine's address space.
 Once again, the length must be a multiple of 4Ki.
-If `start` is omitted, it defaults to []{replace=ar_drive_formula/stdout}, where `i` is the index of the entry across the union of `flash_drive` and `nvram` (drives and NVRAMs share the same auto-allocator).
+If `start` is omitted, it defaults to []{replace=ar_drive_formula}, where `i` is the index of the entry across the union of `flash_drive` and `nvram` (drives and NVRAMs share the same auto-allocator).
 If `length` is omitted, it defaults to the size of the backing image on disk.
 Field `label` is a string used by the emulator to expose the entry to the guest via DTB aliases.
 Each flash drive is exposed to the guest as a `/dev/pmem*` device, and each NVRAM as a `/dev/uio*` device.
@@ -2135,7 +2135,7 @@ It can be edited down to its essential, and stored into a file, for example as a
 # can declare lang .lua (matching the captured Lua content) instead of .bash.
 lua5.4 $RECIPES_DIR/minimal-config.lua $ls/config-ls-bin.lua
 ```
-```{.lua replace=config_ls_bin/stdout title="config-ls-bin.lua"}
+```{.lua replace=config_ls_bin title="config-ls-bin.lua"}
 ```
 During prototyping, the `mvendorid`, `mimpid`, and `marchid` fields default to values that match the running emulator.
 For production code, they should be set explicitly so that an instantiation against a different emulator version fails fast.
@@ -2166,7 +2166,7 @@ captures a configuration whose essential, edited-down form is
 ```{.bash key=config_cat_foo_bar vars=flash replace=null}
 lua5.4 $RECIPES_DIR/minimal-config.lua $flash/config-cat-foo-bar.lua
 ```
-```{.lua replace=config_cat_foo_bar/stdout title="config-cat-foo-bar.lua"}
+```{.lua replace=config_cat_foo_bar title="config-cat-foo-bar.lua"}
 ```
 The second flash drive carries the file-system mounted at `/mnt/foo`.
 That is where the entrypoint `cat /mnt/foo/bar.txt` finds the file to dump to the console.
@@ -2180,7 +2180,7 @@ This is the [introductory example](#command-line-interface), and its configurati
 ```{.bash key=config_nothing_to_do vars=nothing replace=null}
 lua5.4 $RECIPES_DIR/minimal-config.lua $nothing/config-nothing-to-do.lua
 ```
-```{.lua replace=config_nothing_to_do/stdout title="config-nothing-to-do.lua"}
+```{.lua replace=config_nothing_to_do title="config-nothing-to-do.lua"}
 ```
 The `dtb.init` field carries the ASCII-art splash that the `cartesi-machine` utility appends to its setup phase by default.
 This is what produces the Cartesi logo printed before each entrypoint runs.
@@ -2194,7 +2194,7 @@ cartesi-machine --no-init-splash \
     -- $'for i in $(seq 0 5 1000); do yield automatic progress $i; done'
 lua5.4 $RECIPES_DIR/minimal-config.lua config-progress.lua
 ```
-```{.lua replace=config_progress/stdout title="config-progress.lua"}
+```{.lua replace=config_progress title="config-progress.lua"}
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
@@ -2208,7 +2208,7 @@ cartesi-machine --no-init-splash \
     -- $'readmmap input | lua5.4 -e \'print((string.unpack("z", io.read("a"))))\' | bc | writemmap output'
 lua5.4 $RECIPES_DIR/minimal-config.lua config-calculator.lua
 ```
-```{.lua replace=config_calculator/stdout title="config-calculator.lua"}
+```{.lua replace=config_calculator title="config-calculator.lua"}
 ```
 
 ### Loading and running machines
@@ -2307,9 +2307,9 @@ This is, unfortunately, difficult to estimate from the outside.
 The target application is in a much better position to estimate its own progress.
 However, it needs a mechanism to communicate its progress back to the program controlling the emulator.
 
-The command-line utility `/opt/cartesi/bin/yield` can be used for this purpose.
-Internally, the tool uses an `ioctl` system-call on the Cartesi-specific `/dev/yield` device.
-The protocols followed by the `/opt/cartesi/bin/yield` utility to interact with the `/dev/yield` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [target perspective](#system-architecture).
+The command-line utility `/usr/bin/yield` can be used for this purpose.
+Internally, the tool uses an `ioctl` system-call on the Cartesi-specific `/dev/cmio` device.
+The protocols followed by the `/usr/bin/yield` utility to interact with the `/dev/cmio` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [target perspective](#system-architecture).
 The focus here is on its effect on the host program controlling the emulator.
 
 A Cartesi Machine can be configured via `processor.registers.htif.iyield` to accept HTIF yield automatic commands.
@@ -2390,7 +2390,7 @@ lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
 ```
 The result is, as expected,
-```{replace=lua_calculator_with_new_drives/stdout}
+```{replace=lua_calculator_with_new_drives}
 ```
 
 ### State hashes
@@ -2589,7 +2589,7 @@ lua5.4 run-calculator-with-proof.lua 6*2^1024 + 3*2^512
 # docs:end
 ```
 produces the output
-```{replace=lua_calculator_with_proof/stdout}
+```{replace=lua_calculator_with_proof}
 ```
 
 ### Remote Cartesi Machines
@@ -3224,8 +3224,8 @@ io.write(string.format("0x%x", c.AR_DTB_START))
 Earlier versions of the emulator booted from a `rom.bin` image whose main purpose was to build, inside the target
 itself, a [device tree](http://devicetree.org/) describing the hardware.
 Starting with version 0.16, the emulator builds the device tree in the host, at instantiation, derived from the machine configuration, and stores it in the DTB memory range immediately below RAM.
-The hart starts execution directly at the beginning of RAM (address []{replace=ar_ram_start/stdout}), where the RAM image is loaded.
-The start address of the DTB memory range ([]{replace=ar_dtb_start/stdout}) is pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
+The hart starts execution directly at the beginning of RAM (address []{replace=ar_ram_start}), where the RAM image is loaded.
+The start address of the DTB memory range ([]{replace=ar_dtb_start}) is pre-loaded in register `a1`, per the conventional RISC-V boot ABI.
 
 The Cartesi-provided `linux.bin` image is an OpenSBI `fw_payload` bundle, a small machine-mode firmware that exposes the Supervisor Binary Interface to Linux, linked together with the kernel.
 The firmware occupies the first 512KiB of RAM, declared as a no-map region in the device tree so the kernel does not touch it.
@@ -3324,7 +3324,7 @@ cartesi-machine \
     -- rollup --help
 ```
 
-```{replace=cli_rollup_help/stdout}
+```{replace=cli_rollup_help}
 ```
 
 #### The /dev/cmio device
@@ -3386,7 +3386,7 @@ cartesi-machine \
 } | grep -v -e 'Too few arguments' -e '^$'
 ```
 
-```{replace=cli_yield_help/stdout}
+```{replace=cli_yield_help}
 ```
 
 ## System architecture
@@ -3771,7 +3771,7 @@ Execution starts at the beginning of RAM, where the bootloader (an OpenSBI&nbsp;
 The amount of RAM is user-configurable, but always starts at address []{replace=ar_table/ram_start}.
 The DTB occupies a fixed region immediately below RAM and carries the kernel command line, the description of every other range, and the init/entrypoint scripts.
 
-Flash drives and NVRAMs share a single slot allocator. When `start` is left unset, the slot defaults to []{replace=ar_drive_formula/stdout}, where `i` is the index across the combined `flash_drive` and `nvram` lists.
+Flash drives and NVRAMs share a single slot allocator. When `start` is left unset, the slot defaults to []{replace=ar_drive_formula}, where `i` is the index across the combined `flash_drive` and `nvram` lists.
 Flash drives are typically preloaded with file-system images, and NVRAMs hold raw byte buffers backed by a UIO device.
 
 The board maps four non-memory devices to the physical address space: CLINT, HTIF, PLIC, and (in unreproducible machines only) one or more VirtIO devices.
@@ -4132,7 +4132,7 @@ Repeat
 End
 ```
 At a higher level, the target application running inside the emulator is supported by the libcmt library or by even higher-level interfaces based on it, such as the `/usr/bin/rollup` command-line utility, the HTTP API exposed by the `/usr/bin/rollup-http-server` command-line utility, or a language-specific framework.
-The libcmt library handles ABI encoding and decoding, maintains the output-hashes Merkle tree in userspace, and uses the `/dev/cmio` and `/dev/yield` device drivers to move data to and from the CMIO buffers and perform the required yields.
+The libcmt library handles ABI encoding and decoding, maintains the output-hashes Merkle tree in userspace, and uses the `/dev/cmio` device driver to move data to and from the CMIO buffers and perform the required yields.
 See [The libcmt library](#the-libcmt-library), [The /dev/cmio device](#the-devcmio-device), [The rollup command-line utility](#the-rollup-command-line-utility), and [The rollup HTTP server](#the-rollup-http-server) for the corresponding interfaces.
 
 There are two types of request: advance-state requests and inspect-state requests.
@@ -4398,9 +4398,9 @@ The list of PMA records ends with an invalid PMA entry for which `length=0`.
 
 ### Linux setup
 
-By default, `pc` starts at the beginning of RAM (address []{replace=ar_ram_start/stdout}), where the RAM image is loaded.
+By default, `pc` starts at the beginning of RAM (address []{replace=ar_ram_start}), where the RAM image is loaded.
 The emulator builds a [<i>devicetree</i>](http://devicetree.org/) describing the hardware at instantiation time, derived from the machine configuration, and writes it into the DTB memory range immediately below RAM.
-The start address of the DTB ([]{replace=ar_dtb_start/stdout}) is pre-loaded in register&nbsp;`a1`, per the conventional RISC-V boot ABI.
+The start address of the DTB ([]{replace=ar_dtb_start}) is pre-loaded in register&nbsp;`a1`, per the conventional RISC-V boot ABI.
 
 The `dtc` command-line utility can be used to inspect the devicetree:
 
@@ -4441,7 +4441,7 @@ local cartesi = require "cartesi"
 io.write(cartesi.DTB_BOOTARGS_INIT_PART)
 ```
 
-After completing its own initialization, the kernel mounts the root file-system (by default <tt>[]{replace=dtb_bootargs_root_part/stdout}</tt>) and cedes control to the program named by the&nbsp;`init=`&nbsp;parameter (by default <tt>[]{replace=dtb_bootargs_init_part/stdout}</tt>).
+After completing its own initialization, the kernel mounts the root file-system (by default <tt>[]{replace=dtb_bootargs_root_part}</tt>) and cedes control to the program named by the&nbsp;`init=`&nbsp;parameter (by default <tt>[]{replace=dtb_bootargs_init_part}</tt>).
 Cartesi's root file-system `rootfs.ext2` is built from the [`machine-guest-tools`](https://github.com/cartesi/machine-guest-tools) repository, which also installs `cartesi-init` and the rollups user-space tooling.
 See [Initialization](#initialization-1) under the Target perspective for what `cartesi-init` does after the kernel hands off.
 
