@@ -2505,6 +2505,9 @@ local function load_cmio_input(machine, advance)
     local f = assert(io.open(filename, "rb"))
     local data = assert(f:read("*a"))
     f:close()
+    -- Record the pre-input root hash so the EVM verifier can prove a reject
+    -- restores this state, regardless of how the host implements rollback.
+    machine:set_revert_root_hash(machine:get_root_hash())
     machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
 end
 
