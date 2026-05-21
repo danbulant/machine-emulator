@@ -240,6 +240,8 @@ where options are:
 
         user (optional)
         changes the user ownership of the /dev/uioN device.
+        this option is useful to allow dapp's user access the NVRAM.
+        the default ownership is set to the root user.
 
   --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
     replaces an existing memory range right after machine instantiation.
@@ -2263,7 +2265,7 @@ echo "
         local entry = flash_drives[idx]
         if entry then -- skip removed drives (e.g. --no-root-flash-drive)
             set_empty_omitted_filenames(entry)
-            local dt_label = "flashdrive" .. #config.flash_drive
+            local dt_label = entry.label or "flashdrive" .. #config.flash_drive
             if not entry.length then entry.length = -1 end
             if entry.mke2fs == nil then entry.mke2fs = entry.backing_store.data_filename == "" end
             if entry.mount == nil then
@@ -2296,7 +2298,7 @@ echo "
                     config.dtb.init = config.dtb.init
                         .. string.format(
                             'busybox mke2fs -F -b 4096 -I 256 -L "%s" "$dev" > /dev/null\n',
-                            entry.label or dt_label
+                            dt_label
                         )
                 end
                 if entry.mount then
@@ -2321,14 +2323,14 @@ echo "
         local entry = nvrams[idx]
         if entry then
             set_empty_omitted_filenames(entry)
-            local dt_label = "nvram" .. #config.nvram
+            local dt_label = entry.label or "nvram" .. #config.nvram
             if not entry.length then entry.length = -1 end
             config.nvram[#config.nvram + 1] = entry
             config.dtb.init = config.dtb.init .. string.format("dev=$(nvram %s)\n", dt_label)
             if entry.read_only then
                 config.dtb.init = config.dtb.init .. 'busybox chmod 0444 "$dev"\n'
             else
-                config.dtb.init = config.dtb.init .. 'busybox chmod 0666 "$dev"\n'
+                config.dtb.init = config.dtb.init .. 'busybox chmod 0664 "$dev"\n'
             end
             if entry.user then
                 config.dtb.init = config.dtb.init .. string.format('busybox chown %s: "$dev"\n', entry.user)
@@ -2473,6 +2475,7 @@ end
 local function instantiate_filename(pattern, values)
     -- replace escaped % with something safe
     pattern = string.gsub(pattern, "%\\%%", "\0")
+    pattern = string.gsub(pattern, "%%(%d+)(%a)", function(p, s) return string.sub(values[s] or s, 1, p) end)
     pattern = string.gsub(pattern, "%%(%a)", function(s) return values[s] or s end)
     -- restore escaped %
     return (string.gsub(pattern, "\0", "%"))
@@ -2531,7 +2534,7 @@ local function store_machine(machine, config, dir, sharing)
     assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
     local values = {}
-    if dir:find("%%h") then values.h = util.hexhash(machine:get_root_hash()) end
+    if dir:find("%%%d*h") then values.h = util.hexhash(machine:get_root_hash()) end
     local name = instantiate_filename(dir, values)
     machine:store(name, sharing)
 end

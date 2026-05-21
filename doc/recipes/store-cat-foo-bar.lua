@@ -2,7 +2,8 @@
 local cartesi = require("cartesi")
 
 -- Instantiate machine from configuration
-local machine = cartesi.machine((require("config-cat-foo-bar")))
+local config = require("config-cat-foo-bar")
+local machine = cartesi.machine(config)
 
 -- Store persistent state to directory
 machine:store("cat-foo-bar")

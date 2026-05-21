@@ -91,10 +91,11 @@
 --                       bind the same port). Use vars= when $K is in the body.
 --
 --   vars=VAR->REF,...  Path injection and contents substitution. REF forms:
---                         VAR->K          path-form: $VAR -> REPLACE_CACHE_DIR/K
+--                         VAR->K          contents-form: $VAR -> bytes of cache/<K>/both
+--                                         (same default as replace=K)
 --                         VAR->K/SUB      contents-form: $VAR -> bytes of cache/<K>/SUB
 --                         VAR->K/SUB/path path-form: $VAR -> REPLACE_CACHE_DIR/K/SUB
---                         K               shortcut for K->K (path-form)
+--                         K               path-form: $K -> K/path (shortcut)
 --                       Path-form entries are substituted in body.<ext> at dry-run
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by vars.lua at runner time (producing
@@ -312,7 +313,8 @@ local function parse_vars(s)
     if not s then return r end
     for tok in s:gmatch("[^,%s]+") do
         local var, ref = tok:match("^([%w_]+)%->(.+)$")
-        if not var then
+        local shortcut = var == nil
+        if shortcut then
             check_identifier(tok, "vars=" .. tok)
             var, ref = tok, tok
         end
@@ -330,9 +332,13 @@ local function parse_vars(s)
             base, sub = ref:match("^([%w_][%w_%-%.]*)/(.+)$")
             if base then
                 kind = "contents"
-            else
+            elseif shortcut then
                 base, sub = ref, nil
                 kind = "dirpath"
+            else
+                -- vars=VAR->K defaults to vars=VAR->K/both (contents-form).
+                base, sub = ref, "both"
+                kind = "contents"
             end
         end
         check_identifier(base, "vars=" .. var .. "->" .. ref)
