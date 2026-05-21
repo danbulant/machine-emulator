@@ -75,8 +75,8 @@
 --   LANG_INFO maps a Pandoc class name to {ext, runner-path}:
 --     .bash  ->  body.sh,  run-bash.sh   (default)
 --     .lua   ->  body.lua, run-lua.sh
---   lang_from_classes picks the first recognized class; classless or
---   unrecognized blocks fall back to DEFAULT_LANG (bash).
+--   pick_lang uses runner= when set, else the first Pandoc class, else
+--   DEFAULT_LANG (bash). The class always controls syntax highlighting.
 --   To add a language: add an entry to LANG_INFO and place run-<lang>.sh
 --   alongside this filter.
 --
@@ -102,6 +102,14 @@
 --                       time. Contents-form entries are written to cache/<K>/spec
 --                       and expanded by vars.lua at runner time (producing
 --                       body.run.<ext>). Both forms also add make prereqs.
+--
+--   runner=<name>       Optional, key= blocks only. Overrides the runner (and body
+--                       file extension) that replace.lua would otherwise infer from
+--                       the block's Pandoc class. <name> must match a key in
+--                       LANG_INFO; if it does not, the block is display-only (no
+--                       body file written, no make rule emitted). Consuming the
+--                       output of a display-only block is an error. Not allowed on
+--                       inline Code or Span.
 --
 --   outputs=a,b,c       Only on key= blocks. Declares artifact filenames the body
 --                       writes to its cwd (= cache/<key>/). Reserved names
@@ -272,6 +280,7 @@ local outputs_t = {}  -- key -> { artifact_name -> true }
 local sources   = {}  -- key -> resolved body (for replace=source)
 local rules     = {}  -- list of make rule strings (dry-run only)
 local consumed  = {}  -- "<key>/<file>" -> true (referenced cache files)
+local no_runner = {}  -- key -> lang string (for keys whose runner= is not in LANG_INFO)
 
 local function assertf(cond, fmt, ...)
     if not cond then error(string.format(fmt, ...)) end
@@ -478,19 +487,17 @@ local function read_file(path, label)
 end
 
 local function read_output(key, sub, label)
+    assertf(not no_runner[key],
+        "%s: runner=%s is not in LANG_INFO; cannot consume cache/%s/%s",
+        label, no_runner[key], key, sub)
     consumed[key .. "/" .. sub] = true
     if deps_target then return "" end
     local path = REPLACE_CACHE_DIR .. "/" .. key .. "/" .. sub
     return (strip_ansi(read_file(path, label)):gsub("\n$", ""))
 end
 
--- Derive language from a codeblock's class list. Returns the first recognized
--- language, or DEFAULT_LANG if none match.
-local function lang_from_classes(classes)
-    for _, cls in ipairs(classes or {}) do
-        if LANG_INFO[cls] then return cls end
-    end
-    return DEFAULT_LANG
+local function pick_lang(attr, classes)
+    return attr.runner or classes and classes[1] or DEFAULT_LANG
 end
 
 local function write_idempotent(path, content)
@@ -516,16 +523,20 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         assertf(#out_list == 0, "key=%s: outputs= not allowed on include= keys", key)
         assertf(#deps == 0,     "key=%s: depends= not allowed on include= keys", key)
         assertf(#vars_list == 0, "key=%s: vars= not allowed on include= keys", key)
-        local lang = lang_from_classes(classes)
+        local lang = pick_lang(attr, classes)
         local info = LANG_INFO[lang]
         defined[key]   = true
         outputs_t[key] = {}
         sources[key]   = body
-        -- Mark include= primary as consumed so a recipe edit invalidates README.md
-        -- even when the only consumer renders via replace=source (which reads the
-        -- body in memory and would otherwise leave consumed[] unmarked).
-        consumed[key .. "/both"] = true
-        if deps_target then emit_include_rule(key, info, include_abs) end
+        if info then
+            -- Mark include= primary as consumed so a recipe edit invalidates README.md
+            -- even when the only consumer renders via replace=source (which reads the
+            -- body in memory and would otherwise leave consumed[] unmarked).
+            consumed[key .. "/both"] = true
+            if deps_target then emit_include_rule(key, info, include_abs) end
+        else
+            no_runner[key] = lang
+        end
         return body
     end
     for _, d in ipairs(deps) do
@@ -545,12 +556,16 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
     end
     local resolved = substitute(body, path_pairs)
     resolved = resolved:gsub("%$REPLACE_KEY%f[%W]", function() return key end)
-    local lang = lang_from_classes(classes)
+    local lang = pick_lang(attr, classes)
     local info = LANG_INFO[lang]
     defined[key] = true
     outputs_t[key] = {}
     for _, n in ipairs(out_list) do outputs_t[key][n] = true end
     sources[key] = resolved
+    if not info then
+        no_runner[key] = lang
+        return resolved
+    end
     local exec_body = strip_null_markers(resolved, "key=" .. key)
     write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/body." .. info.ext, exec_body)
     -- Write spec file for contents-form vars entries so the runner can expand them.
@@ -604,7 +619,9 @@ function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
     local siblings = {"stdout", "stderr"}
     for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
-    local cmd = string.format("\t@REPLACE_KEY=%s bash %s", key, runner_path)
+    local cmd = string.format(
+        "\t@REPLACE_KEY=%s bash %s || (echo '==> FAILED: key=%s' >&2; cat $(REPLACE_CACHE_DIR)/%s/both >&2; exit 1)",
+        key, runner_path, key, key)
     rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n" .. cmd
     for _, s in ipairs(siblings) do
         rules[#rules + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/" .. s .. ": " .. primary
@@ -695,6 +712,9 @@ local function cross_read(K, thing, vars_spec, label)
     end
     local sub_path = thing:match("^(.+)/path$")
     if sub_path then
+        assertf(not no_runner[K],
+            "%s: runner=%s is not in LANG_INFO; cannot consume cache/%s/%s",
+            label, no_runner[K], K, sub_path)
         return REPLACE_CACHE_DIR .. "/" .. K .. "/" .. sub_path
     end
     -- globals/NAME renders the value of `-M NAME=...`.
@@ -770,6 +790,7 @@ local function process_codeblock(el)
     attr.vars = nil
     attr.enabled = nil
     attr.include = nil
+    attr.runner = nil
 
     if not enabled then
         force_fenced(el)
@@ -807,6 +828,7 @@ local function process_code(el)
     local replace = attr.replace
     if not replace then return el end
     assertf(not attr.include, "inline Code: include= not supported (use key= CodeBlock)")
+    assertf(not attr.runner,  "inline Code: runner= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     attr.replace = nil
     attr.enabled = nil
@@ -826,6 +848,7 @@ local function process_span(el)
     local replace = attr.replace
     if not replace then return el end
     assertf(not attr.include, "inline Span: include= not supported (use key= CodeBlock)")
+    assertf(not attr.runner,  "inline Span: runner= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     local code = attr.code
     attr.replace = nil

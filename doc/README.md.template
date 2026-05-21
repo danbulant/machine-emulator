@@ -2125,12 +2125,8 @@ The individual parameters have the following meaning:
 
 The configuration can be edited down to its essential, and stored into a file, for example as a Lua module:
 
-```{.bash key=config_ls_bin replace=null vars=config->ls_bin/config-ls-bin.lua/path}
-# The runner is split from the rendered consumer block below so the consumer
-# can declare lang .lua (matching the captured Lua content) instead of .bash.
+```{.lua runner=bash key=config_ls_bin replace=stdout vars=config->ls_bin/config-ls-bin.lua/path}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
-```
-```{.lua replace=config_ls_bin title="config-ls-bin.lua"}
 ```
 
 The command-line utility can also run Cartesi Machines with additional flash drives.
@@ -2138,10 +2134,8 @@ Adding `--store-config` to the [earlier example](#flash-drives) that loaded `foo
 ```{.bash replace=cat_foo_bar/source}
 ```
 captures a configuration whose essential, edited-down form is
-```{.bash key=config_cat_foo_bar vars=config->cat_foo_bar/config-cat-foo-bar.lua/path replace=null}
+```{.lua runner=bash key=config_cat_foo_bar vars=config->cat_foo_bar/config-cat-foo-bar.lua/path replace=stdout}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
-```
-```{.lua replace=config_cat_foo_bar title="config-cat-foo-bar.lua"}
 ```
 
 The new flash drive is added by the `cartesi-machine` command-line utility right after `root`.
@@ -2156,26 +2150,20 @@ Here are the (simplified) configurations for the other examples from the documen
 
 A Cartesi Machine that has nothing to do.
 This is the [introductory example](#command-line-interface), and its configuration, edited down to its essential, is
-```{.bash key=config_nothing_to_do vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=null}
+```{.lua runner=bash key=config_nothing_to_do vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=stdout}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
-```
-```{.lua replace=config_nothing_to_do title="config-nothing-to-do.lua"}
 ```
 The `dtb.init` field carries the ASCII-art splash that the `cartesi-machine` utility appends to its setup phase by default.
 This is what produces the Cartesi logo printed before each entrypoint runs.
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
-```{.bash key=config_progress replace=null vars=config->progress/config-progress.lua/path}
+```{.lua runner=bash key=config_progress replace=stdout vars=config->progress/config-progress.lua/path}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
-```
-```{.lua replace=config_progress title="config-progress.lua"}
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
-```{.bash key=config_calculator vars=config->calc_run/config-calculator.lua/path replace=null}
+```{.lua runner=bash key=config_calculator vars=config->calc_run/config-calculator.lua/path replace=stdout}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
-```
-```{.lua replace=config_calculator title="config-calculator.lua"}
 ```
 
 Note the two NVRAMs, one for the input and one for the output, and how the `cartesi-machine` utility adds a snippet to `dtb.init` that changes permissions and ownership of the corresponding devices.
@@ -2248,7 +2236,7 @@ In fact, running the following script
 ```
 has exactly the same effect as the example [above](#run-cat-foo-bar), where the machine was instantiated from the configuration and directly run until it halted:
 
-```{.bash key=run_load_cat_foo_bar replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=foo_ext2,cat_foo_bar,load_cat_foo_bar}
+```{.bash key=run_load_cat_foo_bar replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=load_cat_foo_bar}
 ln -sf "$RECIPES_DIR/load-cat-foo-bar.lua" .
 ln -sf "$template" .
 lua5.4 load-cat-foo-bar.lua
@@ -2618,31 +2606,33 @@ It then instantiates a remote machine by calling `cartesi_jsonrpc_machine` with 
 The `<close>` annotation combined with `set_cleanup_call(cartesi.jsonrpc.SHUTDOWN)` retires the server automatically when the script exits.
 
 Recall that, to run a server inside the playground, we opened a separate shell into the same playground container (for example, by running `docker exec -it <container-name> /bin/bash`), and then ran the `cartesi-jsonrpc-machine` server in it
-```bash
-cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
-```
-Now, instead of using the `cartesi-machine` command-line utility to control it, run the `run-remote-config.lua` client script in the other shell
-```bash
-lua5.4 run-remote-config.lua \
-    127.0.0.1:8080 \
-    config-nothing-to-do
-```
-The client shell produces
-
-```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config replace=null}
+```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config replace=source/server}
 srv_tmp=$(mktemp)
 trap 'rm -f "$srv_tmp"' EXIT
-cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+	--server-address=127.0.0.1:8080
+# docs:end server
+} > "$srv_tmp" 2>&1 &
 srv_pid=$!
 while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check > /dev/null 2>&1; do sleep 1; done
 ln -sf "$config" .
-lua5.4 "$RECIPES_DIR/run-remote-config.lua" \
+ln -sf "$RECIPES_DIR/run-remote-config.lua" .
+{
+# docs:begin client
+lua5.4 run-remote-config.lua \
     127.0.0.1:8080 \
-    config-nothing-to-do > client 2>&1
+    config-nothing-to-do
+# docs:end client
+} > client 2>&1
 wait "$srv_pid"
 mv "$srv_tmp" server
 ```
+Now, instead of using the `cartesi-machine` command-line utility to control it, run the `run-remote-config.lua` client script in the other shell
+```{.bash replace=lua_remote/source/client}
+```
+The client shell produces
 ```{replace=lua_remote/client}
 ```
 The server shell produces
@@ -2703,31 +2693,33 @@ If the reason was `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script de
 
 Here is what a session looks like.
 First, open a separate shell into the same docker container (for example, by running `docker exec -it <container-name> /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
-```bash
-cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
-```
-
-Then, run the `run-rolling-calculator.lua` client script in the other shell
-```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/cmd}
+```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
 srv_tmp=$(mktemp)
 trap 'rm -f "$srv_tmp"' EXIT
 rm -f rolling-calculator-template run-rolling-calculator.lua
 ln -sf "$template" .
 ln -sf "$RECIPES_DIR/run-rolling-calculator.lua" .
-cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
+# docs:end server
+} > "$srv_tmp" 2>&1 &
 srv_pid=$!
 while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check 2>/dev/null; do sleep 1; done
 {
-# docs:begin cmd
+# docs:begin client
 lua5.4 run-rolling-calculator.lua 127.0.0.1:8080
-# docs:end cmd
+# docs:end client
 } > client 2>&1 <<EOF
 6*2^1024 + 3*2^512
 1+(
 EOF
 wait "$srv_pid"
 mv "$srv_tmp" server
+```
+Then, run the `run-rolling-calculator.lua` client script in the other shell
+```{.bash replace=lua_rolling_calculator/source/client}
 ```
 The client prints the connection status to the console and then prompts us to type an expression.
 Entering `6*2^1024 + 3*2^512` causes the expected result to be printed, after which the client asks for a new expression.
