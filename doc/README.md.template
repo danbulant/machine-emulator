@@ -1507,7 +1507,7 @@ xgenext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template sequential=jsonrpc_server replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
+```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,input-2-output-0.bin sequential=jsonrpc_server replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
 srv_tmp=$(mktemp)
 _cleanup() {
     rm -f "$srv_tmp" \

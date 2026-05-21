@@ -121,9 +121,12 @@
 --                       file extension) that replace.lua would otherwise infer from
 --                       the block's Pandoc class. <name> must match a key in
 --                       LANG_INFO; if it does not, the block is display-only (no
---                       body file written, no make rule emitted). Consuming the
---                       output of a display-only block is an error. Not allowed on
---                       inline Code or Span.
+--                       body file written, no runner invocation). Consuming the
+--                       captured output (replace=K/stdout etc.) of a display-only
+--                       block is an error. include= keys still emit a copy rule
+--                       so depends=K works against the included file's mtime; the
+--                       body.<ext> file is skipped because no runner needs it.
+--                       Not allowed on inline Code or Span.
 --
 --   outputs=a,b,c       Only on key= blocks. Declares artifact filenames the body
 --                       writes to its cwd (= cache/<key>/). Reserved names
@@ -135,7 +138,8 @@
 --                       $RECIPES_DIR/<path> instead of the inline template text.
 --                       Block body must be empty when include= is set. The
 --                       dry-run emits a make rule that copies the file into
---                       cache/<K>/{body.<ext>,stdout,stderr,both}. Editing the
+--                       cache/<K>/{body.<ext>,stdout,stderr,both} (body.<ext>
+--                       is skipped when the block has no runner). Editing the
 --                       file invalidates the rule's primary target and cascades
 --                       to consumers declaring depends=<K>. outputs=, depends=,
 --                       and vars= are not allowed on include= keys.
@@ -552,15 +556,12 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         defined[key]   = true
         outputs_t[key] = {}
         sources[key]   = body
-        if info then
-            -- Mark include= primary as consumed so a recipe edit invalidates README.md
-            -- even when the only consumer renders via replace=source (which reads the
-            -- body in memory and would otherwise leave consumed[] unmarked).
-            consumed[key .. "/both"] = true
-            if deps_target then emit_include_rule(key, info, include_abs) end
-        else
-            no_runner[key] = lang
-        end
+        if not info then no_runner[key] = lang end
+        -- Mark include= primary as consumed so a recipe edit invalidates README.md
+        -- even when the only consumer renders via replace=source (which reads the
+        -- body in memory and would otherwise leave consumed[] unmarked).
+        consumed[key .. "/both"] = true
+        if deps_target then emit_include_rule(key, info, include_abs) end
         return body
     end
     for _, d in ipairs(deps) do
@@ -658,18 +659,29 @@ end
 -- cascades to consumers declaring depends=<key>.
 function emit_include_rule(key, info, include_abs)
     local primary     = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
-    local body_path   = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
     local stdout_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
     local stderr_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stderr"
-    rules[#rules + 1] = table.concat({
+    local recipe = {
         primary, ": ", include_abs, "\n",
         "\t@mkdir -p $(REPLACE_CACHE_DIR)/", key, "\n",
         "\t@cp ", include_abs, " ", primary,     "\n",
-        "\t@cp ", include_abs, " ", body_path,   "\n",
         "\t@cp ", include_abs, " ", stdout_path, "\n",
         "\t@: > ", stderr_path,
-    })
-    rules[#rules + 1] = table.concat({body_path,   ": ", primary})
+    }
+    -- body.<ext> exists for runner inclusion so consumers' runners can read it;
+    -- no-runner display-only keys have no runner that needs it, so skip it.
+    local body_path
+    if info then
+        body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
+        recipe[#recipe + 1] = "\n\t@cp "
+        recipe[#recipe + 1] = include_abs
+        recipe[#recipe + 1] = " "
+        recipe[#recipe + 1] = body_path
+    end
+    rules[#rules + 1] = table.concat(recipe)
+    if body_path then
+        rules[#rules + 1] = table.concat({body_path, ": ", primary})
+    end
     rules[#rules + 1] = table.concat({stdout_path, ": ", primary})
     rules[#rules + 1] = table.concat({stderr_path, ": ", primary})
 end

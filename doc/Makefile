@@ -111,8 +111,9 @@ else
 # container. Inside, DEV_ENV_HAS_DOCGEN=yes activates the rules above and
 # evaluates staleness against template.d.
 .PHONY: README.md README.html
-README.md: $(RECIPES_DIR)/rootfs-docs.ext2
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.md DEV_ENV_HAS_DOCGEN=yes"
+README.md: $(RECIPES_DIR)/rootfs-docs.ext2 | check-docs-image
+	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
 
 README.html: README.md
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.html DEV_ENV_HAS_DOCGEN=yes"
