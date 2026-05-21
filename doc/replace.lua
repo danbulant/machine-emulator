@@ -89,8 +89,22 @@
 --   depends=A,B,...     Only on key= blocks. Each token is either bare K or
 --                       K/SUB. Bare K adds a make prereq on cache/<K>/both;
 --                       K/SUB pins cache/<K>/SUB (stream or declared artifact).
---                       Reserved for ordering-only cases (e.g., two blocks that
---                       bind the same port). Use vars= when $K is in the body.
+--                       Reserved for ordering-only cases. Use vars= when $K
+--                       is in the body. For chains of blocks that share a
+--                       runtime resource (e.g., a TCP port), prefer
+--                       sequential= so the chain is built automatically in
+--                       document order.
+--
+--   sequential=TAG      Only on key= blocks. TAG is a single identifier.
+--                       Every block with the same TAG is auto-chained in
+--                       document order: each non-first member gains an
+--                       implicit depends=<previous-member>, a make prereq on
+--                       cache/<previous-member>/both. Composes additively
+--                       with explicit depends= and vars=. Use for ordering-
+--                       only resources (a bound port, a fixed file path)
+--                       where listing the chain by hand would be brittle.
+--                       Not allowed on include= keys (those have no
+--                       executable body to serialize).
 --
 --   vars=VAR->REF,...  Path injection and contents substitution. REF forms:
 --                         VAR->K          contents-form: $VAR -> bytes of cache/<K>/both
@@ -273,14 +287,15 @@ local DEFAULT_LANG = "bash"
 local RESERVED = { stdout = true, stderr = true, both = true, source = true, null = true }
 
 -- State accumulated as the document is walked.
-local pending   = {}  -- key -> { attr, body, classes, deps, vars }  (pass 1: raw collection)
-local defining  = {}  -- key -> true  (cycle detection during ensure_defined)
-local defined   = {}  -- key -> true  (set after define_script completes)
-local outputs_t = {}  -- key -> { artifact_name -> true }
-local sources   = {}  -- key -> resolved body (for replace=source)
-local rules     = {}  -- list of make rule strings (dry-run only)
-local consumed  = {}  -- "<key>/<file>" -> true (referenced cache files)
-local no_runner = {}  -- key -> lang string (for keys whose runner= is not in LANG_INFO)
+local pending    = {} -- key -> { attr, body, classes, deps, vars }  (pass 1: raw collection)
+local defining   = {} -- key -> true  (cycle detection during ensure_defined)
+local defined    = {} -- key -> true  (set after define_script completes)
+local outputs_t  = {} -- key -> { artifact_name -> true }
+local sources    = {} -- key -> resolved body (for replace=source)
+local rules      = {} -- list of make rule strings (dry-run only)
+local consumed   = {} -- "<key>/<file>" -> true (referenced cache files)
+local no_runner  = {} -- key -> lang string (for keys whose runner= is not in LANG_INFO)
+local sequential = {} -- tag -> last-seen key with this sequential= tag (built during collect)
 
 local function assertf(cond, fmt, ...)
     if not cond then error(string.format(fmt, ...)) end
@@ -317,6 +332,15 @@ local function parse_depends(s)
         r[#r + 1] = {base = base, sub = sub}
     end
     return r
+end
+
+local function parse_sequential(s)
+    if not s then return nil end
+    local tag = s:match("^%s*(.-)%s*$")
+    assertf(tag ~= "", "sequential=%s: empty tag", s)
+    assertf(not tag:find("[,%s]"), "sequential=%s: only one tag per block (no commas or whitespace)", s)
+    check_identifier(tag, "sequential=" .. tag)
+    return tag
 end
 
 local function parse_vars(s)
@@ -784,6 +808,7 @@ local function process_codeblock(el)
     attr.key = nil
     attr.ref = nil
     attr.depends = nil
+    attr.sequential = nil
     attr.outputs = nil
     attr.replace = nil
     attr.block = nil
@@ -960,11 +985,20 @@ local function collect_codeblock(b)
             body = strip_all_markers(file_content)
         end
     end
+    local seq = parse_sequential(b.attr.attributes.sequential)
+    assertf(not (include and seq),
+        "key=%s: sequential= not allowed on include= keys", key)
+    local deps = parse_depends(b.attr.attributes.depends)
+    if seq then
+        local prev = sequential[seq]
+        if prev then deps[#deps + 1] = {base = prev, sub = nil} end
+        sequential[seq] = key
+    end
     pending[key] = {
         attr        = b.attr.attributes,
         body        = body,
         classes     = b.classes,
-        deps        = parse_depends(b.attr.attributes.depends),
+        deps        = deps,
         vars        = parse_vars(b.attr.attributes.vars),
         include_abs = include_abs,
     }
