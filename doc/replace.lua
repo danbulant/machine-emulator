@@ -22,7 +22,7 @@
 --
 --   2. The Makefile includes the .d file. <target>'s prereq line lists every
 --      cache file the document needs. Each rule says "to produce
---      cache/<key>/stdout, depend on the runner, cache/<key>/body.<ext>, and
+--      cache/<key>/both, depend on the runner, cache/<key>/body.<ext>, and
 --      each dep's output file, then exec the runner". Running `make` executes
 --      every needed body in topological order, populating the cache.
 --
@@ -56,7 +56,8 @@
 --   cache/<key>/body.run.<ext> Body with contents-form $VAR expanded (runner-produced).
 --   cache/<key>/stdout         Captured standard output (runner-produced).
 --   cache/<key>/stderr         Captured standard error (runner-produced).
---   cache/<key>/both           stdout and stderr interleaved (runner-produced).
+--   cache/<key>/both           stdout and stderr interleaved (runner-produced;
+--                              primary make target -- the others are siblings).
 --   cache/<key>/<artifact>     Any declared outputs= artifact. The runner cd's
 --                              into cache/<key>/ before running the body, so
 --                              artifacts written to cwd land there automatically.
@@ -85,8 +86,9 @@
 --                       K must match [a-zA-Z_][a-zA-Z0-9_]*; duplicates error.
 --                       $REPLACE_KEY is replaced with K before writing body.
 --
---   depends=A,B,...     Only on key= blocks. Bare keys only (no K/sub).
---                       Each K adds a make prereq on cache/<K>/stdout.
+--   depends=A,B,...     Only on key= blocks. Each token is either bare K or
+--                       K/SUB. Bare K adds a make prereq on cache/<K>/both;
+--                       K/SUB pins cache/<K>/SUB (stream or declared artifact).
 --                       Reserved for ordering-only cases (e.g., two blocks that
 --                       bind the same port). Use vars= when $K is in the body.
 --
@@ -216,10 +218,10 @@
 --
 -- MAKE-FRAGMENT SHAPE (dry-run)
 --
---   Primary target:  cache/<key>/stdout
+--   Primary target:  cache/<key>/both
 --     prereqs: runner, body.<ext>, [vars.lua, spec] (iff contents-form vars=
---              exists), depends= stdouts, vars= file prereqs
---   Sibling targets: cache/<key>/stderr, cache/<key>/both, each declared artifact.
+--              exists), depends= prereqs, vars= file prereqs
+--   Sibling targets: cache/<key>/stdout, cache/<key>/stderr, each declared artifact.
 --   Siblings depend on the primary with an empty recipe (portable to GNU Make
 --   3.81, which predates `&:` grouped-target syntax).
 --
@@ -300,10 +302,10 @@ end
 local function parse_depends(s)
     local r = {}
     for _, tok in ipairs(parse_list(s)) do
-        assertf(not tok:find("/"),
-            "depends=%s: depends= takes bare keys only; use vars=VAR->%s/<sub> for substitution", tok, tok)
-        check_identifier(tok, "depends=" .. tok)
-        r[#r + 1] = {base = tok}
+        local base, sub = tok:match("^([%w_][%w_%-%.]*)/(.+)$")
+        if not base then base = tok end
+        check_identifier(base, "depends=" .. tok)
+        r[#r + 1] = {base = base, sub = sub}
     end
     return r
 end
@@ -522,7 +524,7 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         -- Mark include= primary as consumed so a recipe edit invalidates README.md
         -- even when the only consumer renders via replace=source (which reads the
         -- body in memory and would otherwise leave consumed[] unmarked).
-        consumed[key .. "/stdout"] = true
+        consumed[key .. "/both"] = true
         if deps_target then emit_include_rule(key, info, include_abs) end
         return body
     end
@@ -570,7 +572,7 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
     return resolved
 end
 
--- Emit a make rule. stdout is the primary target; stderr, both, and any
+-- Emit a make rule. both is the primary target; stdout, stderr, and any
 -- declared artifacts are sibling targets that depend on the primary.
 -- (GNU Make 3.81 predates `&:` grouped-target syntax.)
 function emit_rule(key, info, out_list, deps, vars_list, has_contents)
@@ -590,17 +592,17 @@ function emit_rule(key, info, out_list, deps, vars_list, has_contents)
         end
     end
     for _, d in ipairs(deps) do
-        add_prereq("$(REPLACE_CACHE_DIR)/" .. d.base .. "/stdout")
+        add_prereq("$(REPLACE_CACHE_DIR)/" .. d.base .. "/" .. (d.sub or "both"))
     end
     for _, p in ipairs(vars_list) do
         if p.kind == "dirpath" then
-            add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/stdout")
+            add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/both")
         elseif p.kind == "path" or p.kind == "contents" then
             add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/" .. p.sub)
         end
     end
-    local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
-    local siblings = {"stderr", "both"}
+    local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
+    local siblings = {"stdout", "stderr"}
     for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
     local cmd = string.format("\t@REPLACE_KEY=%s bash %s", key, runner_path)
     rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n" .. cmd
@@ -614,21 +616,21 @@ end
 -- truncates stderr. Editing the file invalidates the primary target and
 -- cascades to consumers declaring depends=<key>.
 function emit_include_rule(key, info, include_abs)
-    local primary     = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
+    local primary     = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
     local body_path   = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
+    local stdout_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
     local stderr_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stderr"
-    local both_path   = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
     rules[#rules + 1] = table.concat({
         primary, ": ", include_abs, "\n",
         "\t@mkdir -p $(REPLACE_CACHE_DIR)/", key, "\n",
         "\t@cp ", include_abs, " ", primary,     "\n",
         "\t@cp ", include_abs, " ", body_path,   "\n",
-        "\t@cp ", include_abs, " ", both_path,   "\n",
+        "\t@cp ", include_abs, " ", stdout_path, "\n",
         "\t@: > ", stderr_path,
     })
     rules[#rules + 1] = table.concat({body_path,   ": ", primary})
+    rules[#rules + 1] = table.concat({stdout_path, ": ", primary})
     rules[#rules + 1] = table.concat({stderr_path, ": ", primary})
-    rules[#rules + 1] = table.concat({both_path,   ": ", primary})
 end
 
 -- Lazily define key and all its transitive depends= in DFS order.

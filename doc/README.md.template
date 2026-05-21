@@ -452,8 +452,8 @@ The `tar` invocation above pins the file order (`--sort=name`), the timestamps (
 :::
 
 The image can be loaded as a flash drive:
-```{.bash key=cat_foo_bar vars=foo_ext2 outputs=config-cat-foo-bar.lua replace=source}
-ln -sf "$foo_ext2/foo.ext2" foo.ext2
+```{.bash key=cat_foo_bar vars=foo_ext2->foo_ext2/foo.ext2/path outputs=config-cat-foo-bar.lua replace=source}
+ln -sf "$foo_ext2" .
 # docs:begin
 cartesi-machine \
     --no-init-splash \
@@ -494,8 +494,8 @@ For safety, running as `dapp` is preferred.
 :::
 
 For example, running the machine
-```{.bash key=not_shared_flash vars=foo_ext2 replace=source}
-ln -sf "$foo_ext2/foo.ext2" .
+```{.bash key=not_shared_flash vars=foo_ext2->foo_ext2/foo.ext2/path replace=source}
+ln -sf "$foo_ext2" .
 # docs:begin
 cartesi-machine \
     --no-init-splash \
@@ -508,8 +508,8 @@ produces the output
 ```
 indicating that the file-system was modified, at least from the perspective of the target.
 However, inspecting the `foo.ext2` image file from outside the emulator shows it is unchanged.
-```{.bash key=e2ls_not_shared_foo_ext2 replace=source vars=foo_ext2}
-ln -fs "$foo_ext2/foo.ext2" .
+```{.bash key=e2ls_not_shared_foo_ext2 replace=source vars=foo_ext2->foo_ext2/foo.ext2/path}
+ln -fs "$foo_ext2" .
 # docs:begin
 e2ls -al foo.ext2:*.txt
 # docs:end
@@ -522,8 +522,8 @@ This behavior is appropriate when the flash drives will only be used as inputs.
 For output flash drives, target changes to the drives must reflect on the associated image files.
 For that purpose, the parameter `shared` can be passed to command-line option `--flash-drive`, causing the imaged files to be mapped to host memory in a *shared* fashion.
 For example,
-```{.bash key=shared_flash replace=source vars=foo_ext2 outputs=foo.ext2}
-cp -f "$foo_ext2/foo.ext2" foo.ext2
+```{.bash key=shared_flash replace=source vars=foo_ext2->foo_ext2/foo.ext2/path outputs=foo.ext2}
+cp -f "$foo_ext2" .
 # docs:begin
 cartesi-machine \
     --no-init-splash \
@@ -533,8 +533,8 @@ cartesi-machine \
 ```
 produces exactly the same output as before.
 However, `e2ls` now shows the image file `foo.ext2` has indeed been modified.
-```{.bash key=e2ls_shared_foo_ext2 replace=source vars=shared_flash}
-ln -sf "$shared_flash/foo.ext2" .
+```{.bash key=e2ls_shared_foo_ext2 replace=source vars=foo_ext2->shared_flash/foo.ext2/path}
+ln -sf "$foo_ext2" .
 # docs:begin
 e2ls -al foo.ext2:*.txt
 # docs:end
@@ -549,8 +549,8 @@ The machine's processor includes a control and status register (CSR), named `mcy
 By default the `cartesi-machine` utility only returns when the machine halts (or yields manual), as the [introductory example](#command-line-interface) showed.
 The maximum cycle can be specified with the command-line option `--max-mcycle=<number>`.
 
-```{.bash key=cycles_htif_putchar vars=nothing_to_do replace=null}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=cycles_htif_putchar vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=null}
+ln -sf "$config" .
 lua5.4 $RECIPES_DIR/find-htif-putchar.lua > /dev/null
 ```
 
@@ -583,24 +583,24 @@ cartesi-machine \
     --final-hash
 ```
 produces the output
-```{key=reorder_state_hashes_limit_exec vars=state_hashes_limit_exec replace=stdout}
+```{key=reorder_state_hashes_limit_exec vars=err->state_hashes_limit_exec/stderr/path,out->state_hashes_limit_exec/stdout/path replace=stdout}
 # stderr comes mixed with stdout in an unfortunate order, so we reorder them
-cat $state_hashes_limit_exec/stderr | head -n 1
-cat $state_hashes_limit_exec/stdout
+cat $err | head -n 1
+cat $out
 echo
-cat $state_hashes_limit_exec/stderr | tail -n +2
+cat $err | tail -n +2
 ```
 
-```{.bash key=state_hashes_initial vars=state_hashes_limit_exec replace=null}
-cat $state_hashes_limit_exec/stderr \
+```{.bash key=state_hashes_initial vars=hashes->state_hashes_limit_exec/stderr/path replace=null}
+cat $hashes \
     | $RECIPES_DIR/find-hash.sh 0 \
     | $RECIPES_DIR/trunc8.sh
 ```
 The initial state hash [...]{replace=state_hashes_initial} is the Merkle tree root hash for the initial Cartesi Machine state.
 Since Cartesi Machines are reproducible, the initial state hash also works as a *promise* on the result of the entire computation.
 
-```{.bash key=state_hashes_final_limit_exec vars=cycles->cycles_htif_putchar,state_hashes_limit_exec replace=null}
-cat $state_hashes_limit_exec/both \
+```{.bash key=state_hashes_final_limit_exec vars=cycles->cycles_htif_putchar,log->state_hashes_limit_exec/both/path replace=null}
+cat $log \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
@@ -630,12 +630,12 @@ produces instead the output
 ```
 Naturally, the initial state hash is the same as before.
 
-```{.bash key=state_hashes_cycles_no_limit_exec vars=state_hashes_no_limit_exec replace=null}
-cat $state_hashes_no_limit_exec/both | $RECIPES_DIR/last-cycles.sh
+```{.bash key=state_hashes_cycles_no_limit_exec vars=log->state_hashes_no_limit_exec/both/path replace=null}
+cat $log | $RECIPES_DIR/last-cycles.sh
 ```
 
-```{.bash key=state_hashes_final_no_limit vars=cycles->state_hashes_cycles_no_limit_exec/stdout,state_hashes_no_limit_exec replace=null}
-cat $state_hashes_no_limit_exec/stderr \
+```{.bash key=state_hashes_final_no_limit vars=cycles->state_hashes_cycles_no_limit_exec/stdout,hashes->state_hashes_no_limit_exec/stderr/path replace=null}
+cat $hashes \
     | $RECIPES_DIR/find-hash.sh "$cycles" \
     | $RECIPES_DIR/trunc8.sh
 ```
@@ -805,8 +805,8 @@ The output of the `cartesi-machine` command is
 ```{replace=calc_run}
 ```
 Once the emulator returns, a tiny Lua script, run by the `lua5.4` Lua interpreter, prints the contents of the output drive
-```{.bash key=dump_calc_run_result vars=calc_run replace=source}
-ln -sf "$calc_run/output.raw" .
+```{.bash key=dump_calc_run_result vars=output->calc_run/output.raw/path replace=source}
+ln -sf "$output" .
 # docs:begin
 lua5.4 -e 'print((string.unpack("z", io.read("a"))))' < output.raw
 # docs:end
@@ -840,8 +840,8 @@ The result is as follows
 The directory `calculator-template/` now contains the Cartesi Machine template.
 And indeed, running
 
-```{.bash key=calc_template_hash vars=calc_template replace=source}
-ln -sf "$calc_template/calculator-template" .
+```{.bash key=calc_template_hash vars=template->calc_template/calculator-template/path replace=source}
+ln -sf "$template" .
 # docs:begin
 cartesi-machine-stored-hash calculator-template/
 # docs:end
@@ -850,8 +850,8 @@ we can see from the output
 ```{replace=calc_template_hash}
 ```
 
-```{.bash key=calc_template_trunc_hash vars=calc_template_hash replace=null}
-cat $calc_template_hash/stdout | $RECIPES_DIR/trunc8.sh
+```{.bash key=calc_template_trunc_hash vars=hash->calc_template_hash/stdout/path replace=null}
+cat $hash | $RECIPES_DIR/trunc8.sh
 ```
 that the stored template hash is [...]{replace=calc_template_trunc_hash}.
 
@@ -864,8 +864,8 @@ This functionality can be used to test templates.
 For example, the following command loads the calculator template, and replaces its pristine input NVRAM with one containing the contents of the `input.raw` file.
 Then, it replaces the pristine output NVRAM so the machine saves results in the file `output.raw`.
 
-```{.bash key=calc_template_instantiated vars=calc_template replace=source}
-ln -sf "$calc_template/calculator-template" .
+```{.bash key=calc_template_instantiated vars=template->calc_template/calculator-template/path replace=source}
+ln -sf "$template" .
 # docs:begin
 rm -f output.raw
 truncate -s 4K output.raw
@@ -914,8 +914,8 @@ Since the leaves have size []{replace=hash_tree_constants/word_size} bytes, the 
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run vars=calc_template,input_addr->ar_drive_formula/input_addr replace=source outputs=pristine-input-proof}
-ln -sf "$calc_template/calculator-template" .
+```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr replace=source outputs=pristine-input-proof}
+ln -sf "$template" .
 # docs:begin
 cartesi-machine \
     --no-init-splash \
@@ -950,8 +950,8 @@ For example, to quickly generate the hash for a pristine input with 4KiB size, r
 ```{.bash key=pristine_input_raw_hash replace=source}
 head -c 0 | cartesi-hash-tree-hash --log2-root-size=12
 ```
-```{.bash key=pristine_input_raw_trunc_hash vars=pristine_input_raw_hash replace=null}
-cat $pristine_input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
+```{.bash key=pristine_input_raw_trunc_hash vars=hash->pristine_input_raw_hash/stdout/path replace=null}
+cat $hash | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
 ```{replace=pristine_input_raw_hash}
@@ -968,8 +968,8 @@ To compute the hash for the desired `input.raw` file with contents `6*2^1024 + 3
 ```{.bash key=input_raw_hash replace=source}
 echo "6*2^1024 + 3*2^512" | cartesi-hash-tree-hash --log2-root-size=12
 ```
-```{.bash key=input_raw_trunc_hash vars=input_raw_hash replace=null}
-cat $input_raw_hash/stdout | $RECIPES_DIR/trunc8.sh
+```{.bash key=input_raw_trunc_hash vars=hash->input_raw_hash/stdout/path replace=null}
+cat $hash | $RECIPES_DIR/trunc8.sh
 ```
 to obtain
 ```{replace=input_raw_hash}
@@ -978,8 +978,8 @@ to obtain
 Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=input_raw_trunc_hash} of the desired `input.raw` image rather than hash [...]{replace=pristine_input_raw_trunc_hash} of the template's pristine NVRAM.
 The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
 
-```{.bash key=input_raw_proof vars=calc_template,input_addr->ar_drive_formula/input_addr outputs=input-proof replace=source}
-ln -sf "$calc_template/calculator-template" .
+```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr outputs=input-proof replace=source}
+ln -sf "$template" .
 rm -f input-proof input.raw
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -999,8 +999,8 @@ The contents of the `input-proof` are
 ```{.json replace=input_raw_proof/input-proof}
 ```
 
-```{.bash key=input_raw_proof_root_hash vars=input_raw_proof replace=null}
-jq -r .root_hash < $input_raw_proof/input-proof \
+```{.bash key=input_raw_proof_root_hash vars=proof->input_raw_proof/input-proof/path replace=null}
+jq -r .root_hash < $proof \
     | $RECIPES_DIR/trunc8.sh
 ```
 The `target_hash` value [...]{replace=input_raw_trunc_hash} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=input_raw_proof_root_hash} differs from [...]{replace=calc_template_trunc_hash} obtained for the template, as expected.
@@ -1009,9 +1009,9 @@ Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in th
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=output_raw_proof outputs=output.raw,output-proof vars=calc_template,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
+```{.bash key=output_raw_proof outputs=output.raw,output-proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
 rm -f output-proof input.raw output.raw
-ln -sf "$calc_template/calculator-template" .
+ln -sf "$template" .
 # docs:begin
 truncate -s 4K output.raw
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -1034,15 +1034,15 @@ The contents of the `output-proof` are
 ```{.json replace=output_raw_proof/output-proof}
 ```
 
-```{.bash key=output_raw_proof_root_hash vars=output_raw_proof replace=null}
-jq -r .root_hash < $output_raw_proof/output-proof \
+```{.bash key=output_raw_proof_root_hash vars=proof->output_raw_proof/output-proof/path replace=null}
+jq -r .root_hash < $proof \
     | $RECIPES_DIR/trunc8.sh
 ```
 Note how the `root_hash` field in the proof matches the final state hash [...]{replace=output_raw_proof_root_hash} output by the `cartesi-machine` command-line utility.
 
 To see that the `target_hash` field matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
-```{.bash key=proofs_output_raw_hash vars=output_raw_proof replace=source}
-ln -sf "$output_raw_proof/output.raw" .
+```{.bash key=proofs_output_raw_hash vars=output_raw->output_raw_proof/output.raw/path replace=source}
+ln -sf "$output_raw" .
 # docs:begin
 cartesi-hash-tree-hash --log2-root-size=12 < output.raw
 # docs:end
@@ -1316,40 +1316,40 @@ The client shell shows a lot more activity:
 ```{replace=rolling_puppet/client}
 ```
 
-```{.bash key=rolling_puppet_first_rx_accepted vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
+```{.bash key=rolling_puppet_first_rx_accepted vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
 ```
 
-```{.bash key=rolling_puppet_hash_before_input1 vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_puppet_hash_before_input1 vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_puppet_hash_after_input1 vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_puppet_hash_after_input1 vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_puppet_hash_after_input1_accepted vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/hash-of.sh 'Before input 2' 1 | $RECIPES_DIR/trunc8.sh
+```{.bash key=rolling_puppet_hash_after_input1_accepted vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/hash-of.sh 'Before input 2' 1 | $RECIPES_DIR/trunc8.sh
 ```
 
-```{.bash key=rolling_puppet_input1_tx_output vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
+```{.bash key=rolling_puppet_input1_tx_output vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
 ```
 
-```{.bash key=rolling_puppet_input1_rx_accepted vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
+```{.bash key=rolling_puppet_input1_rx_accepted vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
 ```
 
-```{.bash key=rolling_puppet_input2_rx_rejected vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
+```{.bash key=rolling_puppet_input2_rx_rejected vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
 ```
 
-```{.bash key=rolling_puppet_query_tx_report vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
+```{.bash key=rolling_puppet_query_tx_report vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
 ```
 
-```{.bash key=rolling_puppet_post_query_rx_accepted vars=rolling_puppet replace=null}
-cat $rolling_puppet/client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
+```{.bash key=rolling_puppet_post_query_rx_accepted vars=client->rolling_puppet/client/path replace=null}
+cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
 ```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
@@ -1507,7 +1507,7 @@ xgenext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template replace=source/template vars=calc_ext2}
+```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
 srv_tmp=$(mktemp)
 _cleanup() {
     rm -f "$srv_tmp" \
@@ -1542,7 +1542,7 @@ cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
 }
 EOF
 rm -f calc.ext2
-ln -sf "$calc_ext2/calc.ext2" calc.ext2
+ln -sf "$calc_ext2" .
 rm -rf rolling-calculator-template
 {
 # docs:begin template
@@ -1640,9 +1640,9 @@ The empty notice is harmless because the rejection that follows discards all out
 Finally, the second input, with payload `"6*2^1024 + 3*2^512"`, is accepted.
 
 Indeed, to see the result of the computation specified in the second input, run
-```{.bash key=rolling_calc_decode vars=rolling_calc_template replace=source}
+```{.bash key=rolling_calc_decode vars=input_2_output_0_bin->rolling_calc_template/input-2-output-0.bin/path replace=source}
 rm -f input-2-output-0.bin
-ln -s $rolling_calc_template/input-2-output-0.bin .
+ln -s $input_2_output_0_bin .
 # docs:begin
 cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
     jq -j .payload | \
@@ -1684,11 +1684,11 @@ By default, the emulator honors automatic yield requests from the target.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but be careful since doing so would _also_ prevent Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
 
-```{.bash key=truncated_progress_output replace=stdout vars=progress}
+```{.bash key=truncated_progress_output replace=stdout vars=log->progress/both/path}
 # tr replaces carriage returns with line feeds
 # first sed command passes through anything not a progress line.
 # second sed command finds 44.00 and immediately aborts
-tr '\r' '\n' < $progress/both | sed -n '/^Progress:/!p; /^Progress:  44\.00$/{p;q;}'
+tr '\r' '\n' < $log | sed -n '/^Progress:/!p; /^Progress:  44\.00$/{p;q;}'
 ```
 This feature is most useful when the emulator is controlled programmatically, via its Lua, C++, or JSON-RPC interfaces, where Cartesi Machines typically run disconnected from the console.
 In these situations, the progress device can be used to drive a dynamic user interface element that reassures users progress is being made during long, silent computations.
@@ -1738,13 +1738,13 @@ The `<number-period>` argument gives the distance between hashes in cycles. The 
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
-```{.bash key=rarely_periodic_initial_cycle vars=output_raw_proof replace=null}
-cycles=$(cat $output_raw_proof/both | $RECIPES_DIR/last-cycles.sh)
+```{.bash key=rarely_periodic_initial_cycle vars=log->output_raw_proof/both/path replace=null}
+cycles=$(cat $log | $RECIPES_DIR/last-cycles.sh)
 printf '%d\n' "$((cycles - 10))"
 ```
-```{.bash key=rarely_periodic_hashes vars=initial_cycle->rarely_periodic_initial_cycle/stdout,calc_template replace=source}
+```{.bash key=rarely_periodic_hashes vars=initial_cycle->rarely_periodic_initial_cycle/stdout,template->calc_template/calculator-template/path replace=source}
 rm -f input.raw
-ln -sf "$calc_template/calculator-template" .
+ln -sf "$template" .
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -1787,8 +1787,8 @@ So the search is refined to find the *uarch step of disagreement*: the particula
 Once this uarch step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the uarch step, including cryptographic proofs for every value read from or written to the state.
 This log proves to the blockchain that the execution of the uarch step transitions the state in such a way that it reaches the state hash claimed by the submitting party.
 
-```{.bash key=cycles_uarch_putchar_ecall vars=nothing_to_do,cycles->cycles_htif_putchar replace=null}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=cycles_uarch_putchar_ecall vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar replace=null}
+ln -sf "$config" .
 lua5.4 $RECIPES_DIR/find-uarch-putchar-ecall.lua $cycles > /dev/null
 ```
 
@@ -2125,10 +2125,10 @@ The individual parameters have the following meaning:
 
 The configuration can be edited down to its essential, and stored into a file, for example as a Lua module:
 
-```{.bash key=config_ls_bin replace=null vars=ls_bin}
+```{.bash key=config_ls_bin replace=null vars=config->ls_bin/config-ls-bin.lua/path}
 # The runner is split from the rendered consumer block below so the consumer
 # can declare lang .lua (matching the captured Lua content) instead of .bash.
-lua5.4 $RECIPES_DIR/minimal-config.lua $ls_bin/config-ls-bin.lua
+lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 ```{.lua replace=config_ls_bin title="config-ls-bin.lua"}
 ```
@@ -2138,8 +2138,8 @@ Adding `--store-config` to the [earlier example](#flash-drives) that loaded `foo
 ```{.bash replace=cat_foo_bar/source}
 ```
 captures a configuration whose essential, edited-down form is
-```{.bash key=config_cat_foo_bar vars=cat_foo_bar replace=null}
-lua5.4 $RECIPES_DIR/minimal-config.lua $cat_foo_bar/config-cat-foo-bar.lua
+```{.bash key=config_cat_foo_bar vars=config->cat_foo_bar/config-cat-foo-bar.lua/path replace=null}
+lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 ```{.lua replace=config_cat_foo_bar title="config-cat-foo-bar.lua"}
 ```
@@ -2156,8 +2156,8 @@ Here are the (simplified) configurations for the other examples from the documen
 
 A Cartesi Machine that has nothing to do.
 This is the [introductory example](#command-line-interface), and its configuration, edited down to its essential, is
-```{.bash key=config_nothing_to_do vars=nothing_to_do replace=null}
-lua5.4 $RECIPES_DIR/minimal-config.lua $nothing_to_do/config-nothing-to-do.lua
+```{.bash key=config_nothing_to_do vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=null}
+lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 ```{.lua replace=config_nothing_to_do title="config-nothing-to-do.lua"}
 ```
@@ -2165,15 +2165,15 @@ The `dtb.init` field carries the ASCII-art splash that the `cartesi-machine` uti
 This is what produces the Cartesi logo printed before each entrypoint runs.
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
-```{.bash key=config_progress replace=null vars=progress}
-lua5.4 $RECIPES_DIR/minimal-config.lua $progress/config-progress.lua
+```{.bash key=config_progress replace=null vars=config->progress/config-progress.lua/path}
+lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 ```{.lua replace=config_progress title="config-progress.lua"}
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
-```{.bash key=config_calculator vars=calc_run replace=null}
-lua5.4 $RECIPES_DIR/minimal-config.lua $calc_run/config-calculator.lua
+```{.bash key=config_calculator vars=config->calc_run/config-calculator.lua/path replace=null}
+lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 ```{.lua replace=config_calculator title="config-calculator.lua"}
 ```
@@ -2205,9 +2205,9 @@ At any point, the `machine:get_initial_config()` method can be used to obtain th
 
 For example, to run the configuration stored in `./config-cat-foo-bar.lua` (assuming `./foo.ext2` is available) simply run
 
-```{.bash key=run_config_cat_foo_bar replace=source vars=foo_ext2,cat_foo_bar,run_config}
-ln -sf "$foo_ext2/foo.ext2" .
-ln -sf "$cat_foo_bar/config-cat-foo-bar.lua" .
+```{.bash key=run_config_cat_foo_bar replace=source vars=foo_ext2->foo_ext2/foo.ext2/path,config->cat_foo_bar/config-cat-foo-bar.lua/path depends=run_config}
+ln -sf "$foo_ext2" .
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-config.lua" .
 # docs:begin
 lua5.4 run-config.lua config-cat-foo-bar
@@ -2233,9 +2233,9 @@ To store a machine at its current state, use the `machine:store(<directory>)` me
 ```
 To prevent persistent Cartesi Machines from being inadvertently overwritten, the function call fails when the directory already exists.
 
-```{.bash key=run_store_cat_foo_bar outputs=cat-foo-bar replace=null vars=foo_ext2,cat_foo_bar,store_cat_foo_bar}
-ln -sf "$foo_ext2/foo.ext2" .
-ln -sf "$cat_foo_bar/config-cat-foo-bar.lua" .
+```{.bash key=run_store_cat_foo_bar outputs=cat-foo-bar replace=null vars=foo_ext2->foo_ext2/foo.ext2/path,config->cat_foo_bar/config-cat-foo-bar.lua/path depends=store_cat_foo_bar}
+ln -sf "$foo_ext2" .
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/store-cat-foo-bar.lua" .
 rm -rf cat-foo-bar
 lua5.4 store-cat-foo-bar.lua
@@ -2248,9 +2248,9 @@ In fact, running the following script
 ```
 has exactly the same effect as the example [above](#run-cat-foo-bar), where the machine was instantiated from the configuration and directly run until it halted:
 
-```{.bash key=run_load_cat_foo_bar replace=both vars=foo_ext2,cat_foo_bar,run_store_cat_foo_bar,load_cat_foo_bar}
+```{.bash key=run_load_cat_foo_bar replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=foo_ext2,cat_foo_bar,load_cat_foo_bar}
 ln -sf "$RECIPES_DIR/load-cat-foo-bar.lua" .
-ln -sf "$run_store_cat_foo_bar/cat-foo-bar" .
+ln -sf "$template" .
 lua5.4 load-cat-foo-bar.lua
 ```
 
@@ -2274,9 +2274,9 @@ Reading the `mcycle` register with `machine:read_reg("mcycle")` returns the curr
 After the call to `machine:run()` returns, the application is free to perform other tasks.
 The loop exits when the returned break reason is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`. Any other reason (such as `BREAK_REASON_REACHED_TARGET_MCYCLE`, signalling the chunk expired) just continues the loop.
 
-```{.bash key=run_config_cat_foo_bar_in_chunks replace=source vars=foo_ext2,cat_foo_bar,run_config_in_chunks}
-ln -sf "$foo_ext2/foo.ext2" .
-ln -sf "$cat_foo_bar/config-cat-foo-bar.lua" .
+```{.bash key=run_config_cat_foo_bar_in_chunks replace=source vars=foo_ext2->foo_ext2/foo.ext2/path,config->cat_foo_bar/config-cat-foo-bar.lua/path depends=run_config_in_chunks}
+ln -sf "$foo_ext2" .
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-config-in-chunks.lua" .
 # docs:begin
 lua5.4 run-config-in-chunks.lua config-cat-foo-bar
@@ -2365,8 +2365,8 @@ A second call replaces the output NVRAM analogously, also setting `backing_store
 Finally, the script runs the machine until it halts or yields manual.
 
 To see the example running,
-```{.bash key=lua_calculator_with_new_drives vars=calc_template depends=run_calculator_with_new_drives replace=source}
-ln -sf "$calc_template/calculator-template" .
+```{.bash key=lua_calculator_with_new_drives vars=template->calc_template/calculator-template/path depends=run_calculator_with_new_drives replace=source}
+ln -sf "$template" .
 ln -sf "$RECIPES_DIR/run-calculator-with-new-drives.lua" .
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -2409,8 +2409,8 @@ Once the machine is halted, the script obtains and prints the final state hash.
 
 Initial state hashes can be used to ensure the machine instantiated by the script indeed matches the machine created by the `cartesi-machine` utility, and final state hashes to verify that computations also agree.
 The output on the left was generated by the command
-```{.bash key=state_hashes_lua depends=run_config_with_hashes vars=nothing_to_do replace=source}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=state_hashes_lua depends=run_config_with_hashes vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=source}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-config-with-hashes.lua" .
 # docs:begin
 lua5.4 run-config-with-hashes.lua config-nothing-to-do
@@ -2491,8 +2491,8 @@ The script then runs the machine until it halts or yields manual.
 Finally, it reads the output NVRAM contents, extracts the first null-terminated string from it, and prints the result.
 
 Running the script with the command-line
-```{.bash key=lua_calculator vars=calc_run depends=run_calculator replace=source}
-ln -sf "$calc_run/config-calculator.lua" .
+```{.bash key=lua_calculator vars=config->calc_run/config-calculator.lua/path depends=run_calculator replace=source}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-calculator.lua" .
 truncate -s 4K input.raw output.raw
 # docs:begin
@@ -2566,8 +2566,8 @@ Otherwise, something is amiss.
 The single-argument form `cartesi.keccak256(<string>)` returns the hash of the byte string `<string>`.
 
 Running the script with the command-line
-```{.bash key=lua_calculator_with_proof vars=calc_run depends=run_calculator_with_proof,proof_module replace=source}
-ln -sf "$calc_run/config-calculator.lua" .
+```{.bash key=lua_calculator_with_proof vars=config->calc_run/config-calculator.lua/path depends=run_calculator_with_proof,proof_module replace=source}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-calculator-with-proof.lua" .
 ln -sf "$RECIPES_DIR/proof.lua" .
 truncate -s 4K input.raw output.raw
@@ -2630,13 +2630,13 @@ lua5.4 run-remote-config.lua \
 ```
 The client shell produces
 
-```{.bash key=lua_remote outputs=server,client vars=nothing_to_do depends=run_remote_config replace=null}
+```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config replace=null}
 srv_tmp=$(mktemp)
 trap 'rm -f "$srv_tmp"' EXIT
 cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
 while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check > /dev/null 2>&1; do sleep 1; done
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+ln -sf "$config" .
 lua5.4 "$RECIPES_DIR/run-remote-config.lua" \
     127.0.0.1:8080 \
     config-nothing-to-do > client 2>&1
@@ -2709,11 +2709,11 @@ cartesi-jsonrpc-machine \
 ```
 
 Then, run the `run-rolling-calculator.lua` client script in the other shell
-```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=rolling_calc_template replace=source/cmd}
+```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/cmd}
 srv_tmp=$(mktemp)
 trap 'rm -f "$srv_tmp"' EXIT
 rm -f rolling-calculator-template run-rolling-calculator.lua
-ln -sf "$rolling_calc_template/rolling-calculator-template" .
+ln -sf "$template" .
 ln -sf "$RECIPES_DIR/run-rolling-calculator.lua" .
 cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
 srv_pid=$!
@@ -2854,8 +2854,8 @@ Running the `dump-step.lua` program:
 ```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua"}
 ```
 with command:
-```{.bash key=state_transition_dump_step vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=state_transition_dump_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/dump-step.lua" .
 {
 # docs:begin cmd
@@ -2864,9 +2864,9 @@ lua5.4 dump-step.lua config-nothing-to-do "$cycles" "$ucycles"
 }
 ```
 produces the output:
-```{key=reorder_state_transition_dump_step vars=state_transition_dump_step replace=stdout}
-cat $state_transition_dump_step/stdout
-cat $state_transition_dump_step/stderr
+```{key=reorder_state_transition_dump_step vars=out->state_transition_dump_step/stdout/path,err->state_transition_dump_step/stderr/path replace=stdout}
+cat $out
+cat $err
 ```
 Understanding these logs in detail is unnecessary for all but the most low-level internal development at Cartesi.
 It requires deep knowledge of not only RISC-V architecture, but also how Cartesi's emulator implements it.
@@ -2890,8 +2890,8 @@ The following script illustrates the verification of a state transition.
 ```
 
 Running the script without arguments accepts the valid state transition:
-```{.bash key=verify_step_run vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=verify_step_run vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-step.lua" .
 {
 # docs:begin cmd
@@ -2904,8 +2904,8 @@ lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles"
 
 The script is much more interesting when the argument is used to &ldquo;mess&rdquo; with the access log before verification.
 For example, changing the address of access #7 (the write to `uarch.pc`) causes the program to reject the state transition proof:
-```{.bash key=verify_step_mess_address vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=verify_step_mess_address vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-step.lua" .
 {
 # docs:begin cmd
@@ -2919,8 +2919,8 @@ lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 Starting from `<state_hash_before>`, a true Cartesi Machine microarchitecture would have written to `uarch.pc` at `0x400010` for the 7th access, not at `0x100` as our corrupt log claims.
 
 Changing the `written` data of the same access fails the access's internal consistency check, because `written` no longer hashes to `written_hash`:
-```{.bash key=verify_step_mess_written vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=verify_step_mess_written vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-step.lua" .
 {
 # docs:begin cmd
@@ -2932,8 +2932,8 @@ lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[7
 ```
 
 Changing the `read` data of access #5 (the read of `uarch.x17`) fails the same consistency check on the read side, because `read` no longer hashes to `read_hash`:
-```{.bash key=verify_step_mess_read vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=verify_step_mess_read vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-step.lua" .
 {
 # docs:begin cmd
@@ -2945,8 +2945,8 @@ lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'log.accesses[5
 ```
 
 Updating `read_hash` to match the tampered `read` passes the internal consistency check, but the verifier still combines `read_hash` with the proof's `sibling_hashes` to reconstruct the state hash before the access. That reconstruction no longer matches the expected root:
-```{.bash key=verify_step_mess_target_hash vars=nothing_to_do,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
-ln -sf "$nothing_to_do/config-nothing-to-do.lua" .
+```{.bash key=verify_step_mess_target_hash vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=verify_step_source replace=source/cmd}
+ln -sf "$config" .
 ln -sf "$RECIPES_DIR/verify-step.lua" .
 {
 # docs:begin cmd
