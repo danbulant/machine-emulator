@@ -1316,69 +1316,44 @@ The client shell shows a lot more activity:
 ```{replace=rolling_puppet/client}
 ```
 
-```{.bash key=rolling_puppet_first_rx_accepted vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'
+```{.bash key=rolling_puppet_output outputs=first_rx_accepted,hash_before_input1,hash_after_input1,hash_after_input1_accepted,input1_tx_output,input1_rx_accepted,input2_rx_rejected,query_tx_report,post_query_rx_accepted,revert_cycle_hash vars=client->rolling_puppet/client/path replace=null}
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'   < $client > first_rx_accepted
+$RECIPES_DIR/hash-of.sh 'Before input 1'              < $client | $RECIPES_DIR/trunc8.sh > hash_before_input1
+$RECIPES_DIR/hash-of.sh 'Before input 1' 2            < $client | $RECIPES_DIR/trunc8.sh > hash_after_input1
+$RECIPES_DIR/hash-of.sh 'Before input 2' 1            < $client | $RECIPES_DIR/trunc8.sh > hash_after_input1_accepted
+$RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'  < $client > input1_tx_output
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2 < $client > input1_rx_accepted
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'   < $client > input2_rx_rejected
+$RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'  < $client > query_tx_report
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3 < $client > post_query_rx_accepted
+printf '%s:%s' "$(cat input1_rx_accepted)" "$(cat hash_after_input1_accepted)" > revert_cycle_hash
 ```
 
-```{.bash key=rolling_puppet_hash_before_input1 vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/hash-of.sh 'Before input 1' | $RECIPES_DIR/trunc8.sh
-```
-
-```{.bash key=rolling_puppet_hash_after_input1 vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/hash-of.sh 'Before input 1' 2 | $RECIPES_DIR/trunc8.sh
-```
-
-```{.bash key=rolling_puppet_hash_after_input1_accepted vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/hash-of.sh 'Before input 2' 1 | $RECIPES_DIR/trunc8.sh
-```
-
-```{.bash key=rolling_puppet_input1_tx_output vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'
-```
-
-```{.bash key=rolling_puppet_input1_rx_accepted vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2
-```
-
-```{.bash key=rolling_puppet_input2_rx_rejected vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'
-```
-
-```{.bash key=rolling_puppet_query_tx_report vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'
-```
-
-```{.bash key=rolling_puppet_post_query_rx_accepted vars=client->rolling_puppet/client/path replace=null}
-cat $client | $RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3
-```
 The client starts by printing information about the remote server it connected to.
 It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_first_rx_accepted}) signals the point at which the target application attempted to obtain its first request.
+The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_output/first_rx_accepted}) signals the point at which the target application attempted to obtain its first request.
 
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_hash_before_input1}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_hash_after_input1}, and resumes the machine.
+Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_output/hash_before_input1}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_output/hash_after_input1}, and resumes the machine.
 The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
-The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_input1_tx_output}, returning control to the client.
+The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_output/input1_tx_output}, returning control to the client.
 The client reads the CMIO TX buffer and stores the output as `input-1-output-0.bin`.
-The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_input1_rx_accepted} signals that the `puppet` is done processing input index 1 and has accepted it.
+The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_output/input1_rx_accepted} signals that the `puppet` is done processing input index 1 and has accepted it.
 
-```{.bash key=rolling_puppet_revert_cycle_hash replace=null vars=cycle->rolling_puppet_input1_rx_accepted/stdout,hash->rolling_puppet_hash_after_input1_accepted/stdout}
-echo -n $cycle:$hash
-```
 The client then loads input index 2 and resumes the machine.
 The payload `something the puppet does not understand` does not match any of the recognised verbs, so the `puppet` rejects the request.
-The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_input2_rx_rejected} causes the client to roll the machine state back to what it was before the input was processed.
-This can be confirmed by the fact that the cycle count and state hash before the query remain [...]{replace=rolling_puppet_revert_cycle_hash}.
+The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_output/input2_rx_rejected} causes the client to roll the machine state back to what it was before the input was processed.
+This can be confirmed by the fact that the cycle count and state hash before the query remain [...]{replace=rolling_puppet_output/revert_cycle_hash}.
 
 With both advance-state requests handled, the client moves to the inspect-state request.
 It loads `query.bin` into the CMIO RX buffer and resumes the machine so the `puppet` can respond.
-The `automatic yield tx-report` at cycle []{replace=rolling_puppet_query_tx_report} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_post_query_rx_accepted}, the client reverts the state of the machine back to what it was before the query was processed.
-(Note the final cycle count and state hash are still [...]{replace=rolling_puppet_revert_cycle_hash}.)
+The `automatic yield tx-report` at cycle []{replace=rolling_puppet_output/query_tx_report} signals the application issued a report, which the client then saves as `query-report-0.bin`.
+Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_output/post_query_rx_accepted}, the client reverts the state of the machine back to what it was before the query was processed.
+(Note the final cycle count and state hash are still [...]{replace=rolling_puppet_output/revert_cycle_hash}.)
 Since there is nothing else to do, the client shuts down the remote Cartesi Machine server and exits.
 
 Here is the complete list of `.bin` files after the client exits:
 ```{.bash key=rolling_puppet_all_bins vars=rolling_puppet replace=source}
-ln -s $rolling_puppet/*.bin .
+ln -sf $rolling_puppet/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
@@ -1392,7 +1367,7 @@ The `cartesi-rollup-data.lua` command-line utility can also decode the binary re
 
 For example, we can decode the advance-state request file we encoded for the first input above with the command
 ```{.bash key=rolling_puppet_decode_advance vars=rolling_puppet replace=source}
-ln -s $rolling_puppet/*.bin .
+ln -sf $rolling_puppet/*.bin .
 # docs:begin
 cartesi-rollup-data.lua decode advance < input-1.bin
 # docs:end
@@ -1403,16 +1378,16 @@ The payload field carries the hex encoding of the bytes `notice:hello from input
 
 Notices and reports carry only a payload.
 To decode them, run, for example
-```{.bash key=rolling_puppet_decode_notice vars=rolling_puppet replace=source}
-ln -s $rolling_puppet/*.bin .
+```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/input-1-output-0.bin/path replace=source}
+ln -sf $notice .
 # docs:begin
 cartesi-rollup-data.lua decode notice < input-1-output-0.bin
 # docs:end
 ```
 ```{replace=rolling_puppet_decode_notice}
 ```
-```{.bash key=rolling_puppet_decode_report vars=rolling_puppet replace=source}
-ln -s $rolling_puppet/*.bin .
+```{.bash key=rolling_puppet_decode_report vars=report->rolling_puppet/query-report-0.bin/path replace=source}
+ln -sf $report .
 # docs:begin
 cartesi-rollup-data.lua decode report < query-report-0.bin
 # docs:end
@@ -1467,8 +1442,7 @@ and the output (not used by `calc.sh`) gives the index of the just-output notice
 
 Shell scripts become surprisingly powerful with the help of the `rollup`, `hex`, and `jq` command-line utilities.
 A `bc`-based arbitrary precision application, for example, might look like this:
-```{key=rolling_calc_sh replace=both}
-cat "$RECIPES_DIR/calc.sh"
+```{.bash key=rolling_calc_sh include=calc.sh}
 ```
 
 The loop in the `calc.sh` script calls `rollup finish` to obtain the next request (and accept or reject the previous).
@@ -1485,7 +1459,7 @@ To use `calc.sh` in a Rolling Cartesi Machine template, first create a file-syst
 ```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
 trap 'rm -rf calc calc.tar' EXIT
 rm -rf calc
-cp "$RECIPES_DIR/calc.sh" .
+ln -sf "$RECIPES_DIR/calc.sh" .
 # docs:begin
 mkdir calc
 cp calc.sh calc
@@ -1509,14 +1483,7 @@ xgenext2fs \
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
 ```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,input-2-output-0.bin sequential=jsonrpc_server replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
 srv_tmp=$(mktemp)
-_cleanup() {
-    rm -f "$srv_tmp" \
-        input-1.bin input-2.bin \
-        input-1-output-hashes-root-hash.bin \
-        input-2-output-hashes-root-hash.bin \
-        calc.ext2
-}
-trap _cleanup EXIT
+# docs:begin inputs
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
   "chain_id": 0,
@@ -1541,6 +1508,7 @@ cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
   "payload": "$(printf '6*2^1024 + 3*2^512\n' | hex --encode)"
 }
 EOF
+# docs:end inputs
 rm -f calc.ext2
 ln -sf "$calc_ext2" .
 rm -rf rolling-calculator-template
@@ -1554,7 +1522,12 @@ cartesi-machine \
     -- /mnt/calc/calc.sh
 # docs:end template
 } > template 2>&1
-cartesi-jsonrpc-machine --server-address=127.0.0.1:8080 > "$srv_tmp" 2>&1 &
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8080
+# docs:end server
+} > "$srv_tmp" 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
@@ -1587,43 +1560,19 @@ In that case, the `cartesi-machine` command-line utility will detect the excepti
 :::
 
 To test the template, create a couple of advance-state requests:
-```bash
-cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 1)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 1,
-  "payload": "$(printf 'invalid input' | hex --encode)"
-}
-EOF
-cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 2)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 2,
-  "payload": "$(printf '6*2^1024 + 3*2^512\n' | hex --encode)"
-}
-EOF
+```{.bash replace=rolling_calc_template/source/inputs}
 ```
 
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```bash
+```{.bash key=rolling_calc_template_ls_bin replace=source vars=rolling_calc_template}
+ln -sf $rolling_calc_template/input-?.bin .
+# docs:begin
 ls *.bin
+# docs:end
 ```
+```{replace=rolling_calc_template_ls_bin}
 ```
-input-1.bin  input-2.bin
-```
-```bash
-cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+```{.bash replace=rolling_calc_template/source/server}
 ```
 
 Then, from a different shell into the same container, run the client with the command
@@ -1641,8 +1590,7 @@ Finally, the second input, with payload `"6*2^1024 + 3*2^512"`, is accepted.
 
 Indeed, to see the result of the computation specified in the second input, run
 ```{.bash key=rolling_calc_decode vars=input_2_output_0_bin->rolling_calc_template/input-2-output-0.bin/path replace=source}
-rm -f input-2-output-0.bin
-ln -s $input_2_output_0_bin .
+ln -sf $input_2_output_0_bin .
 # docs:begin
 cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
     jq -j .payload | \
@@ -1703,14 +1651,14 @@ Please refer to the appropriate [section of the kernel documentation](https://ww
 
 For example, to prevent clutter in the console, the `cartesi-machine` utility automatically adds the `quiet` option to the kernel command-line, disabling most log messages.
 To override this setting and see more of the log messages output to console, use the `loglevel=<n>` parameter.
-```{.bash key=rarely_append_bootargs_loglevel replace=source}
+```{.bash key=append_bootargs_loglevel replace=source}
 cartesi-machine \
     --quiet \
     --no-init-splash \
     --append-bootargs="loglevel=8"
 ```
 The output is
-```{replace=rarely_append_bootargs_loglevel}
+```{replace=append_bootargs_loglevel}
 ```
 
 To clear the kernel command-line, use the option `--no-bootargs`.
@@ -1738,11 +1686,11 @@ The `<number-period>` argument gives the distance between hashes in cycles. The 
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
-```{.bash key=rarely_periodic_initial_cycle vars=log->output_raw_proof/both/path replace=null}
+```{.bash key=periodic_initial_cycle vars=log->output_raw_proof/both/path replace=null}
 cycles=$(cat $log | $RECIPES_DIR/last-cycles.sh)
 printf '%d\n' "$((cycles - 10))"
 ```
-```{.bash key=rarely_periodic_hashes vars=initial_cycle->rarely_periodic_initial_cycle/stdout,template->calc_template/calculator-template/path replace=source}
+```{.bash key=rarely_periodic_hashes vars=initial_cycle->periodic_initial_cycle/stdout,template->calc_template/calculator-template/path replace=source}
 rm -f input.raw
 ln -sf "$template" .
 # docs:begin
@@ -2175,7 +2123,7 @@ In particular, the configurations produced by the `cartesi-machine` utility, suc
 This is, after all, the interface used internally by the `cartesi-machine` utility.
 
 For example, the script
-```{.lua key=run_config replace=source include=run-config.lua title="run-config.lua"}
+```{.lua key=run_config include=run-config.lua title="run-config.lua"}
 ```
 loads a machine configuration from the Lua module specified in the command-line (using `require(arg[1])`).
 It then creates an instance by calling the `cartesi.machine(<machine_config>)` constructor, which it stores in the
@@ -2217,7 +2165,7 @@ It will also take the time required by the copying of image files into the direc
 :::
 
 To store a machine at its current state, use the `machine:store(<directory>)` method of the Cartesi Machine instance.
-```{.lua key=store_cat_foo_bar replace=source include=store-cat-foo-bar.lua title="store-cat-foo-bar.lua"}
+```{.lua key=store_cat_foo_bar include=store-cat-foo-bar.lua title="store-cat-foo-bar.lua"}
 ```
 To prevent persistent Cartesi Machines from being inadvertently overwritten, the function call fails when the directory already exists.
 
@@ -2232,7 +2180,7 @@ lua5.4 store-cat-foo-bar.lua
 After the execution of the script above, the directory `./cat-foo-bar/` contains all the information needed to instantiate the same machine, including copies of all necessary image files.
 There are no external dependencies.
 In fact, running the following script
-```{.lua key=load_cat_foo_bar replace=source include=load-cat-foo-bar.lua title="load-cat-foo-bar.lua"}
+```{.lua key=load_cat_foo_bar include=load-cat-foo-bar.lua title="load-cat-foo-bar.lua"}
 ```
 has exactly the same effect as the example [above](#run-cat-foo-bar), where the machine was instantiated from the configuration and directly run until it halted:
 
@@ -2254,7 +2202,7 @@ The host cannot predict how many cycles the emulator will need until a call to `
 One of the uses for the `<max_mcycle>` argument in production code is to ensure the call returns at a desired frequency, rather than potentially blocking the caller indefinitely.
 
 The following script illustrates the process
-```{.lua key=run_config_in_chunks replace=source include=run-config-in-chunks.lua title="run-config-in-chunks.lua"}
+```{.lua key=run_config_in_chunks include=run-config-in-chunks.lua title="run-config-in-chunks.lua"}
 ```
 
 Each iteration runs the machine for at most an additional `CHUNK` cycles.
@@ -2296,7 +2244,7 @@ When automatic yields are accepted, a yield automatic command causes the emulato
 When the bit is clear, the command is silently ignored and execution continues until the machine halts or `mcycle` hits `<max_mcycle>`.
 
 The following example illustrates how Lua scripts can receive progress information throughout a computation performed inside a Cartesi Machine:
-```{.lua key=run_config_in_chunks_with_progress replace=source include=run-config-in-chunks-with-progress.lua title="run-config-in-chunks-with-progress.lua"}
+```{.lua key=run_config_in_chunks_with_progress include=run-config-in-chunks-with-progress.lua title="run-config-in-chunks-with-progress.lua"}
 ```
 The loop repeats until the break reason returned by `machine:run()` is `BREAK_REASON_HALTED` or `BREAK_REASON_YIELDED_MANUALLY`.
 As before, the computation is performed in chunks.
@@ -2345,7 +2293,7 @@ Internally, the utility uses the `machine:replace_memory_range(<memory_range_con
 The replacement target is identified by the `memory_range_config`'s `start` and `length` fields, which must match those of an existing memory range in the Cartesi Machine instance.
 If the memory range is a flash drive or an NVRAM, the `label` field can be used to identify it instead.
 The following code snippet shows how to instantiate a Cartesi Machine template using the Lua API:
-```{.lua key=run_calculator_with_new_drives replace=source include=run-calculator-with-new-drives.lua title="run-calculator-with-new-drives.lua"}
+```{.lua key=run_calculator_with_new_drives include=run-calculator-with-new-drives.lua title="run-calculator-with-new-drives.lua"}
 ```
 The code starts by loading the calculator template from directory `"calculator-template"`.
 It then calls `machine:replace_memory_range(<memory_range_config>)` to replace the input NVRAM, identifying it by `label` and pointing `backing_store.data_filename` at the filename passed as the first argument to the script.
@@ -2375,7 +2323,7 @@ Since Cartesi Machines are transparent, the contents of this address space encom
 State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
 
 The following script shows how state hashes can be obtained from a Cartesi Machine instance:
-```{.lua key=run_config_with_hashes replace=source include=run-config-with-hashes.lua title="run-config-with-hashes.lua"}
+```{.lua key=run_config_with_hashes include=run-config-with-hashes.lua title="run-config-with-hashes.lua"}
 ```
 
 State hashes can be obtained with the `machine:get_root_hash()` method, which returns the corresponding Keccak-256 hash as a 32-byte binary string.
@@ -2468,7 +2416,7 @@ The method `machine:write_word(<address>, <value>)` writes a 64-bit value at the
 The value of any register can be changed with the `machine:write_reg("<name>", <value>)` method, where `<name>` is one of the names accepted by `read_reg` and `<value>` is a 64-bit integer.
 
 As an example, consider the following script, which uses the `bc` program running inside a Cartesi Machine to evaluate an arithmetic expression:
-```{.lua key=run_calculator replace=source include=run-calculator.lua title="run-calculator.lua"}
+```{.lua key=run_calculator include=run-calculator.lua title="run-calculator.lua"}
 ```
 
 The script loads the `config` template from its Lua module `./config-calculator.lua` and instantiates a Cartesi Machine from it.
@@ -2533,10 +2481,10 @@ The `sibling_hashes` array contains the hashes of the *siblings* of all nodes vi
 Using the data in a proof, it is possible to verify the claim that a Merkle tree with a given root hash contains a target node with a given hash at the position given by its address and size.
 The following script verifies the state value proof for the output NVRAM in the calculator example discussed above.
 It uses two helper functions, `roll_hash_up_tree` and `slice_assert`, defined in the `proof` module shown below, to check the proof returned by `machine:get_proof()`.
-```{.lua key=proof_module replace=source include=proof.lua title="proof.lua"}
+```{.lua key=proof_module include=proof.lua title="proof.lua"}
 ```
 The calculator script requires this module and uses `slice_assert` to verify the output NVRAM proof.
-```{.lua key=run_calculator_with_proof replace=source include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
+```{.lua key=run_calculator_with_proof include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
 ```
 
 The bulk of work happens in `roll_hash_up_tree(<address>, <log2_target_size>, <sibling_hashes>, <target_hash>)`.
@@ -2598,7 +2546,7 @@ Just as `cartesi.machine(<machine_config>)` instantiates a local machine, callin
 The server can serve multiple machines in separate forked child servers (see `--remote-fork` in the host perspective), so there is no need to destroy an instance before creating another.
 
 The following script illustrates the use of the `cartesi.jsonrpc` submodule.
-```{.lua key=run_remote_config replace=source include=run-remote-config.lua}
+```{.lua key=run_remote_config include=run-remote-config.lua}
 ```
 The script loads the `cartesi.jsonrpc` module and connects to the server address given as the first command-line argument.
 It calls `cartesi_jsonrpc_machine:get_server_version()` to test the connection and prints the version number.
@@ -2668,7 +2616,7 @@ The `cartesi.evmu` Lua submodule provides `encode_calldata` and `decode_calldata
 
 The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (we will use the server calculator [example](#rolling-cartesi-machine-templates)):
 
-```{.lua key=run_rolling_calculator replace=source include=run-rolling-calculator.lua}
+```{.lua key=run_rolling_calculator include=run-rolling-calculator.lua}
 ```
 Rolling Cartesi Machines must be rolled-back to the state they were at before they received an advance-state request they later rejected.
 This requires snapshot and rollback support, available only in Remote Cartesi Machines.
@@ -2843,7 +2791,7 @@ Addresses and values are printed in hexadecimal and decimal.
 
 Running the `dump-step.lua` program:
 
-```{.lua key=dump_step_source replace=source include=dump-step.lua title="dump-step.lua"}
+```{.lua key=dump_step_source include=dump-step.lua title="dump-step.lua"}
 ```
 with command:
 ```{.bash key=state_transition_dump_step vars=config->nothing_to_do/config-nothing-to-do.lua/path,cycles->cycles_htif_putchar,ucycles->cycles_uarch_putchar_ecall/stderr depends=dump_step_source replace=source/cmd}
@@ -2878,7 +2826,7 @@ Note there is no need for a Cartesi Machine instance to verify a transition: all
 
 The following script illustrates the verification of a state transition.
 
-```{.lua key=verify_step_source replace=source include=verify-step.lua title="verify-step.lua"}
+```{.lua key=verify_step_source include=verify-step.lua title="verify-step.lua"}
 ```
 
 Running the script without arguments accepts the valid state transition:
@@ -3037,17 +2985,17 @@ The `puppet` binary also dynamically links to `libcmt.so`, which the `machine-gu
 The Go binary is fully static.
 The scripts depend on their interpreters being present.
 
-```{.dockerfile key=rootfs_docs_dockerfile include=Dockerfile.rootfs-docs replace=source}
+```{.dockerfile key=rootfs_docs_dockerfile include=Dockerfile.rootfs-docs}
 ```
 
 The C source compiled in the first stage is the ubiquitous &ldquo;Hello world!&rdquo; program, printing 5 lines:
 
-```{.c key=hello_c_src include=hello/hello.c replace=source}
+```{.c key=hello_c_src include=hello/hello.c}
 ```
 
 The C++ counterpart:
 
-```{.cpp key=hello_cpp_src include=hello/hello.cpp replace=source}
+```{.cpp key=hello_cpp_src include=hello/hello.cpp}
 ```
 
 The same stage also cross-compiles `puppet`, the libcmt-rollup target application used in the rolling-machines walk-through.
@@ -3055,7 +3003,7 @@ Its source is shown under [The libcmt library](#the-libcmt-library).
 
 The second step converts the tarball into an ext2 image:
 
-```{.bash key=build_rootfs_docs include=build-rootfs-docs.sh replace=source}
+```{.bash key=build_rootfs_docs include=build-rootfs-docs.sh}
 ```
 
 The two additional flags here, relative to the base set introduced above, are `-r +50000` (reserve 50000 extra free blocks so the running system has room to write into the rootfs) and `-L docs` (ext2 volume label).
@@ -3076,7 +3024,7 @@ The output is
 
 The Dockerfile's second stage cross-compiles the following Rust program:
 
-```{.rust key=hello_rs_src include=hello/hello.rs replace=source}
+```{.rust key=hello_rs_src include=hello/hello.rs}
 ```
 
 The `rust-builder` stage runs `rustup target add riscv64gc-unknown-linux-gnu` and `cargo build --release --target riscv64gc-unknown-linux-gnu`, with `riscv64-linux-gnu-gcc` (from the `gcc-riscv64-linux-gnu` package) as the linker.
@@ -3084,7 +3032,7 @@ The resulting binary is placed in `/home/dapp/hello-rust`.
 
 The Dockerfile's third stage cross-compiles the following Go program:
 
-```{.go key=hello_go_src include=hello/hello.go replace=source}
+```{.go key=hello_go_src include=hello/hello.go}
 ```
 
 The `go-builder` stage builds with `GOARCH=riscv64 GOOS=linux CGO_ENABLED=0`, which uses Go's built-in cross-compilation toolchain to produce a fully-static binary.
@@ -3092,39 +3040,39 @@ The resulting binary is placed in `/home/dapp/hello-go`.
 
 The rootfs also includes a selection of scripting language interpreters from the Ubuntu archives, so the same &ldquo;Hello world!&rdquo; can be realized in any of them:
 
-```{.forth key=hello_4th_src include=hello/hello.4th replace=source}
+```{.forth key=hello_4th_src include=hello/hello.4th}
 ```
 
-```{.awk key=hello_awk_src include=hello/hello.awk replace=source}
+```{.awk key=hello_awk_src include=hello/hello.awk}
 ```
 
-```{.js key=hello_js_src include=hello/hello.js replace=source}
+```{.js key=hello_js_src include=hello/hello.js}
 ```
 
-```{.lua key=hello_lua_src include=hello/hello.lua replace=source}
+```{.lua key=hello_lua_src include=hello/hello.lua}
 ```
 
-```{.perl key=hello_pl_src include=hello/hello.pl replace=source}
+```{.perl key=hello_pl_src include=hello/hello.pl}
 ```
 
-```{.php key=hello_php_src include=hello/hello.php replace=source}
+```{.php key=hello_php_src include=hello/hello.php}
 ```
 
-```{.python key=hello_py_src include=hello/hello.py replace=source}
+```{.python key=hello_py_src include=hello/hello.py}
 ```
 
-```{.ruby key=hello_rb_src include=hello/hello.rb replace=source}
+```{.ruby key=hello_rb_src include=hello/hello.rb}
 ```
 
-```{.bash key=hello_sh_src include=hello/hello.sh replace=source}
+```{.bash key=hello_sh_src include=hello/hello.sh}
 ```
 
-```{.tcl key=hello_tcl_src include=hello/hello.tcl replace=source}
+```{.tcl key=hello_tcl_src include=hello/hello.tcl}
 ```
 
 The following shell script invokes all of them in order:
 
-```{.bash key=hello_all_src include=hello/all.sh replace=source}
+```{.bash key=hello_all_src include=hello/all.sh}
 ```
 
 Running it inside the custom rootfs:
@@ -3267,7 +3215,7 @@ Finally, `cmt_rollup_fini()` tears down the mappings and closes the device.
 The `puppet` target application used in the [rolling-machines walk-through](#rolling-cartesi-machines) is a small libcmt rollup loop whose advance-state payloads are commands.
 It exercises most of the `rollup.h` API in roughly fifty lines.
 
-```{.c key=puppet replace=source include=puppet.c title="puppet.c"}
+```{.c key=puppet include=puppet.c title="puppet.c"}
 ```
 
 After `cmt_rollup_init` opens the device, the program makes the first call to `cmt_rollup_finish` with `accept_previous_request = true`, which signals that the target is ready and blocks for the first request.
@@ -4519,10 +4467,10 @@ The contents of the proof returned are described in the [Lua interface](#state-v
 The same section gives the source-code for a small `proof` module, whose three helpers are shown alongside the prose below.
 
 The workhorse is `roll_hash_up_tree`, which rebuilds the path's labels bottom-up from the target node:
-```{.lua key=proof_roll replace=source include=proof.lua/roll_hash_up_tree title="proof.lua (excerpt)"}
+```{.lua key=proof_roll include=proof.lua/roll_hash_up_tree title="proof.lua (excerpt)"}
 ```
 The slicing check `slice_assert` wires this walk into the proof structure returned by `machine:get_proof()`:
-```{.lua key=proof_slice replace=source include=proof.lua/slice_assert title="proof.lua (excerpt)"}
+```{.lua key=proof_slice include=proof.lua/slice_assert title="proof.lua (excerpt)"}
 ```
 To verify a slicing operation, the code first checks the root hash *M* against the one found in the proof.
 Then, it uses `roll_hash_up_tree` to recompute the root hash from the path between the target node and root.
@@ -4535,7 +4483,7 @@ Then, it uses `roll_hash_up_tree` to compute the root hash from the path between
 Only this time it starts from the new target node hash.
 The resulting root hash is the hash of a tree with the old node replaced by the new.
 This is exactly what `splice_assert` does:
-```{.lua key=proof_splice replace=source include=proof.lua/splice_assert title="proof.lua (excerpt)"}
+```{.lua key=proof_splice include=proof.lua/splice_assert title="proof.lua (excerpt)"}
 ```
 
 #### Template instantiation

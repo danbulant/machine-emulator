@@ -58,6 +58,9 @@
 --   cache/<key>/stderr         Captured standard error (runner-produced).
 --   cache/<key>/both           stdout and stderr interleaved (runner-produced;
 --                              primary make target -- the others are siblings).
+--                              For include= keys this file is written at filter
+--                              time and holds the published body; no other
+--                              cache/<key>/ files are produced.
 --   cache/<key>/<artifact>     Any declared outputs= artifact. The runner cd's
 --                              into cache/<key>/ before running the body, so
 --                              artifacts written to cwd land there automatically.
@@ -123,9 +126,8 @@
 --                       LANG_INFO; if it does not, the block is display-only (no
 --                       body file written, no runner invocation). Consuming the
 --                       captured output (replace=K/stdout etc.) of a display-only
---                       block is an error. include= keys still emit a copy rule
---                       so depends=K works against the included file's mtime; the
---                       body.<ext> file is skipped because no runner needs it.
+--                       block is an error. Has no effect on include= keys (which
+--                       never execute and produce only cache/<K>/both).
 --                       Not allowed on inline Code or Span.
 --
 --   outputs=a,b,c       Only on key= blocks. Declares artifact filenames the body
@@ -134,22 +136,23 @@
 --                       The runner verifies each artifact exists after the body
 --                       exits and fails if it does not.
 --
---   include=<path>      Only on key= blocks. Loads the block body from
---                       $RECIPES_DIR/<path> instead of the inline template text.
---                       Block body must be empty when include= is set. The
---                       dry-run emits a make rule that copies the file into
---                       cache/<K>/{body.<ext>,stdout,stderr,both} (body.<ext>
---                       is skipped when the block has no runner). Editing the
---                       file invalidates the rule's primary target and cascades
---                       to consumers declaring depends=<K>. outputs=, depends=,
---                       and vars= are not allowed on include= keys.
---                       docs:begin/docs:end marker lines are stripped from the
---                       rendered output (infrastructure markers, not content).
+--   include=<path>      Only on key= blocks. The block's body is the body of
+--                       the included thing: the contents of $RECIPES_DIR/<path>
+--                       with docs:begin/docs:end markers stripped (infrastructure
+--                       markers, not content). Block body must be empty when
+--                       include= is set. outputs=, depends=, and vars= are not
+--                       allowed on include= keys. The filter writes the body to
+--                       cache/<K>/both at filter time; the make rule touches that
+--                       file when the included file changes so consumers
+--                       invalidate. No stdout, stderr, or body.<ext> are produced
+--                       (an include= block does not execute -- it just publishes
+--                       its body). replace= defaults to "both" on include= blocks;
+--                       only replace=both and replace=null are accepted.
 --                       Region-selecting form: include=<file>/<region>. The
 --                       whole value is tried as a file path first. If that
 --                       fails, the value is split on the last '/' into <file>
 --                       and <region>: only the lines within the named
---                       docs:begin/docs:end region of <file> are rendered
+--                       docs:begin/docs:end region of <file> become the body
 --                       (markers stripped).
 --
 --   enabled=yes|no      Optional. Controls whether this block is active.
@@ -169,7 +172,8 @@
 --                       useful inside HTML markup like <sup>...</sup> where
 --                       monospace styling looks wrong.
 --
---   replace=<value>     Required on every annotated block. See taxonomy below.
+--   replace=<value>     Required on every annotated block except include= blocks,
+--                       where it defaults to "both". See taxonomy below.
 --
 -- REPLACE= TAXONOMY
 --
@@ -189,6 +193,8 @@
 --   K/path              Cross-block: absolute path of cache/<K>/ directory.
 --   K/<thing>           Cross-block: render K's thing.
 --                       thing is stdout|stderr|both|source[/<region>]|<artifact>.
+--                       When K was defined with include=, only the bare K,
+--                       K/both, K/path, and K/both/path forms are accepted.
 --   K/<thing>/path      Cross-block: absolute path of cache/<K>/<thing>.
 --                       Forces lazy definition of K via ensure_defined.
 --
@@ -251,6 +257,11 @@
 --   Siblings depend on the primary with an empty recipe (portable to GNU Make
 --   3.81, which predates `&:` grouped-target syntax).
 --
+--   include= keys take a simpler shape: a single rule whose only prereq is
+--   the included file, with recipe `touch cache/<key>/both`. The content is
+--   written by the filter; the touch only propagates mtime so consumers
+--   invalidate when the included file changes.
+--
 -- PANDOC RENDERING QUIRK
 --
 --   force_fenced upgrades classless CodeBlocks to class "text" so Pandoc
@@ -266,12 +277,13 @@
 --     at runner time. Editing vars.lua or the spec file triggers a rebuild.
 --   - $VAR substitution requires a non-word boundary after VAR so $foo does
 --     not consume the start of $foobar; longest var wins for disambiguation.
---   - include= keys emit a make rule with the included file as the only
---     prereq, and unconditionally mark the include= primary as consumed so a
---     recipe edit invalidates README.md even when the only consumer renders
---     via replace=source (which reads body in memory and would otherwise
---     leave consumed[] unmarked). Edits also cascade through any consumer
---     with depends=<K>.
+--   - include= keys publish only cache/<K>/both (the body). The filter writes
+--     it at filter time via write_idempotent; the make rule has the included
+--     file as its sole prereq and touches the primary, forcing consumers to
+--     invalidate when the source changes (pass 3 rewrites the body during the
+--     README.md build). Cross-block references to an include= key may only use
+--     K, K/both, K/path, or K/both/path -- /source, /stdout, /stderr, and
+--     artifact subs are rejected.
 
 local deps_target
 local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
@@ -551,18 +563,11 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         assertf(#out_list == 0, "key=%s: outputs= not allowed on include= keys", key)
         assertf(#deps == 0,     "key=%s: depends= not allowed on include= keys", key)
         assertf(#vars_list == 0, "key=%s: vars= not allowed on include= keys", key)
-        local lang = pick_lang(attr, classes)
-        local info = LANG_INFO[lang]
         defined[key]   = true
         outputs_t[key] = {}
-        sources[key]   = body
-        if not info then no_runner[key] = lang end
-        -- Mark include= primary as consumed so a recipe edit invalidates README.md
-        -- even when the only consumer renders via replace=source (which reads the
-        -- body in memory and would otherwise leave consumed[] unmarked).
-        consumed[key .. "/both"] = true
-        if deps_target then emit_include_rule(key, info, include_abs) end
-        return body
+        write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/both", body)
+        if deps_target then emit_include_rule(key, include_abs) end
+        return
     end
     for _, d in ipairs(deps) do
         assertf(defined[d.base], "key=%s: depends=%s: '%s' not yet defined", key, d.base, d.base)
@@ -654,36 +659,14 @@ function emit_rule(key, info, out_list, deps, vars_list, has_contents)
 end
 
 -- Emit a make rule for an include= key. The included file is the rule's only
--- prereq. The recipe copies it into cache/<key>/{body.<ext>,stdout,both} and
--- truncates stderr. Editing the file invalidates the primary target and
--- cascades to consumers declaring depends=<key>.
-function emit_include_rule(key, info, include_abs)
-    local primary     = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
-    local stdout_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout"
-    local stderr_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/stderr"
-    local recipe = {
-        primary, ": ", include_abs, "\n",
-        "\t@mkdir -p $(REPLACE_CACHE_DIR)/", key, "\n",
-        "\t@cp ", include_abs, " ", primary,     "\n",
-        "\t@cp ", include_abs, " ", stdout_path, "\n",
-        "\t@: > ", stderr_path,
-    }
-    -- body.<ext> exists for runner inclusion so consumers' runners can read it;
-    -- no-runner display-only keys have no runner that needs it, so skip it.
-    local body_path
-    if info then
-        body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
-        recipe[#recipe + 1] = "\n\t@cp "
-        recipe[#recipe + 1] = include_abs
-        recipe[#recipe + 1] = " "
-        recipe[#recipe + 1] = body_path
-    end
-    rules[#rules + 1] = table.concat(recipe)
-    if body_path then
-        rules[#rules + 1] = table.concat({body_path, ": ", primary})
-    end
-    rules[#rules + 1] = table.concat({stdout_path, ": ", primary})
-    rules[#rules + 1] = table.concat({stderr_path, ": ", primary})
+-- prereq. The filter writes cache/<key>/both with the post-processed body at
+-- filter time (idempotently). The recipe touches the primary so an edit to
+-- the included file invalidates the primary target and cascades to
+-- consumers; pass 3 rewrites cache/<key>/both with the new content while
+-- rebuilding README.md.
+function emit_include_rule(key, include_abs)
+    local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
+    rules[#rules + 1] = primary .. ": " .. include_abs .. "\n\t@touch " .. primary
 end
 
 -- Lazily define key and all its transitive depends= in DFS order.
@@ -743,6 +726,13 @@ local render_source  -- forward declaration (render_source <-> cross_read mutual
 local function cross_read(K, thing, vars_spec, label)
     ensure_defined(K)
     assertf(defined[K], "%s: key '%s' not defined", label, K)
+    -- include= keys produce only cache/<K>/both (the body). Reject any thing
+    -- other than K, K/both, K/path, K/both/path with a clear error.
+    if pending[K] and pending[K].include_abs then
+        local v = thing == "both" or thing == "path" or thing == "both/path"
+        assertf(v, "%s: include= key '%s' only supports K, K/both, K/path, K/both/path (got K/%s)",
+                label, K, thing)
+    end
     if thing == "path" then
         return REPLACE_CACHE_DIR .. "/" .. K
     end
@@ -808,12 +798,20 @@ end
 local function process_codeblock(el)
     local attr = el.attr.attributes
     local key, replace = attr.key, attr.replace
+    local has_include = attr.include ~= nil
     if not key and not replace then return el end
 
     local enabled = is_enabled(attr)
     if enabled then
         if key then ensure_defined(key) end
+        -- include= blocks produce the included body as their output; default
+        -- to replace=both, and forbid forms that don't apply (no stdout/stderr/
+        -- artifact/source for include= keys).
+        if has_include and not replace then replace = "both" end
         assertf(replace, "%s: replace= attribute required", key and "key=" .. key or "CodeBlock")
+        assertf(not has_include or replace == "both" or replace == "null",
+            "key=%s: include= block only supports replace=both or replace=null (got replace=%s)",
+            key, replace)
     end
 
     local vars_spec = parse_vars(attr.vars)
