@@ -2296,10 +2296,7 @@ echo "
                 config.dtb.init = config.dtb.init .. string.format("dev=$(flashdrive %s)\n", dt_label)
                 if entry.mke2fs then
                     config.dtb.init = config.dtb.init
-                        .. string.format(
-                            'busybox mke2fs -F -b 4096 -I 256 -L "%s" "$dev" > /dev/null\n',
-                            dt_label
-                        )
+                        .. string.format('busybox mke2fs -F -b 4096 -I 256 -L "%s" "$dev" > /dev/null\n', dt_label)
                 end
                 if entry.mount then
                     config.dtb.init = config.dtb.init

@@ -13,11 +13,6 @@ local function stderr(fmt, ...)
     io.stderr:write(string.format(fmt, ...))
 end
 
--- Print a string folded into lines of width w
-local function fold(s, w)
-    for i = 1, #s, w do print(s:sub(i, i + w - 1)) end
-end
-
 -- Encode a raw expression as an EvmAdvance request payload (bc needs a
 -- trailing newline to accept the line as a complete expression)
 local function encode_advance(expr, index)
@@ -34,11 +29,21 @@ local function encode_advance(expr, index)
     })
 end
 
+-- Print a string folded into lines of width w
+local function fold(s, w)
+    for i = 1, #s, w do print(s:sub(i, i + w - 1)) end
+end
+
+-- Decode a response inside a notice
+local function print_decoded_notice(data)
+    fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
+end
+
 -- Connect to remote Cartesi Machine server (and shut it down on exit)
 local remote_address = assert(arg[1], "missing remote address")
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address))
-cartesi_jsonrpc_machine:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address)):
+    set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
 local v = assert(cartesi_jsonrpc_machine:get_server_version())
@@ -65,11 +70,11 @@ end
 
 -- Run the machine until it halts or stdin closes
 local i = 0
-while machine:read_reg("iflags_H") == 0 do
-    machine:run(math.maxinteger)
-    if machine:read_reg("iflags_Y") ~= 0 then
-        local _, reason = machine:receive_cmio_request()
-        if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+repeat
+    local break_reason = machine:run(math.maxinteger)
+    if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
+        local _, yield_reason = machine:receive_cmio_request()
+        if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             commit()
             stderr("type expression\n")
             local expr = io.read()
@@ -79,19 +84,19 @@ while machine:read_reg("iflags_H") == 0 do
             snapshot()
             machine:set_revert_root_hash(machine:get_root_hash())
             machine:send_cmio_response(cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, encode_advance(expr, i))
-        elseif i > 0 and reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+        elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             rollback()
         else
             stderr("machine initialization failed\n")
             break
         end
-    elseif machine:read_reg("iflags_X") ~= 0 then
-        local _, reason, data = machine:receive_cmio_request()
-        if reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+    elseif break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
+        local _, yield_reason, data = machine:receive_cmio_request()
+        if yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
             stderr("result is\n")
-            fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
+            print_decoded_notice(data)
         end
     end
-end
+until break_reason == cartesi.BREAK_REASON_HALTED
 commit()
