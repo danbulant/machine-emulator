@@ -2361,42 +2361,12 @@ echo "
     main_machine = main_machine:create(config, runtime_config, create_dir)
 end
 
-local function dump_config(what, whatdef, out, indent)
-    if type(what) == "table" then
-        local next_indent = indent .. "  "
-        local keys = {}
-        for k in pairs(what) do
-            table.insert(keys, k)
-        end
-        table.sort(keys)
-        if #keys > 0 then
-            out:write("{\n")
-            for _, k in ipairs(keys) do
-                local v, vdef = what[k], whatdef and whatdef[k]
-                out:write(next_indent)
-                if type(k) == "string" then out:write(k, " = ") end
-                dump_config(v, vdef, out, next_indent)
-                out:write(",")
-                if v == vdef then out:write(" -- default") end
-                out:write("\n")
-            end
-            out:write(indent, "}")
-        else
-            out:write("{}")
-        end
-    elseif math.type(what) == "integer" then
-        out:write(string.format("0x%x", what))
-    else
-        out:write(string.format("%q", what))
-    end
-end
-
 local function serialize_config(out, config, format)
     if format == "json" then
         out:write(cartesi.tojson(config, 2), "\n")
     elseif format == "lua" then
         out:write("return ")
-        dump_config(config, default_config, out, "")
+        util.dump_config(config, out, default_config)
         out:write("\n")
     end
 end

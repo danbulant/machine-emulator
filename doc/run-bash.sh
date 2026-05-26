@@ -9,7 +9,18 @@ exec > >(tee stdout >> both) 2> >(tee stderr >> both)
 trap 'exec >&- 2>&-; wait' EXIT
 if [ -f spec ]; then
     lua5.4 "$REPLACE_DIR/vars.lua" body.sh body.run.sh
-    exec bash body.run.sh
+    body=body.run.sh
 else
-    exec bash body.sh
+    body=body.sh
 fi
+status=0
+bash -eo pipefail "$body" || status=$?
+if [ "$status" -ne 0 ]; then exit "$status"; fi
+while IFS= read -r artifact; do
+    [ -z "$artifact" ] && continue
+    if [ ! -e "$artifact" ]; then
+        echo "missing declared output: $artifact" >&2
+        status=1
+    fi
+done < outputs
+exit "$status"

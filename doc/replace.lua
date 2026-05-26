@@ -53,6 +53,11 @@
 --   cache/<key>/body.<ext>     Source written at dry-run time (idempotent).
 --   cache/<key>/spec           VAR=path lines for contents-form vars= entries
 --                              (written at dry-run time, idempotent).
+--   cache/<key>/outputs        Declared artifact filenames, one per line
+--                              (written at dry-run time, idempotent; empty
+--                              when outputs= is absent). Read by the runner
+--                              after the body exits to verify each artifact
+--                              exists.
 --   cache/<key>/body.run.<ext> Body with contents-form $VAR expanded (runner-produced).
 --   cache/<key>/stdout         Captured standard output (runner-produced).
 --   cache/<key>/stderr         Captured standard error (runner-produced).
@@ -251,8 +256,8 @@
 -- MAKE-FRAGMENT SHAPE (dry-run)
 --
 --   Primary target:  cache/<key>/both
---     prereqs: runner, body.<ext>, [vars.lua, spec] (iff contents-form vars=
---              exists), depends= prereqs, vars= file prereqs
+--     prereqs: runner, body.<ext>, outputs, [vars.lua, spec] (iff contents-form
+--              vars= exists), depends= prereqs, vars= file prereqs
 --   Sibling targets: cache/<key>/stdout, cache/<key>/stderr, each declared artifact.
 --   Siblings depend on the primary with an empty recipe (portable to GNU Make
 --   3.81, which predates `&:` grouped-target syntax).
@@ -613,6 +618,17 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         end
         write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/spec", table.concat(lines, "\n") .. "\n")
     end
+    -- Always write the outputs file (consumed by the runner to verify declared
+    -- artifacts exist after the body completes). Written even when empty so a
+    -- removed outputs= attribute clears any stale list.
+    local outputs_text = ""
+    if #out_list > 0 then
+        local sorted_out = {}
+        for _, n in ipairs(out_list) do sorted_out[#sorted_out + 1] = n end
+        table.sort(sorted_out)
+        outputs_text = table.concat(sorted_out, "\n") .. "\n"
+    end
+    write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/outputs", outputs_text)
     if deps_target then emit_rule(key, info, out_list, deps, vars_list, #contents_entries > 0) end
     return resolved
 end
@@ -623,7 +639,7 @@ end
 function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     local runner_path = info.runner
     local body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
-    local prereqs = {runner_path, body_path}
+    local prereqs = {runner_path, body_path, "$(REPLACE_CACHE_DIR)/" .. key .. "/outputs"}
     if has_contents then
         prereqs[#prereqs + 1] = REPLACE_DIR .. "/vars.lua"
         prereqs[#prereqs + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/spec"

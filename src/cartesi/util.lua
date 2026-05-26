@@ -30,6 +30,40 @@ local hexhash = hexstring
 _M.hexstring = hexstring
 _M.hexhash = hexstring
 
+local function dump_config(what, out, whatdef, indent)
+    whatdef = whatdef or {}
+    indent = indent or ""
+    if type(what) == "table" then
+        local next_indent = indent .. "  "
+        local keys = {}
+        for k in pairs(what) do
+            table.insert(keys, k)
+        end
+        table.sort(keys)
+        if #keys > 0 then
+            out:write("{\n")
+            for _, k in ipairs(keys) do
+                local v, vdef = what[k], whatdef and whatdef[k]
+                out:write(next_indent)
+                if type(k) == "string" then out:write(k, " = ") end
+                dump_config(v, out, vdef, next_indent)
+                out:write(",")
+                if v == vdef then out:write(" -- default") end
+                out:write("\n")
+            end
+            out:write(indent, "}")
+        else
+            out:write("{}")
+        end
+    elseif math.type(what) == "integer" then
+        out:write(string.format("0x%x", what))
+    else
+        out:write(string.format("%q", what))
+    end
+end
+
+_M.dump_config = dump_config
+
 local function dump_json_sibling_hashes(sibling_hashes, out, indent)
     for i, h in ipairs(sibling_hashes) do
         indentout(out, indent, '"%s"', hexhash(h))

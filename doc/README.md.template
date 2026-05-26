@@ -651,6 +651,7 @@ To store a machine to a given `<directory>`, use the command-line option `--stor
 The machine is stored as it was right before `cartesi-machine` returns to the command line.
 For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec}
 ```{.bash key=persistent_htif_putchar replace=source outputs=dirname vars=cycles->cycles_htif_putchar}
+\rm -rf machine-????????
 cartesi-machine \
     --max-mcycle=$cycles \
     --store="machine-%8h"
@@ -1245,7 +1246,7 @@ EOF
 ```
 Listing the files created
 ```{.bash key=rolling_puppet_encoded_bins vars=rolling_puppet replace=source}
-ln -s $rolling_puppet/*.bin .
+ln -sf $rolling_puppet/*.bin .
 # docs:begin
 ls *.bin
 # docs:end
@@ -1268,7 +1269,7 @@ Running a Rolling Cartesi Machine in the command line requires using the `cartes
 The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
 ```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,input-1-output-0.bin,query-report-0.bin replace=source/server}
-ln -s $rolling_puppet_encode/*.bin .
+ln -sf $rolling_puppet_encode/*.bin .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
@@ -2083,29 +2084,19 @@ Field `hash_tree.sht_filename` gives the filename for the backing image of the g
 
 Finally, the `virtio` entry is a list of configuration for VirtIO devices that can be used when the machine is used in non-reproducible mode during development.
 
-### Configuration from command-line
+### Default configuration
 
-The `cartesi-machine` command-line utility can be used to output machine configurations for Cartesi Machines that can be used directly by the Lua `cartesi.machine` constructor.
-Recall from an [earlier example](#initialization) that the `cartesi-machine` command
-```{.bash replace=ls_bin/source}
-```
-builds a Cartesi Machine that, when run, lists the contents of the `/bin/` directory before gracefully halting.
-The kernel `linux.bin` and root file-system `rootfs.ext2` come from the defaults under `/usr/share/cartesi-machine/images/`.
-The command-line option `--store-config[=<filename>]` makes the utility capture the initial machine configuration.
-Without an argument, the configuration is printed to standard output.
-With `=<filename>`, it is written to that file (and `--load-config=<filename>` reloads it later).
-Adding `--store-config` to the example above captures the following configuration
-```{.lua replace=ls_bin/config-ls-bin.lua title="config-ls-bin.lua"}
+The `cartesi.machine:get_default_config()` method can be used to obtain the default Cartesi Machine configuration:
+```{.lua key=dump_default_config_lua include=dump-default-config.lua title="dump-default-config.lua"}
 ```
 
-The resulting configuration includes a number of default values, conveniently marked as such by the `cartesi-machine` utility.
+This produces:
+```{.lua key=config_default runner=bash depends=dump_default_config_lua outputs=config-default.lua replace=both}
+lua5.4 $RECIPES_DIR/dump-default-config.lua | tee config-default.lua
+```
 
-Flash drives are exposed by the kernel as `/dev/pmem<i>` devices.
-NVRAMs are exposed as `/dev/uio<i>` devices.
-The emulator publishes each drive's `label` field inside the device-tree node `/aliases`.
-
-When the user passes arguments after `--` on the `cartesi-machine` command line, the utility appends them to `dtb.entrypoint`.
-The emulator then publishes this in the device-tree property `entrypoint` of the `/cartesi-machine` node.
+As it is, the default configuration is not functional.
+At a minimum, it is missing the RAM length, the image to be loaded into RAM, and a flash drive with the root filesystem.
 
 The `dtb.bootargs` field carries the default kernel command line.
 The individual parameters have the following meaning:
@@ -2115,18 +2106,38 @@ The individual parameters have the following meaning:
 - []{replace=dtb_bootargs_root_part} sets the first flash drive (exposed by the kernel as a persistent-memory block device) as the root file-system and instructs the kernel to mount the root file-system read-write;
 - []{replace=dtb_bootargs_init_part} runs the Cartesi-provided init script, ends up reading the property `/cartesi-machine/entrypoint` from the device tree (with the contents of `dtb.entrypoint`) running it as user `dapp`.
 
-The configuration can be edited down to its essential, and stored into a file, for example as a Lua module:
+### Generating configurations
 
-```{.lua runner=bash key=config_ls_bin replace=stdout vars=config->ls_bin/config-ls-bin.lua/path}
+The `cartesi-machine` command-line utility can be used to output complete Cartesi Machine configurations.
+Recall from an [earlier example](#initialization) that the `cartesi-machine` command
+```{.bash replace=ls_bin/source}
+```
+builds a Cartesi Machine that, when run, lists the contents of the `/bin/` directory before gracefully halting.
+The kernel `linux.bin` and root file-system `rootfs.ext2` come from the defaults under `/usr/share/cartesi-machine/images/`.
+
+The command-line option `--store-config[=<filename>]` makes the utility capture the initial machine configuration.
+Without an argument, the configuration is printed to standard output.
+With `=<filename>`, it is written to that file (and `--load-config=<filename>` reloads it later).
+
+Adding `--store-config` to the example above, we obtain the complete contents of the corresponding `machine_config`, including default values conveniently marked as such by the `cartesi-machine` utility.
+Editting them out and storing into a file, we would get:
+```{.lua runner=bash key=config_ls_bin replace=stdout vars=config->ls_bin/config-ls-bin.lua/path title="config-ls-bin.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
+
+Flash drives are exposed by the kernel as `/dev/pmem<i>` devices.
+NVRAMs are exposed as `/dev/uio<i>` devices.
+The emulator publishes each drive's `label` field inside the device-tree node `/aliases`.
+
+When the user passes arguments after `--` on the `cartesi-machine` command line, the utility appends them to `dtb.entrypoint`.
+The emulator then publishes this in the device-tree property `entrypoint` of the `/cartesi-machine` node.
 
 The command-line utility can also run Cartesi Machines with additional flash drives.
 Adding `--store-config` to the [earlier example](#flash-drives) that loaded `foo.ext2` as a flash drive
 ```{.bash replace=cat_foo_bar/source}
 ```
 captures a configuration whose essential, edited-down form is
-```{.lua runner=bash key=config_cat_foo_bar vars=config->cat_foo_bar/config-cat-foo-bar.lua/path replace=stdout}
+```{.lua runner=bash key=config_cat_foo_bar vars=config->cat_foo_bar/config-cat-foo-bar.lua/path replace=stdout title="config-cat-foo-bar.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 
@@ -2142,19 +2153,19 @@ Here are the (simplified) configurations for the other examples from the documen
 
 A Cartesi Machine that has nothing to do.
 This is the [introductory example](#command-line-interface), and its configuration, edited down to its essential, is
-```{.lua runner=bash key=config_nothing_to_do vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=stdout}
+```{.lua runner=bash key=config_nothing_to_do vars=config->nothing_to_do/config-nothing-to-do.lua/path replace=stdout title="config-nothing-to-do.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 The `dtb.init` field carries the ASCII-art splash that the `cartesi-machine` utility appends to its setup phase by default.
 This is what produces the Cartesi logo printed before each entrypoint runs.
 
 A Cartesi Machine that periodically reports its progress using the HTIF Yield device:
-```{.lua runner=bash key=config_progress replace=stdout vars=config->progress/config-progress.lua/path}
+```{.lua runner=bash key=config_progress replace=stdout vars=config->progress/config-progress.lua/path title="config-progress.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 
 A Cartesi Machine that computes the value of a generic mathematical expression:
-```{.lua runner=bash key=config_calculator vars=config->calc_run/config-calculator.lua/path replace=stdout}
+```{.lua runner=bash key=config_calculator vars=config->calc_run/config-calculator.lua/path replace=stdout title="config-calculator.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
 
@@ -2210,7 +2221,7 @@ It will also take the time required by the copying of image files into the direc
 :::
 
 To store a machine at its current state, use the `machine:store(<directory>)` method of the Cartesi Machine instance.
-To prevent persistent Cartesi Machines from being inadvertently overwritten, the function call fails when the directory already exists.
+The function call fails when the directory already exists, so existing persistent Cartesi Machines are not inadvertently overwritten:
 ```{.lua key=store_cat_foo_bar include=store-cat-foo-bar.lua title="store-cat-foo-bar.lua"}
 ```
 
@@ -2226,7 +2237,7 @@ After the execution of the script above, the directory `./cat-foo-bar/` contains
 There are no external dependencies.
 
 To load a machine from disk, use the `machine:load(<directory>)` method on an empty `machine` handle.
-Alternatively, the shortcut `cartesi.machine(<machine_config>)` combines the effects of `cartesi.new()` and `machine:create(<machine_config>)` into a single call.
+Alternatively, the shortcut `machine = cartesi.machine(<machine_config>)` combines the effects of `machine = cartesi.new()` and `machine:create(<machine_config>)` into a single call.
 In fact, running the following script
 ```{.lua key=load_cat_foo_bar include=load-cat-foo-bar.lua title="load-cat-foo-bar.lua"}
 ```
@@ -2240,9 +2251,10 @@ lua5.4 load-cat-foo-bar.lua
 
 As before, the configuration that was used to instantiate a Cartesi Machine can be obtained from the machine instance with the method `machine:get_initial_config()`.
 Note that this is *not* the configuration that was used to instantiate the machine for the first time, but rather the configuration used to instantiate a copy of the machine that was stored.
-More specifically, any `backing_store.data_filename` fields point to copies that reside inside the storage directory.
+More specifically, any `backing_store.data_filename` fields point to copies that reside inside the storage `<directory>`.
 Likewise, the values of all registers will reflect the values as they were when stored.
-As for the contents of those backing files, they may have been modified by the running instance before it was stored.
+As for the contents of the initial backing files, they may have been modified by the running instance before a copy was
+saved into `<directory>`.
 
 ### Limiting execution
 
@@ -2283,7 +2295,7 @@ Internally, the tool uses an `ioctl` system-call on the Cartesi-specific `/dev/c
 The protocols followed by the `/usr/bin/yield` utility to interact with the `/dev/cmio` driver, and by the driver itself to communicate with the HTIF Yield device are explained in detail under the [guest perspective](#system-architecture).
 The focus here is on its effect on the host program controlling the emulator.
 
-A Cartesi Machine can be configured via `processor.registers.htif.iyield` to accept HTIF yield automatic commands.
+By default, a Cartesi Machine is configured via `processor.registers.htif.iyield` to accept HTIF yield automatic commands.
 The field is a bitmask of enabled commands.
 Setting the `cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK` bit accepts yield automatic, and setting `cartesi.HTIF_YIELD_CMD_MANUAL_MASK` accepts yield manual.
 The default machine configuration sets both bits.
@@ -3349,12 +3361,14 @@ Its usage is
 
 ```{.bash key=cli_yield_help replace=source}
 {
+{
 # docs:begin
 cartesi-machine \
     --no-init-splash \
     --quiet \
     -- yield
 # docs:end
+} || true
 } | grep -v -e 'Too few arguments' -e '^$'
 ```
 
