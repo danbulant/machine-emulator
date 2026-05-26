@@ -1065,7 +1065,7 @@ The server exposes a JSON-RPC interface through which the `cartesi-machine` comm
 
 To avoid confusion, it is best to run the server and client in separate shells in the playground container.
 Leaving the existing shell for the client, open a separate shell for the server (For example, by running `docker exec -it playground /bin/bash`), then run
-```{.bash key=cmdline_remote outputs=server,client sequential=jsonrpc_server replace=source/server}
+```{.bash key=cmdline_remote outputs=server,client replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
@@ -1124,21 +1124,21 @@ The client detects the machine is halted and shuts down the server, as requested
 When it is desirable to leave the server running and preserve the instantiated machine, omit the `--remote-shutdown`
 command-line option and add the `--no-remote-destroy`.
 For example, assuming the remote server has just been run:
-```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client sequential=jsonrpc_server replace=source/server}
+```{.bash key=cmdline_remote_end outputs=begin-end-server,end-client,begin-client replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:8081
 # docs:end server
 } > begin-end-server 2>&1 &
 srv_pid=$!
 {
 # docs:begin begin-client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8081 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8081 \
     --no-remote-destroy \
     --max-mcycle=1Mi \
     -- echo "Still here!"
@@ -1147,7 +1147,7 @@ cartesi-machine \
 {
 # docs:begin end-client
 cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8081 \
     --remote-shutdown \
     --no-remote-create
 # docs:end end-client
@@ -1267,23 +1267,23 @@ Inspect-state queries are echoed back as a single report.
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
 The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,input-1-output-0.bin,query-report-0.bin sequential=jsonrpc_server replace=source/server}
+```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,input-1-output-0.bin,query-report-0.bin replace=source/server}
 ln -s $rolling_puppet_encode/*.bin .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:8082
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8082 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8082 \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
     --cmio-inspect-state=hashes \
@@ -1484,7 +1484,7 @@ xgenext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,input-2-output-0.bin sequential=jsonrpc_server replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
+```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,input-2-output-0.bin replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
 # docs:begin inputs
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
@@ -1527,18 +1527,18 @@ cartesi-machine \
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:8083
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8083 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8080 \
+    --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
     --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
     --load="rolling-calculator-template"
@@ -2607,21 +2607,21 @@ It then instantiates a remote machine by calling `cartesi_jsonrpc_machine` with 
 The `<close>` annotation combined with `set_cleanup_call(cartesi.jsonrpc.SHUTDOWN)` retires the server automatically when the script exits.
 
 Recall that, to run a server inside the playground, we opened a separate shell into the same playground container (for example, by running `docker exec -it playground /bin/bash`), and then ran the `cartesi-jsonrpc-machine` server in it
-```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config sequential=jsonrpc_server replace=source/server}
+```{.bash key=lua_remote outputs=server,client vars=config->nothing_to_do/config-nothing-to-do.lua/path depends=run_remote_config replace=source/server}
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:8084
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check > /dev/null 2>&1; do sleep 1; done
+while ! cartesi-machine --remote-address=127.0.0.1:8084 --remote-health-check > /dev/null 2>&1; do sleep 1; done
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-remote-config.lua" .
 {
 # docs:begin client
 lua5.4 run-remote-config.lua \
-    127.0.0.1:8080 \
+    127.0.0.1:8084 \
     config-nothing-to-do
 # docs:end client
 } > client 2>&1
@@ -2698,21 +2698,21 @@ If the reason was `cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT`, the script de
 
 Here is what a session looks like.
 First, open a separate shell into the same docker container (for example, by running `docker exec -it playground /bin/bash`) and run the `cartesi-jsonrpc-machine` server in it
-```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator sequential=jsonrpc_server vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
+```{.bash key=lua_rolling_calculator outputs=client,server depends=run_rolling_calculator vars=template->rolling_calc_template/rolling-calculator-template/path replace=source/server}
 rm -f rolling-calculator-template run-rolling-calculator.lua
 ln -sf "$template" .
 ln -sf "$RECIPES_DIR/run-rolling-calculator.lua" .
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8080
+    --server-address=127.0.0.1:8085
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
-while ! cartesi-machine --remote-address=127.0.0.1:8080 --remote-health-check 2>/dev/null; do sleep 1; done
+while ! cartesi-machine --remote-address=127.0.0.1:8085 --remote-health-check 2>/dev/null; do sleep 1; done
 {
 # docs:begin client
-lua5.4 run-rolling-calculator.lua 127.0.0.1:8080
+lua5.4 run-rolling-calculator.lua 127.0.0.1:8085
 # docs:end client
 } > client 2>&1 <<EOF
 6*2^1024 + 3*2^512
