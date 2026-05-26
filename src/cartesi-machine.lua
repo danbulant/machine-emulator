@@ -176,12 +176,12 @@ where options are:
         mke2fs (optional)
         whether the flash drive should be formatted as an ext2 filesystem in init.
         by default, the drive is formatted as ext2 filesystem if there is no backing file,
-        you can use "mke2fs:false" to disables ext2 formatting.
+        you can use "mke2fs:false" to disable ext2 formatting.
 
         mount (optional)
         whether the flash drive should be mounted automatically in init.
         by default, the drive is mounted if there is an image file backing it or is formatted (mke2fs option),
-        you can use "mount:false" to disables auto mounting,
+        you can use "mount:false" to disable auto mounting,
         you can also use "mount:<path>" to choose a custom mount point.
 
         user (optional)
@@ -282,7 +282,7 @@ where options are:
     semantics are the same as for the --flash-drive option.
 
   --hash-tree=<key>:<value>[,<key>:<value>[,...]...]
-    configures the global hash tree the the machine
+    configures the global hash tree of the machine
 
     <key>:<value> is one of
         hash_function:<string>
@@ -296,7 +296,7 @@ where options are:
 
         sht_filename (optional)
         gives the name of the file containing the sparse hash-tree for the machine.
-		(this is the part of the hash tree from the root down to leaves that subindend
+		(this is the part of the hash tree from the root down to leaves that subintend
         entire memory ranges, such as flash-drives or the ram.)
         when omitted or set to the empty, the hash tree will be built from scratch.
 
@@ -311,7 +311,7 @@ where options are:
 
         shared (optional)
         target modifications to machine state modify the sparse hash tree file.
-        by default, the files is not modified and changes are lost.
+        by default, the file is not modified and changes are lost.
 
   --cmio-advance-state=<key>:<value>[,<key>:<value>[,...]...]
     advances the state of the machine through a number of inputs.
@@ -342,7 +342,7 @@ where options are:
         the pattern that derives the name of the file written for report %%o
         of input %%i.
 
-        outputs_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
+        output_hashes_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
         the pattern that derives the name of the file written for outputs root
         hash of input %%i.
 
@@ -470,15 +470,15 @@ where options are:
   --sync-init-date
     set the guest date to match the host date on initialization.
     this option is recommended when using TLS connections or when sharing
-    host directories systems.
-    this is is automatically implied with --network or --volume options.
+    host directories.
+    this is automatically implied with --network or --volume options.
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
   --virtio-9p=<tag>:<directory>
     add a VirtIO Plan9 filesystem device for sharing a host directory
     in the guest.
-    the filesystem will have a tag can be used to mount the host directory
+    the filesystem will have a tag that can be used to mount the host directory
     in the guest using the following command:
 
         busybox mount -t 9p <tag> <mountpoint>
@@ -498,7 +498,7 @@ where options are:
     add a VirtIO network device using host TUN/TAP interface.
     this allows the use of the host network from inside the machine.
     this is more efficient and has fewer limitations than the user-space
-    networking option (--virtio-net=user...).
+    networking option (--virtio-net=user).
 
     run the following commands in the host before starting the emulator:
 
@@ -530,7 +530,7 @@ where options are:
     this allows the use of the host network from inside the machine.
     you don't need root privilege or any configuration in the host to use this.
     although this mode is easier to use, it has the following limitations:
-      - there is an additional an emulation layer of the TCP/IP stack;
+      - there is an additional emulation layer of the TCP/IP stack;
       - not all IP protocols are emulated, but TCP and UDP should work;
       - host cannot connect to guest TCP ports.
     the implementation uses the libslirp TCP/IP emulator library.
@@ -568,7 +568,7 @@ where options are:
     if guest port is absent, it's set to the same as host port.
     if protocol is absent, it's set to "tcp".
     you can pass this option multiple times.
-    this options requires --network or --virtio-net=user option.
+    this option requires --network or --virtio-net=user option.
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
