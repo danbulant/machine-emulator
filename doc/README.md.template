@@ -652,12 +652,12 @@ The machine is stored as it was right before `cartesi-machine` returns to the co
 For example, to store the machine corresponding to state hash [...]{replace=state_hashes_final_limit_exec}
 ```{.bash key=persistent_htif_putchar replace=source outputs=dirname vars=cycles->cycles_htif_putchar}
 \rm -rf machine-????????
+# docs:begin
 cartesi-machine \
     --max-mcycle=$cycles \
     --store="machine-%8h"
-# docs:begin null
+# docs:end
     ls -d machine-* > dirname
-# docs:end null
 ```
 
 This command creates a directory []{replace=persistent_htif_putchar/dirname}, containing a variety of files that allow the Cartesi Machine emulator to recreate a machine state.
@@ -935,7 +935,7 @@ The output of the command is
 ```
 
 In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{.json replace=proofs_pristine_run/pristine-input-proof}
+```{.js replace=proofs_pristine_run/pristine-input-proof}
 ```
 The `root_hash` value [...]{replace=calc_template_trunc_hash} is the expected initial state hash seen in the output of the `cartesi-machine` command.
 The `target_address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in hexadecimal.
@@ -997,7 +997,7 @@ cartesi-machine \
 
 The contents of the `input-proof` are
 
-```{.json replace=input_raw_proof/input-proof}
+```{.js replace=input_raw_proof/input-proof}
 ```
 
 ```{.bash key=input_raw_proof_root_hash vars=proof->input_raw_proof/input-proof/path replace=null}
@@ -1032,7 +1032,7 @@ This produces the output
 ```{replace=output_raw_proof}
 ```
 The contents of the `output-proof` are
-```{.json replace=output_raw_proof/output-proof}
+```{.js replace=output_raw_proof/output-proof}
 ```
 
 ```{.bash key=output_raw_proof_root_hash vars=proof->output_raw_proof/output-proof/path replace=null}
@@ -1376,7 +1376,7 @@ ln -sf $rolling_puppet/*.bin .
 cartesi-rollup-data.lua decode advance < input-1.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_advance}
+```{.js replace=rolling_puppet_decode_advance}
 ```
 The payload field carries the hex encoding of the bytes `notice:hello from input 1`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 1`.
 
@@ -1388,7 +1388,7 @@ ln -sf $notice .
 cartesi-rollup-data.lua decode notice < input-1-output-0.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_notice}
+```{.js replace=rolling_puppet_decode_notice}
 ```
 ```{.bash key=rolling_puppet_decode_report vars=report->rolling_puppet/query-report-0.bin/path replace=source}
 ln -sf $report .
@@ -1396,7 +1396,7 @@ ln -sf $report .
 cartesi-rollup-data.lua decode report < query-report-0.bin
 # docs:end
 ```
-```{replace=rolling_puppet_decode_report}
+```{.js replace=rolling_puppet_decode_report}
 ```
 Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
 A voucher carries a _destination_, a _value_, and a _payload_.

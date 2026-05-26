@@ -66,7 +66,11 @@ run-docs-image: check-docs-image
 	    /bin/bash
 
 build-docs-image: | $(RECIPES_DIR)/rootfs-docs.ext2
-	$(MAKE) -C .. build-emulator-image TAG=$(TAG)
+	@if docker image inspect cartesi/machine-emulator:$(TAG) >/dev/null 2>&1; then \
+		echo "Docker image cartesi/machine-emulator:$(TAG) exists, reusing"; \
+	else \
+		$(MAKE) -C .. build-emulator-image TAG=$(TAG); \
+	fi
 	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(DOCS_IMAGE):$(TAG) .
 
 $(REPLACE_CACHE_DIR):
@@ -90,11 +94,12 @@ endif
 
 # Real run: render the document. template.d adds per-cache-file prereqs to
 # README.md, so editing a recipe propagates here naturally.
-README.md: README.md.template replace.lua alerts.lua template.d
+README.md: README.md.template replace.lua alerts.lua github.template.md template.d
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -s -t gfm --toc \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \
 	    --lua-filter replace.lua --lua-filter alerts.lua \
+	    --template=github.template.md \
 	    README.md.template -o $@
 
 README.html: README.md README.md.template replace.lua alerts.lua github.template.html template.d

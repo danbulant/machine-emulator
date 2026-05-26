@@ -64,6 +64,9 @@ RUN apt-get update && \
         libstdc++6 \
         bc curl device-tree-compiler file gawk gforth jq lua5.4 lua-socket \
         nodejs perl php-cli python3 ruby tcl xxd && \
+    rm -rf /usr/share/ca-certificates /etc/ssl/certs && \
+    rm -f /var/cache/ldconfig/aux-cache && \
+    rm -rf /var/log/* && \
     rm -rf /var/lib/apt/lists/* /tmp/machine-guest-tools_riscv64.deb
 
 COPY --from=c-cpp-builder /work/hello-c                                               /home/dapp/hello-c

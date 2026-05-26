@@ -685,9 +685,99 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch
 
+  docs:
+    name: Docs
+    needs: build
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Setup variables
+        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@15c09a5f77a0840ad4bce955686522a257853461 # v1.7.1
+
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@5f3b3c2e5a00f0093de47f657aeaefcedff27d18 # v1.17.0
+        with:
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: cartesi/machine-emulator:devel
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Cache xgenext2fs binary
+        id: cache-xgenext2fs
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: /usr/local/bin/xgenext2fs
+          key: xgenext2fs-v1.5.6-${{ runner.os }}
+
+      - name: Build and install xgenext2fs
+        if: steps.cache-xgenext2fs.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            automake autotools-dev build-essential libarchive-dev
+          wget https://github.com/cartesi/genext2fs/archive/refs/tags/v1.5.6.tar.gz
+          echo "34bfc26a037def23b85b676912462a3d126a87ef15c66c212b3500650da44f9e  v1.5.6.tar.gz" | sha256sum -c -
+          tar -xzf v1.5.6.tar.gz
+          cd genext2fs-1.5.6
+          ./autogen.sh
+          ./configure --enable-libarchive
+          make -j"$(nproc)"
+          sudo make install
+
+      - name: Build documentation
+        run: make -C doc README.md
+
+      - name: Upload rootfs-docs.ext2 artifact
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: rootfs-docs
+          path: doc/recipes/rootfs-docs.ext2
+          if-no-files-found: ignore
+
+      - name: Check README.md matches committed version
+        run: |
+          if git diff --quiet doc/README.md; then
+            exit 0
+          fi
+          git --no-pager diff doc/README.md
+          echo "::error::doc/README.md is out of sync with the generator. The diff above is what 'make -C doc README.md' produces vs the committed file. Check if changes were intended and, if so, regenerate locally and commit the result."
+          exit 1
+
   publish_artifacts:
     name: Publish artifacts
-    needs: [build, lint, coverage, sanitize, test_amd64, test_arm64, risc0]
+    needs: [build, lint, coverage, sanitize, test_amd64, test_arm64, risc0, docs]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout emulator source code
