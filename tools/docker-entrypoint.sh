@@ -17,26 +17,26 @@
 #
 
 if [ -z "$GID" -o -z "$UID" -o -z "$USER" -o -z "$GROUP" ]; then
-    echo Running as $(whoami)
+    echo Running as $(whoami) >&2
     exec "$@"
 else
   if [ ! $(getent group $GID) ]; then
     if [ $(getent group $GROUP) ]; then
-      echo Group name $GROUP already exists
+      echo Group name $GROUP already exists >&2
       GROUP=container-group-$GID
     fi
     groupadd -g $GID $GROUP
   else
-    echo The id $GID of group $GROUP already exists
+    echo The id $GID of group $GROUP already exists >&2
   fi
   if [ ! $(getent passwd $UID) ]; then
     if [ $(getent passwd $USER) ]; then
-      echo User name $USER already exists.
+      echo User name $USER already exists. >&2
       USER=container-user-$UID
     fi
     useradd -u $UID -g $GID -G $GROUP $USER
   else
-    echo The id $UID of user $USER already exists
+    echo The id $UID of user $USER already exists >&2
   fi
   USERNAME=$(id -nu $UID)
   export HOME=/home/$USERNAME
@@ -51,6 +51,6 @@ else
     chown $UID:$GID $(/usr/bin/tty)
   fi
 
-  echo Running as $USERNAME and group $(id -ng $UID)
+  echo Running as $USERNAME and group $(id -ng $UID) >&2
   exec gosu $USERNAME "$@"
 fi

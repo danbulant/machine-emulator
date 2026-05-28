@@ -1,4 +1,7 @@
-FROM debian:trixie-20250811 AS toolchain
+ARG BUILD_BASE=debian:trixie-20250811
+ARG RUNTIME_BASE=debian:trixie-20250811-slim
+
+FROM $BUILD_BASE AS toolchain
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
@@ -56,15 +59,23 @@ FROM builder AS debian-packager
 RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
 ####################################################################################################
-FROM debian:trixie-20250811-slim
+FROM $RUNTIME_BASE
 ARG TARGETARCH
+ARG RUNTIME_BASE
+LABEL io.cartesi.machine-emulator.base-image="$RUNTIME_BASE"
 
 COPY --from=debian-packager /usr/src/emulator/machine-emulator_${TARGETARCH}.deb machine-emulator.deb
 COPY tests/dependencies tests/dependencies.sha256 /usr/share/cartesi-machine/
 
 RUN apt-get update && \
-    apt-get install -y ./machine-emulator.deb && \
+    apt-get install -y gosu ./machine-emulator.deb && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/* machine-emulator.deb
+
+# Carried but dormant (no ENTRYPOINT set here, so production behavior is
+# unchanged): lets a derived dev image (e.g. doc/) opt into running as the host
+# user by pointing ENTRYPOINT at this script. Needs gosu, installed above.
+COPY tools/docker-entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 RUN groupadd --system --gid 102 cartesi && \
     useradd --system --uid 102 --gid 102 --no-create-home --home /nonexistent --comment "cartesi user" --shell /bin/false cartesi

@@ -71,7 +71,8 @@ build-docs-image: | $(RECIPES_DIR)/rootfs-docs.ext2
 	else \
 		$(MAKE) -C .. build-emulator-image TAG=$(TAG); \
 	fi
-	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) -t $(DOCS_IMAGE):$(TAG) .
+	base=$$(docker image inspect --format '{{ index .Config.Labels "io.cartesi.machine-emulator.base-image" }}' cartesi/machine-emulator:$(TAG)); \
+	docker build $(DOCKER_PLATFORM) --build-arg TAG=$(TAG) $${base:+--build-arg BUILDER_BASE=$$base} -t $(DOCS_IMAGE):$(TAG) .
 
 $(REPLACE_CACHE_DIR):
 	mkdir -p $@
