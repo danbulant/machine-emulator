@@ -775,7 +775,7 @@ print("\n\n dump step log to console")
 do_test("dumped step log content should match", function(machine)
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
     local temp_file <close> = test_util.new_temp_file()
-    util.dump_log(log, temp_file)
+    util.print_log(log, temp_file)
     local log_output = temp_file:read_all()
     -- luacheck: push no max line length
     local expected_output = "begin step\n"
@@ -1106,7 +1106,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
             end,
         })
         local tmp <close> = assert(io.open(tmpname, "w+"))
-        util.dump_log(log, tmp)
+        util.print_log(log, tmp)
         tmp:seek("set", 0)
         local actual_dump = tmp:read("*all")
 
@@ -1426,7 +1426,7 @@ begin send_cmio_response
 end send_cmio_response
 ]]
     local temp_file <close> = test_util.new_temp_file()
-    util.dump_log(log, temp_file)
+    util.print_log(log, temp_file)
     local actual_dump = temp_file:read_all()
     print("Output of log_send_cmio_response dump:")
     print("--------------------------")
@@ -1507,7 +1507,7 @@ do_test("send_cmio_response of zero bytes", function(machine)
     machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
     local log = machine:log_send_cmio_response(reason, data)
-    util.dump_log(log, io.stderr)
+    util.print_log(log, io.stderr)
     assert(#log.accesses == 3, "log should have 3 accesses")
     local hash_after = machine:get_root_hash()
     machine:verify_send_cmio_response(reason, data, hash_before, log, hash_after)
@@ -1610,7 +1610,7 @@ test_util.make_do_test(build_machine, machine_type, {
     local function log_step()
         local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local temp_file <close> = test_util.new_temp_file()
-        util.dump_log(log, temp_file)
+        util.print_log(log, temp_file)
         return log, temp_file:read_all()
     end
 

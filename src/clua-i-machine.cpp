@@ -528,13 +528,14 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     return dummy;
 }
 
-const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int ctxidx) {
+const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int indent,
+    int ctxidx) {
     const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
     const auto it = machine_schema_dict.find(schema_name);
     if (it == machine_schema_dict.end()) {
         luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
     }
-    return clua_check_json_string(L, idx, -1, ctxidx, *it, machine_schema_dict);
+    return clua_check_json_string(L, idx, indent, ctxidx, *it, machine_schema_dict);
 }
 
 void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string &schema_name, int ctxidx) {

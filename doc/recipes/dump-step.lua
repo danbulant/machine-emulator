@@ -19,4 +19,4 @@ local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
 io.stderr:write(string.format(
     "\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n",
     mcycle, ucycle))
-util.dump_log(log, io.stderr)
+util.print_log(log, io.stderr)

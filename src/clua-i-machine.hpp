@@ -179,8 +179,9 @@ void clua_push_json_table(lua_State *L, const char *s, int ctxidx = lua_upvaluei
 /// \param L Lua state
 /// \param idx Lua table stack index which will be converted to a Lua string
 /// \param schema_name Schema name to be used while converting the table
+/// \param indent JSON indentation when converting it to a string
 /// \param ctxidx Index (or pseudo-index) of clua context
-const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name,
+const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int indent = -1,
     int ctxidx = lua_upvalueindex(1));
 
 /// \brief Parses a JSON from a string and pushes it as a Lua table (schemed version)

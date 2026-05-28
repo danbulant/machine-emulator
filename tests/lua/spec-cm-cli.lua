@@ -225,6 +225,14 @@ describe("cartesi-machine CLI", function()
         -- assert-version with current major.minor should succeed and continue
         local ver = string.format("%d.%d", cartesi.VERSION_MAJOR, cartesi.VERSION_MINOR)
         run_ok({ "--assert-version=" .. ver, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+
+        -- --bash-completion emits a bash-completion script and exits.  When it
+        -- is the only argument the CLI services it before require("cartesi"),
+        -- so it must run from cartesi.bash without the compiled module.
+        rc, stdout = run({ "--bash-completion" })
+        expect.equal(rc, 0)
+        expect.truthy(stdout:find("bash completion for cartesi%-machine"))
+        expect.truthy(stdout:find("_cm_flag_kind"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -807,7 +815,8 @@ describe("cartesi-machine CLI", function()
     --       --dense-uarch-hashes, and --dump-address-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
-    --       non-empty.
+    --       non-empty.  Format-specific proof assertions live in the dedicated
+    --       "proof dump options" test below.
     -- -------------------------------------------------------------------------
     it("hashing options", function()
         -- --initial-hash and --final-hash emit hashes to stderr as "<mcycle>: <hex64>"
@@ -829,26 +838,6 @@ describe("cartesi-machine CLI", function()
             end
         end
         expect.truthy(hash_count >= 1)
-
-        -- --initial-proof / --final-proof written to files
-        local _ <close>, proof_file = scope_temp_pathname()
-        run_ok({
-            "--initial-proof=address:0x80000000,log2_size:12,filename:" .. proof_file,
-            "--max-mcycle=0",
-            "--no-init-splash",
-            "--quiet",
-        })
-        expect.truthy(#filesystem.read_file(proof_file) > 10)
-
-        -- --final-proof written to a file
-        local _ <close>, final_proof_file = scope_temp_pathname()
-        run_ok({
-            "--final-proof=address:0x80000000,log2_size:12,filename:" .. final_proof_file,
-            "--max-mcycle=0",
-            "--no-init-splash",
-            "--quiet",
-        })
-        expect.truthy(#filesystem.read_file(final_proof_file) > 10)
 
         -- --periodic-hashes=N single-argument form (no start offset, implies start=N)
         run_ok({ "--periodic-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -876,6 +865,79 @@ describe("cartesi-machine CLI", function()
             f:close()
             assert(os.remove(filename))
         end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Proof dump options
+    --
+    -- What: --initial-proof / --final-proof now emit a Lua table (loadable
+    --       with load/dofile) and --initial-json-proof / --final-json-proof
+    --       emit JSON validated against the "Proof" schema.  Each of the four
+    --       options is exercised both writing to a file (filename:<path>) and
+    --       writing to stdout (no filename:).
+    -- How:  For Lua proofs, load() the emitted text and assert the proof shape;
+    --       for JSON proofs, round-trip through cartesi.fromjson(s, "Proof")
+    --       (which re-validates against the schema) and assert the same shape.
+    --       A proof of a 2^12 region under a 2^64 tree has 64-12 = 52 sibling
+    --       hashes, so that count doubles as a structural sanity check.
+    -- -------------------------------------------------------------------------
+    it("proof dump options", function()
+        local ADDR = 0x80000000
+        local LOG2 = 12
+
+        -- Assert the common shape shared by both formats.
+        local function check_proof(p)
+            expect.equal(p.log2_root_size, 64)
+            expect.equal(p.log2_target_size, LOG2)
+            expect.equal(p.target_address, ADDR)
+            expect.equal(#p.sibling_hashes, 64 - LOG2)
+            expect.truthy(p.root_hash ~= nil)
+            expect.truthy(p.target_hash ~= nil)
+        end
+
+        -- --initial-proof / --final-proof to a file: the text is a Lua chunk
+        -- that returns the proof table, loadable with dofile.
+        for _, opt in ipairs({ "--initial-proof", "--final-proof" }) do
+            local _ <close>, proof_file = scope_temp_pathname()
+            run_ok({
+                opt .. "=address:" .. ADDR .. ",log2_size:" .. LOG2 .. ",filename:" .. proof_file,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            })
+            check_proof(dofile(proof_file))
+        end
+
+        -- --initial-proof to stdout: same Lua chunk, loaded with load().
+        local stdout = run_ok({
+            "--initial-proof=address:" .. ADDR .. ",log2_size:" .. LOG2,
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        check_proof(assert(load(stdout))())
+
+        -- --initial-json-proof / --final-json-proof to a file: valid JSON that
+        -- round-trips through the "Proof" schema.
+        for _, opt in ipairs({ "--initial-json-proof", "--final-json-proof" }) do
+            local _ <close>, json_file = scope_temp_pathname()
+            run_ok({
+                opt .. "=address:" .. ADDR .. ",log2_size:" .. LOG2 .. ",filename:" .. json_file,
+                "--max-mcycle=0",
+                "--no-init-splash",
+                "--quiet",
+            })
+            check_proof(cartesi.fromjson(filesystem.read_file(json_file), "Proof"))
+        end
+
+        -- --final-json-proof to stdout: same JSON, parsed against the schema.
+        stdout = run_ok({
+            "--final-json-proof=address:" .. ADDR .. ",log2_size:" .. LOG2,
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+        })
+        check_proof(cartesi.fromjson(stdout, "Proof"))
     end)
 
     -- -------------------------------------------------------------------------
@@ -1350,11 +1412,18 @@ describe("cartesi-machine CLI", function()
         -- Malformed --port-forward
         run_fail({ "--network", "--port-forward=not-a-port" }, nil)
 
-        -- log2_size < 3 in --initial-proof
+        -- log2_size below cartesi.HASH_TREE_LOG2_WORD_SIZE is rejected by both
+        -- the Lua-table and JSON proof options, with the bound named in stderr.
+        local min_msg = "log2_size must be at least " .. cartesi.HASH_TREE_LOG2_WORD_SIZE
+        local too_small = cartesi.HASH_TREE_LOG2_WORD_SIZE - 1
         run_fail({
-            "--initial-proof=address:0x80000000,log2_size:2",
+            "--initial-proof=address:0x80000000,log2_size:" .. too_small,
             "--max-mcycle=0",
-        }, "log2_size must be at least 3")
+        }, min_msg)
+        run_fail({
+            "--initial-json-proof=address:0x80000000,log2_size:" .. too_small,
+            "--max-mcycle=0",
+        }, min_msg)
 
         -- --gdb conflicts with --periodic-hashes
         run_fail({

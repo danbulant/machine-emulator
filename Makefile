@@ -77,7 +77,7 @@ EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-hash-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
-EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua src/cartesi/evmu.lua
+EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/gdbstub.lua src/cartesi/evmu.lua src/cartesi/bash.lua
 EMU_TO_LUA_THIRD_PARTY_PATH= src/cartesi/third-party/bint.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
@@ -104,6 +104,12 @@ export UARCH_DEFS
 # Docker image tag
 TAG ?= devel
 DEBIAN_IMG ?= cartesi/machine-emulator:$(TAG).deb
+
+# Base images for the emulator Dockerfile. Single source of truth: passed as
+# build-args and stamped into the image as a label so downstream images (e.g.
+# doc/) can reuse the exact same base without duplicating these values.
+BUILD_BASE ?= debian:trixie-20250811
+RUNTIME_BASE ?= debian:trixie-20250811-slim
 
 # Docker image platform
 BUILD_PLATFORM ?=
@@ -269,13 +275,13 @@ $(SRCDIR)/interpret-jump-table.hpp:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) interpret-jump-table.hpp
 
 build-emulator-builder-image:
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg BUILD_BASE=$(BUILD_BASE) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
 
 build-emulator-toolchain-image build-toolchain:
-	docker build $(DOCKER_PLATFORM) --target toolchain -t cartesi/machine-emulator:toolchain -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg BUILD_BASE=$(BUILD_BASE) --target toolchain -t cartesi/machine-emulator:toolchain -f Dockerfile .
 
 build-emulator-image:
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg BUILD_BASE=$(BUILD_BASE) --build-arg RUNTIME_BASE=$(RUNTIME_BASE) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
 build-emulator-tests-image: build-emulator-builder-image build-emulator-image
 	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
@@ -284,7 +290,7 @@ build-emulator-tests-builder-image: build-emulator-builder-image
 	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
 
 build-debian-package:
-	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) -t $(DEBIAN_IMG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg BUILD_BASE=$(BUILD_BASE) -t $(DEBIAN_IMG) -f Dockerfile .
 
 build-tests-debian-packages: build-emulator-builder-image
 	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .

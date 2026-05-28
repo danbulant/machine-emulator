@@ -16,11 +16,19 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
-local cartesi = require("cartesi")
-local util = require("cartesi.util")
+local bash = require("cartesi.bash")
+-- forward compiled package declarations so handle_bash_completion can run clean
+local cartesi, util
 
 local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local stderr = stderr_unsilenceable
+
+local function errorf(fmt, ...) error(string.format(fmt, ...), 2) end
+
+local function assertf(value, fmt, ...)
+    if value then return value, fmt, ... end
+    error(string.format(fmt, ...), 2)
+end
 
 local function adjust_images_path(path)
     if not path then return "" end
@@ -786,9 +794,7 @@ local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
 local perform_rollbacks = true
-local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-
 local flash_label_to_index = { root = 1 }
 local flash_drives = {
     {
@@ -822,7 +828,6 @@ local append_entrypoint = ""
 local dtb = {
     init = "",
     entrypoint = "",
-    bootargs = default_config.dtb.bootargs,
 }
 local tlb = {}
 local cmio = {
@@ -834,10 +839,6 @@ local cmio_inspect
 local processor = {
     registers = {
         iunrep = 0,
-        htif = {
-            iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
-            iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
-        },
     },
 }
 local uarch = {
@@ -858,9 +859,7 @@ local uarch = {
     },
 }
 local pmas = {}
-local hash_tree = {
-    hash_function = default_config.hash_tree.hash_function,
-}
+local hash_tree = {}
 local console = {}
 local concurrency_update_hash_tree = 0
 local skip_version_check = false
@@ -1030,7 +1029,7 @@ end
 local function parse_ipv4(s)
     local a, b, c, d = s:match("^([0-9]+)%.([0-9]+)%.([0-9]+)%.([0-9]+)$")
     a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-    assert(a and b and c and d and a <= 255 and b <= 255 and c <= 255 and d <= 255, "malformed IPv4 " .. s)
+    assertf(a and b and c and d and a <= 255 and b <= 255 and c <= 255 and d <= 255, "malformed IPv4 %s", s)
     return (a << 24) | (b << 18) | (c << 8) | d
 end
 
@@ -1127,6 +1126,19 @@ local function handle_interactive()
     return true
 end
 
+local options -- forward declaration for handle_bash_completion
+
+local function handle_bash_completion()
+    -- Register the canonical names plus whatever the user invoked
+    -- this script as (e.g. ./cartesi-machine), so `source <(...)`
+    -- works from any invocation path.
+    local progs = { "cartesi-machine", "cartesi-machine.lua" }
+    local self = arg[0]
+    if self and self ~= progs[1] and self ~= progs[2] then progs[#progs + 1] = self end
+    bash.dump_bash_completion(options, progs)
+    os.exit()
+end
+
 -- List of supported options
 -- Options are processed in order
 -- For each option,
@@ -1140,7 +1152,6 @@ end
 --     util.parse_options keys spec for compound `key:val,...` arguments. If
 --     present, the dispatcher forwards it to the callback as a first
 --     leading argument (callbacks that ignore the hint declare `_`).
-local options -- forward decl so --bash-completion can reach it via closure
 options = {
     {
         "^%-h$",
@@ -1160,16 +1171,7 @@ options = {
     },
     {
         "^%-%-bash%-completion$",
-        function()
-            -- Register the canonical names plus whatever the user invoked
-            -- this script as (e.g. ./cartesi-machine), so `source <(...)`
-            -- works from any invocation path.
-            local progs = { "cartesi-machine", "cartesi-machine.lua" }
-            local self = arg[0]
-            if self and self ~= progs[1] and self ~= progs[2] then progs[#progs + 1] = self end
-            util.dump_bash_completion(options, progs)
-            os.exit()
-        end,
+        handle_bash_completion,
     },
     {
         "^%-%-version$",
@@ -1213,16 +1215,14 @@ options = {
                 or minor ~= cartesi.VERSION_MINOR
                 or (patch and patch ~= cartesi.VERSION_PATCH)
             then
-                error(
-                    string.format(
-                        "emulator version mismatch, expected (%d.%d.%s) but got (%d.%d.%d)",
-                        major,
-                        minor,
-                        patch or "x",
-                        cartesi.VERSION_MAJOR,
-                        cartesi.VERSION_MINOR,
-                        cartesi.VERSION_PATCH
-                    )
+                errorf(
+                    "emulator version mismatch, expected (%d.%d.%s) but got (%d.%d.%d)",
+                    major,
+                    minor,
+                    patch or "x",
+                    cartesi.VERSION_MAJOR,
+                    cartesi.VERSION_MINOR,
+                    cartesi.VERSION_PATCH
                 )
             end
             return true
@@ -1282,7 +1282,7 @@ options = {
     {
         "^%-%-ram%-length%=(.+)$",
         function(n)
-            ram.length = assert(util.parse_number(n), "invalid RAM length " .. n)
+            ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
             return true
         end,
     },
@@ -1633,7 +1633,7 @@ options = {
         "^(%-%-concurrency%=(.+))$",
         function(keys, all, opts)
             local c = util.parse_options(keys, all, opts)
-            c.update_hash_tree = assert(c.update_hash_tree, "invalid update_hash_tree number in " .. all)
+            c.update_hash_tree = assertf(c.update_hash_tree, "invalid update_hash_tree number in %s", all)
             concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
@@ -1660,7 +1660,13 @@ options = {
         function(keys, all, opts)
             local p = util.parse_options(keys, all, opts)
             p.cmdline = all
-            assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
+            p.format = "lua"
+            assertf(
+                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                "log2_size must be at least %u in %s",
+                cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                all
+            )
             initial_proof[#initial_proof + 1] = p
             return true
         end,
@@ -1676,7 +1682,56 @@ options = {
             if not opts then return false end
             local p = util.parse_options(keys, all, opts)
             p.cmdline = all
-            assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
+            p.format = "lua"
+            assertf(
+                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                "log2_size must be at least %u in %s",
+                cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                all
+            )
+            final_proof[#final_proof + 1] = p
+            return true
+        end,
+        {
+            address = "number",
+            log2_size = "number",
+            filename = "file",
+        },
+    },
+    {
+        "^(%-%-initial%-json%-proof%=(.+))$",
+        function(keys, all, opts)
+            local p = util.parse_options(keys, all, opts)
+            p.cmdline = all
+            p.format = "json"
+            assertf(
+                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                "log2_size must be at least %u in %s",
+                cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                all
+            )
+            initial_proof[#initial_proof + 1] = p
+            return true
+        end,
+        {
+            address = "number",
+            log2_size = "number",
+            filename = "file",
+        },
+    },
+    {
+        "^(%-%-final%-json%-proof%=(.+))$",
+        function(keys, all, opts)
+            if not opts then return false end
+            local p = util.parse_options(keys, all, opts)
+            p.format = "json"
+            p.cmdline = all
+            assertf(
+                p.log2_size >= cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                "log2_size must be at least %u in %s",
+                cartesi.HASH_TREE_LOG2_WORD_SIZE,
+                all
+            )
             final_proof[#final_proof + 1] = p
             return true
         end,
@@ -1734,7 +1789,7 @@ options = {
         "^%-%-log%-step%=(.*),(.*)$",
         function(count, filename)
             if (not count) or not filename then return false end
-            log_step_mcycle_count = assert(util.parse_number(count), "invalid steps " .. count)
+            log_step_mcycle_count = assertf(util.parse_number(count), "invalid steps %s", count)
             log_step_filename = filename
             return true
         end,
@@ -1759,7 +1814,7 @@ options = {
         "^(%-%-max%-mcycle%=(.*))$",
         function(all, n)
             if not n then return false end
-            max_mcycle = assert(util.parse_number(n), "invalid option " .. all)
+            max_mcycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
@@ -1767,7 +1822,7 @@ options = {
         "^(%-%-max%-uarch%-cycle%=(.*))$",
         function(all, n)
             if not n then return false end
-            max_uarch_cycle = assert(util.parse_number(n), "invalid option " .. all)
+            max_uarch_cycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
@@ -1920,11 +1975,11 @@ options = {
         function(all, v)
             if not v then return false end
             string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
-                periodic_hashes_period = assert(util.parse_number(p), "invalid period " .. all)
-                periodic_hashes_start = assert(util.parse_number(s), "invalid start " .. all)
+                periodic_hashes_period = assertf(util.parse_number(p), "invalid period %s", all)
+                periodic_hashes_start = assertf(util.parse_number(s), "invalid start %s", all)
             end)
             if periodic_hashes_period == math.maxinteger then
-                periodic_hashes_period = assert(util.parse_number(v), "invalid period " .. all)
+                periodic_hashes_period = assertf(util.parse_number(v), "invalid period %s", all)
                 periodic_hashes_start = 0
             end
             initial_hash = true
@@ -1937,14 +1992,14 @@ options = {
         function(all, v)
             if not v then return false end
             string.gsub(v, "^([^%,]+),(.+)$", function(l, s)
-                dense_uarch_hashes_start = assert(util.parse_number(s), "invalid start " .. all)
+                dense_uarch_hashes_start = assertf(util.parse_number(s), "invalid start %s", all)
                 dense_uarch_hashes_end = dense_uarch_hashes_start
-                    + assert(util.parse_number(l), "invalid length " .. all)
+                    + assertf(util.parse_number(l), "invalid length %s", all)
             end)
             if not dense_uarch_hashes_start then
                 dense_uarch_hashes_start = 0
                 dense_uarch_hashes_end = dense_uarch_hashes_start
-                    + assert(util.parse_number(v), "invalid length " .. all)
+                    + assertf(util.parse_number(v), "invalid length %s", all)
             end
             return true
         end,
@@ -2111,12 +2166,10 @@ options = {
         ".*",
         function(all)
             local not_option = all:sub(1, 1) ~= "-"
-            if not_option or all == "--" then
-                cmdline_opts_finished = true
-                if not_option then exec_arguments = { all } end
-                return true
-            end
-            error("unrecognized option " .. all)
+            assertf(not_option or all == "--", "unrecognized option %s", all)
+            cmdline_opts_finished = true
+            if not_option then exec_arguments = { all } end
+            return true
         end,
     },
 }
@@ -2126,6 +2179,21 @@ local function tryoption(handler, hint, ...)
     if hint == nil then return handler(...) end
     return handler(hint, ...)
 end
+
+if #arg == 1 and arg[1] == "--bash-completion" then handle_bash_completion() end
+
+-- Finally load the dependencies
+cartesi = require("cartesi")
+util = require("cartesi.util")
+
+-- And perform the dependant initializations
+local default_config = cartesi.machine:get_default_config()
+dtb.bootargs = default_config.dtb.bootargs
+hash_tree.hash_function = default_config.hash_tree.hash_function
+processor.registers.htif = {
+    iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
+    iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
+}
 
 -- Process command line options
 for _, a in ipairs(arg) do
@@ -2153,9 +2221,12 @@ local function dump_value_proofs(machine, desired_proofs, config)
     for _, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
         local out = desired.filename and assert(io.open(desired.filename, "wb")) or io.stdout
-        out:write("{\n")
-        util.dump_json_proof(proof, out, 1)
-        out:write("}\n")
+        if desired.format == "lua" then
+            out:write("return ")
+            util.dump_table(proof, out)
+        end
+        if desired.format == "json" then out:write(cartesi.tojson(proof, 2, "Proof"), "\n") end
+        if desired.filename then out:close() end
     end
 end
 
@@ -2366,7 +2437,7 @@ local function serialize_config(out, config, format)
         out:write(cartesi.tojson(config, 2), "\n")
     elseif format == "lua" then
         out:write("return ")
-        util.dump_config(config, out, default_config)
+        util.dump_table(config, out, default_config)
         out:write("\n")
     end
 end
@@ -2508,7 +2579,7 @@ end
 
 local function dump_address_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
-    if prefix ~= "" then assert(os.execute("mkdir " .. dir), "could not create directory " .. dir) end
+    if prefix ~= "" then assertf(os.execute("mkdir " .. dir), "could not create directory %s", dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
         local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
@@ -2776,11 +2847,11 @@ if gdb_stub then gdb_stub:close() end
 if log_step_uarch then
     assert(config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
     stderr("Gathering uarch step log: please wait\n")
-    util.dump_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+    util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
-    util.dump_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
+    util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if dump_address_ranges_dir then dump_address_ranges(machine, dump_address_ranges_dir) end
 if final_hash then

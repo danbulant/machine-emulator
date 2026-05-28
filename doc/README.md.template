@@ -2763,7 +2763,7 @@ This log proves to the blockchain that the execution of the step transitions the
 
 To obtain the access log for the next uarch step in the execution of a Cartesi Machine instance, use the `machine:log_step_uarch(<log_type>)` function.
 Note that the function indeed performs the step, and therefore advances the microarchitecture state, in addition to collecting the access log.
-The `<log_type>` argument is an integer bitfield formed by OR-ing `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets metadata consumed by the pretty-printer `util.dump_log`) and `cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of large accesses, not just their hashes).
+The `<log_type>` argument is an integer bitfield formed by OR-ing `cartesi.ACCESS_LOG_TYPE_ANNOTATIONS` (to include the notes and brackets metadata consumed by the pretty-printer `util.print_log`) and `cartesi.ACCESS_LOG_TYPE_LARGE_DATA` (to include the full raw payload of large accesses, not just their hashes).
 Merkle-tree proofs are always included in the log.
 
 The format of the access log returned is as follows:
@@ -2842,7 +2842,7 @@ The `brackets` contain information that groups ranges of word accesses into *sco
 Each bracket entry `type` field tells if the entry marks the `"begin"` or `"end"` of a scope.
 The `where` field gives the position in the `accesses` array where the bracket should be &ldquo;inserted&rdquo;.
 
-The `dump_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into Lua file object `<out>` (E.g., `io.stdout` or the return of `io.open()`).
+The `print_log(<log>, <out>)` function in the `cartesi.util` module uses these annotations to dump a detailed description of the access `<log>` into Lua file object `<out>` (E.g., `io.stdout` or the return of `io.open()`).
 It indents each access according to the number of enclosing scopes and uses the notes to identify what each address refers to (a register, a CSR, memory).
 Addresses and values are printed in hexadecimal and decimal.
 

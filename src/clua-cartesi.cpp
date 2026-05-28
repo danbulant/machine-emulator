@@ -136,9 +136,15 @@ static int cartesi_mod_frombase64(lua_State *L) try {
 }
 
 static int cartesi_mod_tojson(lua_State *L) try {
+    lua_settop(L, 3);
     const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
-    lua_settop(L, 1);
-    clua_check_json_string(L, 1, indent);
+    const char *schema = luaL_optstring(L, 3, nullptr);
+    if (schema != nullptr) {
+        clua_check_schemed_json_string(L, 1, schema, indent);
+    } else {
+        clua_check_json_string(L, 1, indent);
+    }
+    lua_pop(L, 2);
     return 1;
 } catch (const std::exception &e) {
     luaL_error(L, "%s", e.what());

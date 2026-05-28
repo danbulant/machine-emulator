@@ -7,4 +7,4 @@ local default_config = cartesi.machine:get_default_config()
 
 -- Pretty-print it
 io.write("return ")
-util.dump_config(default_config, io.stdout)
+util.dump_table(default_config, io.stdout)

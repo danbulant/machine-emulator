@@ -30,7 +30,7 @@ local hexhash = hexstring
 _M.hexstring = hexstring
 _M.hexhash = hexstring
 
-local function dump_config(what, out, whatdef, indent)
+local function dump_table(what, out, whatdef, indent)
     whatdef = whatdef or {}
     indent = indent or ""
     if type(what) == "table" then
@@ -46,7 +46,7 @@ local function dump_config(what, out, whatdef, indent)
                 local v, vdef = what[k], whatdef and whatdef[k]
                 out:write(next_indent)
                 if type(k) == "string" then out:write(k, " = ") end
-                dump_config(v, out, vdef, next_indent)
+                dump_table(v, out, vdef, next_indent)
                 out:write(",")
                 if v == vdef then out:write(" -- default") end
                 out:write("\n")
@@ -62,115 +62,7 @@ local function dump_config(what, out, whatdef, indent)
     end
 end
 
-_M.dump_config = dump_config
-
-local function dump_json_sibling_hashes(sibling_hashes, out, indent)
-    for i, h in ipairs(sibling_hashes) do
-        indentout(out, indent, '"%s"', hexhash(h))
-        if sibling_hashes[i + 1] then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-end
-
-local function dump_json_proof(proof, out, indent)
-    indentout(out, indent, '"target_address": %u,\n', proof.target_address)
-    indentout(out, indent, '"log2_target_size": %u,\n', proof.log2_target_size)
-    indentout(out, indent, '"log2_root_size": %u,\n', proof.log2_root_size)
-    indentout(out, indent, '"target_hash": "%s",\n', hexhash(proof.target_hash))
-    indentout(out, indent, '"sibling_hashes": [\n')
-    dump_json_sibling_hashes(proof.sibling_hashes, out, indent + 1)
-    indentout(out, indent, "],\n")
-    indentout(out, indent, '"root_hash": "%s"\n', hexhash(proof.root_hash))
-end
-
-_M.dump_json_proof = dump_json_proof
-
-local function dump_json_log_notes(notes, out, indent)
-    local n = #notes
-    for i, note in ipairs(notes) do
-        indentout(out, indent, '"%s"', note)
-        if i < n then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-end
-
-local function dump_json_log_brackets(brackets, out, indent)
-    local n = #brackets
-    for i, bracket in ipairs(brackets) do
-        indentout(out, indent, "{\n")
-        indentout(out, indent + 1, '"type": "%s",\n', bracket.type)
-        indentout(out, indent + 1, '"where": %u,\n', bracket.where)
-        indentout(out, indent + 1, '"text": "%s"\n', bracket.text)
-        indentout(out, indent, "}")
-        if i < n then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-end
-
-local function dump_json_log_access(access, out, indent)
-    indentout(out, indent, "{\n")
-    indentout(out, indent + 1, '"type": "%s",\n', access.type)
-    indentout(out, indent + 1, '"address": %u,\n', access.address)
-    indentout(out, indent + 1, '"read": "%s"', hexstring(access.read))
-    if access.type == "write" then
-        out:write(",\n")
-        indentout(out, indent + 1, '"written": "%s"', hexstring(access.written))
-    end
-    if access.proof then
-        out:write(",\n")
-        indentout(out, indent + 1, '"proof": {\n')
-        dump_json_proof(access.proof, out, indent + 2)
-        indentout(out, indent + 1, "}\n")
-    else
-        out:write("\n")
-    end
-    indentout(out, indent, "}")
-end
-
-local function dump_json_log_accesses(accesses, out, indent)
-    local n = #accesses
-    for i, access in ipairs(accesses) do
-        dump_json_log_access(access, out, indent)
-        if i < n then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-end
-
-function _M.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, indent)
-    indent = indent or 0
-    indentout(out, indent, "{\n")
-    indentout(out, indent + 1, '"init_mcycle": %u,\n', init_mcycle)
-    indentout(out, indent + 1, '"init_uarch_cycle": %u,\n', init_uarch_cycle)
-    indentout(out, indent + 1, '"final_mcycle": %u,\n', final_mcycle)
-    indentout(out, indent + 1, '"final_uarch_cycle": %u,\n', final_uarch_cycle)
-    indentout(out, indent + 1, '"accesses": [\n')
-    dump_json_log_accesses(log.accesses, out, indent + 2)
-    indentout(out, indent + 1, "]")
-    if log.log_type.annotations then
-        out:write(",\n")
-        indentout(out, indent + 1, '"notes": [\n')
-        dump_json_log_notes(log.notes, out, indent + 2)
-        indentout(out, indent + 1, "],\n")
-        indentout(out, indent + 1, '"brackets": [\n')
-        dump_json_log_brackets(log.brackets, out, indent + 2)
-        indentout(out, indent + 1, "]\n")
-    else
-        out:write("\n")
-    end
-    indentout(out, indent, "}")
-end
+_M.dump_table = dump_table
 
 function _M.parse_number(n)
     if not n then return nil end
@@ -269,202 +161,6 @@ function _M.parse_options(keys, all, opts)
     return options
 end
 
--- Recover the human-readable flag name from a Lua pattern. Strips ^/$, the
--- %- escape, the value tail starting at %= (or raw =), and capture parens.
-local function flag_from_pattern(pattern)
-    return (
-        pattern
-            :gsub("^%^", "")
-            :gsub("%$$", "")
-            :gsub("%%%-", "-")
-            :gsub("%%=.*$", "")
-            :gsub("=.*$", "")
-            :gsub("[%(%)%?]", "")
-    )
-end
-
-local function pattern_takes_value(pattern) return pattern:find("%%=") ~= nil or pattern:find("=") ~= nil end
-
-local function pattern_value_optional(pattern) return pattern:find("%%=%?") ~= nil or pattern:find("=%?") ~= nil end
-
--- Sentinels for subkey value kinds that bash completes specially.
-local SUBKEY_KIND_SENTINEL = {
-    file = "__file__",
-    dir = "__dir__",
-    number = "__number__",
-    string = "__string__",
-    hostport = "__string__",
-    netif = "__string__",
-}
-
--- Reduce one options-table entry to a completion descriptor.
-local function describe_option(entry)
-    local pattern, hint = entry[1], entry[3]
-    local flag = flag_from_pattern(pattern)
-    if flag == "" or not flag:match("^%-") then return nil end
-    local has_value = pattern_takes_value(pattern)
-    local desc = {
-        flag = flag,
-        kind = has_value and "string" or "bare",
-        optional = pattern_value_optional(pattern),
-    }
-    if type(hint) == "string" then
-        if hint:sub(-1) == "?" then
-            desc.kind = hint:sub(1, -2)
-            desc.optional = true
-        else
-            desc.kind = hint
-        end
-    elseif type(hint) == "table" then
-        desc.kind = "compound"
-        desc.subkeys = {}
-        desc.subkey_values = {}
-        for k, v in pairs(hint) do
-            desc.subkeys[#desc.subkeys + 1] = k
-            if type(v) == "table" then
-                local vals = {}
-                for ek in pairs(v) do
-                    vals[#vals + 1] = ek
-                end
-                table.sort(vals)
-                desc.subkey_values[k] = vals
-            elseif v == "boolean" then
-                desc.subkey_values[k] = { "true", "false" }
-            else
-                desc.subkey_values[k] = SUBKEY_KIND_SENTINEL[v] or "__string__"
-            end
-        end
-        table.sort(desc.subkeys)
-    end
-    return desc
-end
-
-local function bash_quote(s) return "'" .. (s:gsub("'", "'\\''")) .. "'" end
-
-local bash_completion_function = [==[
-_cartesi_complete() {
-    local cur="${COMP_WORDS[$COMP_CWORD]}"
-    local line="${COMP_LINE:0:$COMP_POINT}"
-    local logical="${line##*[[:space:]]}"
-    COMPREPLY=()
-
-    if [[ "$logical" != -* ]]; then
-        COMPREPLY=( $(compgen -f -- "$cur") )
-        return
-    fi
-
-    if [[ "$logical" != *=* ]]; then
-        local f k
-        for f in "${!_cm_flag_kind[@]}"; do
-            if [[ "$f" == "$logical"* ]]; then
-                k="${_cm_flag_kind[$f]}"
-                if [[ "$k" == "bare" ]]; then
-                    # Trailing space so cursor moves on. compopt -o nospace
-                    # below suppresses bash's auto-space, so we add it ourselves.
-                    COMPREPLY+=("$f ")
-                else
-                    COMPREPLY+=("$f=")
-                    [[ -n "${_cm_flag_optional[$f]:-}" ]] && COMPREPLY+=("$f ")
-                fi
-            fi
-        done
-        compopt -o nospace 2>/dev/null
-        return
-    fi
-
-    local flag="${logical%%=*}"
-    local rest="${logical#*=}"
-    local kind="${_cm_flag_kind[$flag]:-}"
-
-    local cur_partial="$cur"
-    while [[ "$cur_partial" == [=:]* ]]; do
-        cur_partial="${cur_partial:1}"
-    done
-
-    case "$kind" in
-        file) COMPREPLY=( $(compgen -f -- "$cur_partial") ); compopt -o nospace 2>/dev/null ;;
-        dir)  COMPREPLY=( $(compgen -d -- "$cur_partial") ); compopt -o nospace 2>/dev/null ;;
-        number|hostport|netif|string) ;;
-        compound)
-            local last_segment="${rest##*,}"
-            if [[ "$last_segment" == *:* ]]; then
-                local subkey="${last_segment%%:*}"
-                local val_prefix="${last_segment#*:}"
-                local values="${_cm_subkey_values[${flag},${subkey}]:-}"
-                case "$values" in
-                    __file__) COMPREPLY=( $(compgen -f -- "$val_prefix") ); compopt -o nospace 2>/dev/null ;;
-                    __dir__)  COMPREPLY=( $(compgen -d -- "$val_prefix") ); compopt -o nospace 2>/dev/null ;;
-                    __number__|__string__|"") ;;
-                    *)        COMPREPLY=( $(compgen -W "$values" -- "$val_prefix") ) ;;
-                esac
-            else
-                local subkeys="${_cm_compound_keys[$flag]:-}"
-                local partial="$last_segment"
-                local prefix="${cur_partial%$partial}"
-                local matched=( $(compgen -W "$subkeys" -- "$partial") )
-                local i
-                for i in "${!matched[@]}"; do
-                    matched[$i]="${prefix}${matched[$i]}:"
-                done
-                COMPREPLY=("${matched[@]}")
-                compopt -o nospace 2>/dev/null
-            fi
-            ;;
-    esac
-}
-]==]
-
--- Walk an options table and emit a self-contained bash completion script
--- registering the given program names. Writes to io.stdout.
-function _M.dump_bash_completion(options, program_names)
-    local flags = {}
-    local ordered = {}
-    for _, entry in ipairs(options) do
-        local d = describe_option(entry)
-        if d then
-            local prev = flags[d.flag]
-            if prev then
-                if prev.kind == "bare" and d.kind ~= "bare" then
-                    prev.kind, prev.subkeys, prev.subkey_values = d.kind, d.subkeys, d.subkey_values
-                    prev.optional = true
-                elseif d.kind == "bare" and prev.kind ~= "bare" then
-                    prev.optional = true
-                else
-                    prev.optional = prev.optional or d.optional
-                end
-            else
-                flags[d.flag] = d
-                ordered[#ordered + 1] = d.flag
-            end
-        end
-    end
-    table.sort(ordered)
-
-    local w = function(s) io.write(s, "\n") end
-
-    w("# bash completion for " .. table.concat(program_names, ", "))
-    w("# Generated by cartesi.util.dump_bash_completion. Do not edit by hand.")
-    w("declare -gA _cm_flag_kind=()")
-    w("declare -gA _cm_flag_optional=()")
-    w("declare -gA _cm_compound_keys=()")
-    w("declare -gA _cm_subkey_values=()")
-    for _, flag in ipairs(ordered) do
-        local d = flags[flag]
-        w(string.format("_cm_flag_kind[%s]=%s", bash_quote(flag), bash_quote(d.kind)))
-        if d.optional then w(string.format("_cm_flag_optional[%s]=1", bash_quote(flag))) end
-        if d.subkeys then
-            w(string.format("_cm_compound_keys[%s]=%s", bash_quote(flag), bash_quote(table.concat(d.subkeys, " "))))
-            for _, k in ipairs(d.subkeys) do
-                local v = d.subkey_values[k]
-                local val_str = type(v) == "table" and table.concat(v, " ") or v
-                w(string.format("_cm_subkey_values[%s,%s]=%s", bash_quote(flag), bash_quote(k), bash_quote(val_str)))
-            end
-        end
-    end
-    w(bash_completion_function)
-    w("complete -F _cartesi_complete " .. table.concat(program_names, " "))
-end
-
 local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
 
 local function accessdatastring(data, data_hash, data_log2_size, address)
@@ -493,7 +189,7 @@ local function accessdatastring(data, data_hash, data_log2_size, address)
     end
 end
 
-function _M.dump_log(log, out)
+function _M.print_log(log, out)
     local indent = 0
     local j = 1 -- Bracket index
     local i = 1 -- Access index
@@ -538,6 +234,39 @@ function _M.dump_log(log, out)
             i = i + 1
         end
     end
+end
+
+function _M.ilog2(n)
+    n = assert(math.tointeger(n), "expected integer")
+    assert(n ~= 0, "expected non-zero integer")
+    local v = n - 1
+    local r = 0
+    if v & 0xFFFFFFFF00000000 ~= 0 then
+        v = v >> 32
+        r = r + 32
+    end
+    if v & 0x00000000FFFF0000 ~= 0 then
+        v = v >> 16
+        r = r + 16
+    end
+    if v & 0x000000000000FF00 ~= 0 then
+        v = v >> 8
+        r = r + 8
+    end
+    if v & 0x00000000000000F0 ~= 0 then
+        v = v >> 4
+        r = r + 4
+    end
+    if v & 0x000000000000000C ~= 0 then
+        v = v >> 2
+        r = r + 2
+    end
+    if v & 0x0000000000000002 ~= 0 then
+        v = v >> 1
+        r = r + 1
+    end
+    if v ~= 0 then r = r + 1 end
+    return r
 end
 
 return _M
