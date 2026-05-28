@@ -1861,14 +1861,14 @@ yet-to-be-defined contents of these drives.
 
 As discussed in detail under [the blockchain
 perspective](#hash-view-of-state), starting from template hashes, the
-hashes of the drives, and a small amount of [additional
-information](#sibling-hashes), it is possible to obtain the state hash
-of the *instantiated template*—the state hash for a Cartesi Machine with
-drives replaced by their actual contents. This is how a smart contract
-can specify a computation to be performed off-chain over arbitrary
-input. Starting from the template hash, and in possession of the drive
-hashes, it instantiates the template, generating the initial state hash
-for the corresponding Cartesi Machine.
+hashes of the drives, and a small amount of additional information, it
+is possible to obtain the state hash of the *instantiated template*—the
+state hash for a Cartesi Machine with drives replaced by their actual
+contents. This is how a smart contract can specify a computation to be
+performed off-chain over arbitrary input. Starting from the template
+hash, and in possession of the drive hashes, it instantiates the
+template, generating the initial state hash for the corresponding
+Cartesi Machine.
 
 As an example, consider a Cartesi Machine that operates as an
 arbitrary-precision arithmetic expression evaluator. The machine will
@@ -2061,7 +2061,7 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof"
+    --initial-proof="address:0x90000000000000,log2_size:12,filename:pristine-input-proof.lua"
 ```
 
 Recall the first flash drive, the one with the `rootfs.ext2` image file,
@@ -2077,79 +2077,13 @@ Loading machine: please wait
 0: ed2f375bc4c4f6543d91edba0d2647b5b7e18b264d2362a8c770832e3c15d75e
 ```
 
-In addition, the `pristine-input-proof` file now contains a JSON
-structure with the requested proof
-
-``` js
-{
-  "target_address": 40532396646334464,
-  "log2_target_size": 12,
-  "log2_root_size": 64,
-  "target_hash": "292c23a9aa1d8bea7e2435e555a4a60e379a5a35f3f452bae60121073fb6eead",
-  "sibling_hashes": [
-    "292c23a9aa1d8bea7e2435e555a4a60e379a5a35f3f452bae60121073fb6eead",
-    "e1cea92ed99acdcb045a6726b2f87107e8a61620a232cf4d7d5b5766b3952e10",
-    "7ad66c0a68c72cb89e4fb4303841966e4062a76ab97451e3b9fb526a5ceb7f82",
-    "e026cc5a4aed3c22a58cbd3d2ac754c9352c5436f638042dca99034e83636516",
-    "3d04cffd8b46a874edf5cfae63077de85f849a660426697b06a829c70dd1409c",
-    "ad676aa337a485e4728a0b240d92b3ef7b3c372d06d189322bfd5f61f1e7203e",
-    "a2fca4a49658f9fab7aa63289c91b7c7b6c832a6d0e69334ff5b0a3483d09dab",
-    "4ebfd9cd7bca2505f7bef59cc1c12ecc708fff26ae4af19abe852afe9e20c862",
-    "2def10d13dd169f550f578bda343d9717a138562e0093b380a1120789d53cf10",
-    "776a31db34a1a0a7caaf862cffdfff1789297ffadc380bd3d39281d340abd3ad",
-    "e2e7610b87a5fdf3a72ebe271287d923ab990eefac64b6e59d79f8b7e08c46e3",
-    "504364a5c6858bf98fff714ab5be9de19ed31a976860efbd0e772a2efe23e2e0",
-    "4f05f4acb83f5b65168d9fef89d56d4d77b8944015e6b1eed81b0238e2d0dba3",
-    "44a6d974c75b07423e1d6d33f481916fdd45830aea11b6347e700cd8b9f0767c",
-    "edf260291f734ddac396a956127dde4c34c0cfb8d8052f88ac139658ccf2d507",
-    "6075c657a105351e7f0fce53bc320113324a522e8fd52dc878c762551e01a46e",
-    "6ca6a3f763a9395f7da16014725ca7ee17e4815c0ff8119bf33f273dee11833b",
-    "1c25ef10ffeb3c7d08aa707d17286e0b0d3cbcb50f1bd3b6523b63ba3b52dd0f",
-    "fffc43bd08273ccf135fd3cacbeef055418e09eb728d727c4d5d5c556cdea7e3",
-    "c5ab8111456b1f28f3c7a0a604b4553ce905cb019c463ee159137af83c350b22",
-    "0ff273fcbf4ae0f2bd88d6cf319ff4004f8d7dca70d4ced4e74d2c74139739e6",
-    "7fa06ba11241ddd5efdc65d4e39c9f6991b74fd4b81b62230808216c876f827c",
-    "7e275adf313a996c7e2950cac67caba02a5ff925ebf9906b58949f3e77aec5b9",
-    "8f6162fa308d2b3a15dc33cffac85f13ab349173121645aedf00f471663108be",
-    "78ccaaab73373552f207a63599de54d7d8d0c1805f86ce7da15818d09f4cff62",
-    "cf277fb80a82478460e8988570b718f1e083ceb76f7e271a1a1497e5975f53ae",
-    "4bf6ffa2bc131204513289738567a68fa9f4827dac7fd3b3d1f2e94777d57f36",
-    "b49d61e8c2c894e12486176ab8f4d7069d6692fa6495541567872e7ecbddb726",
-    "202b1014739f29b1d905d630ddeb8560a32bf23e666c8a1523a4a600227fef7c",
-    "9e1d1ce5cdca9cdf40fa5786548b58eb19ddfd32395b4582983919099dbd1531",
-    "13784d01e2fae904de62c6fbf9776979ca7a2777ae2632ee278d19aca30f890e",
-    "68c477f83a13a000ad2b5b3e50375b7c3ae782d987ba4b5a65376bbb97469fb3",
-    "71e37864edf08740d592362cd24d0db067bf14cd3b97bd2a68e782adffb43655",
-    "88d0cc35e8abe7d6524569be8aa1a48bb23362326fdfefe961348bc96091c94c",
-    "8545f2c1afdace5d87f06ce1d44bc0a2691aea4414d0ad640be0d9879c8374d9",
-    "2360c4480d69879eadd7ae508409f2f0ba83a2b0fe0da57b40008c064d2c397d",
-    "31763a8e1dedb15ad0c8b88d437fef835aeb958292644810663dc1756550f22b",
-    "fa4c9b1172ab5afebd159573e19e25169975242e10a2ed38dfc805232fb50a64",
-    "3528594d65e9525233b39587174bcf0bba562d95b50b429914c7e0e8a9ae58f9",
-    "1765922797ba721e8937c7470a26d5c2f141f3d4106447dab171fced7d652a69",
-    "0967a645eff3b85652f374ef79c2071c802d8f64a8c810638291352ac9eea358",
-    "31682c19f715cd317da1a553ce384de6902fe26032fecc7de03e40502af05dce",
-    "d50c6062bfcd7bbd0dbd68d1ddeeae095485720a1ce334e9e5e5153066f42260",
-    "9eecfd5ee572b13c1399c9635182421a9435af9e0952042321d9deac95e212d1",
-    "acb98b6fb1a5fdae0a5718d0b812e1de1412e44d875146acc1a7f7c3916c003a",
-    "bb1ff291eb2e614a661d6730b502bae2bde112958cee698478845a1bb3788a6b",
-    "9a91f4c19545d6cd9720d4736591fe70edcf3e33cb2e56f21fdc1244f3d2ef6d",
-    "bdf82c7d252d69c64bd6fa8ee66ad9d30241016981e4580e3c2edc4804b75236",
-    "63bc3b9e8340ab48a66828d7d9d7d5be2f5f280665196d25a39c4d01345cb95e",
-    "a962e4bd7d1f316f845784e115ff103530d85f9dfacd638ad45fbe938ba85c40",
-    "b3f100a0f506f6a6c86c10f107ab4811ddc76f72516fcdfa8a0c9bd71ff912ab",
-    "e7e8dbc3898515970ca6fce19039ca22ae2638e44b24641fd61048b94dc2be25"
-  ],
-  "root_hash": "ed2f375bc4c4f6543d91edba0d2647b5b7e18b264d2362a8c770832e3c15d75e"
-}
-```
-
-The `root_hash` value `ed2f375b…` is the expected initial state hash
-seen in the output of the `cartesi-machine` command. The
-`target_address` value `40532396646334464` is the same as
-`0x90000000000000` in hexadecimal. The `log2_target_size` value `12`
+In addition, the `pristine-input-proof.lua` file now contains a Lua
+table with the requested proof. The value of field `root_hash` is the
+expected initial state hash `0xed2f37…` seen in the output of the
+`cartesi-machine` command. The `target_address` value `0x90000000000000`
+is the start of the input NVRAM. The `log2_target_size` value `12`
 refers to the size of the 4KiB input NVRAM. The `target_hash` value
-`292c23a9…` in the proof gives the hash of the input NVRAM.
+`0x292c23…` in the proof gives the hash of the input NVRAM.
 
 The hash of the input NVRAM can be also computed externally with the
 `cartesi-hash-tree-hash` command-line utility. The utility can produce
@@ -2173,18 +2107,15 @@ to obtain
 
 As expected, the hash values match.
 
-The <a name="sibling-hashes"> `sibling_hashes` </a> array contains the
-hashes of the siblings to all nodes in the path from the root all the
-way down to the target node (excluding the root, which has no sibling).
-In a process explained in the [blockchain
-perspective](#hash-view-of-state), using the `address` field, the
-`target_hash` hash, and the `sibling_hashes` array, it is possible to go
-up the tree computing the hashes along the path, until the root hash is
-produced. If the root hash obtained by this process matches the expected
-root hash, the proof is valid. Otherwise, something is amiss.
-(Incidentally, from the hash of its sibling, the last entry in
-`sibling_hashes`, it is possible to ascertain that the neighboring range
-to the input drive also contains 4KiB of bytes 0.)
+The `sibling_hashes` array contains the hashes of the siblings to all
+nodes in the path from the root all the way down to the target node
+(excluding the root, which has no sibling). In a process explained in
+the [blockchain perspective](#hash-view-of-state), using the `address`
+field, the `target_hash` hash, and the `sibling_hashes` array, it is
+possible to go up the tree computing the hashes along the path, until
+the root hash is produced. If the root hash obtained by this process
+matches the expected root hash, the proof is valid. Otherwise, something
+is amiss.
 
 To compute the hash for the desired `input.raw` file with contents
 `6*2^1024 + 3*2^512\n`, padded with zeros, run
@@ -2199,13 +2130,8 @@ to obtain
 d5ea32c164644e70ea918e4d868458bcbf038c764f551c5b0baa2dd8ac26fbea
 ```
 
-Using a process similar to the proof verification described above, it is
-possible to go up the Merkle tree for the template using the
-`sibling_hashes` array in the proof, but starting from the hash
-`d5ea32c1…` of the desired `input.raw` image rather than hash
-`292c23a9…` of the template’s pristine NVRAM. The result is the initial
-state hash for the instantiated template: the same that can be seen in
-the initial state hash produced by the `cartesi-machine` command-line
+The initial state hash for the instantiated template can be seen with
+the `cartesi-machine` command-line
 
 ``` bash
 echo "6*2^1024 + 3*2^512" > input.raw
@@ -2215,82 +2141,33 @@ cartesi-machine \
     --load="calculator-template" \
     --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --initial-hash \
-    --initial-proof="address:0x90000000000000,log2_size:12,filename:input-proof" \
+    --initial-proof="address:0x90000000000000,log2_size:12,filename:input-proof.lua" \
     --max-mcycle=0
 ```
 
-The contents of the `input-proof` are
+This produces the output
 
-``` js
-{
-  "target_address": 40532396646334464,
-  "log2_target_size": 12,
-  "log2_root_size": 64,
-  "target_hash": "d5ea32c164644e70ea918e4d868458bcbf038c764f551c5b0baa2dd8ac26fbea",
-  "sibling_hashes": [
-    "292c23a9aa1d8bea7e2435e555a4a60e379a5a35f3f452bae60121073fb6eead",
-    "e1cea92ed99acdcb045a6726b2f87107e8a61620a232cf4d7d5b5766b3952e10",
-    "7ad66c0a68c72cb89e4fb4303841966e4062a76ab97451e3b9fb526a5ceb7f82",
-    "e026cc5a4aed3c22a58cbd3d2ac754c9352c5436f638042dca99034e83636516",
-    "3d04cffd8b46a874edf5cfae63077de85f849a660426697b06a829c70dd1409c",
-    "ad676aa337a485e4728a0b240d92b3ef7b3c372d06d189322bfd5f61f1e7203e",
-    "a2fca4a49658f9fab7aa63289c91b7c7b6c832a6d0e69334ff5b0a3483d09dab",
-    "4ebfd9cd7bca2505f7bef59cc1c12ecc708fff26ae4af19abe852afe9e20c862",
-    "2def10d13dd169f550f578bda343d9717a138562e0093b380a1120789d53cf10",
-    "776a31db34a1a0a7caaf862cffdfff1789297ffadc380bd3d39281d340abd3ad",
-    "e2e7610b87a5fdf3a72ebe271287d923ab990eefac64b6e59d79f8b7e08c46e3",
-    "504364a5c6858bf98fff714ab5be9de19ed31a976860efbd0e772a2efe23e2e0",
-    "4f05f4acb83f5b65168d9fef89d56d4d77b8944015e6b1eed81b0238e2d0dba3",
-    "44a6d974c75b07423e1d6d33f481916fdd45830aea11b6347e700cd8b9f0767c",
-    "edf260291f734ddac396a956127dde4c34c0cfb8d8052f88ac139658ccf2d507",
-    "6075c657a105351e7f0fce53bc320113324a522e8fd52dc878c762551e01a46e",
-    "6ca6a3f763a9395f7da16014725ca7ee17e4815c0ff8119bf33f273dee11833b",
-    "1c25ef10ffeb3c7d08aa707d17286e0b0d3cbcb50f1bd3b6523b63ba3b52dd0f",
-    "fffc43bd08273ccf135fd3cacbeef055418e09eb728d727c4d5d5c556cdea7e3",
-    "c5ab8111456b1f28f3c7a0a604b4553ce905cb019c463ee159137af83c350b22",
-    "0ff273fcbf4ae0f2bd88d6cf319ff4004f8d7dca70d4ced4e74d2c74139739e6",
-    "7fa06ba11241ddd5efdc65d4e39c9f6991b74fd4b81b62230808216c876f827c",
-    "7e275adf313a996c7e2950cac67caba02a5ff925ebf9906b58949f3e77aec5b9",
-    "8f6162fa308d2b3a15dc33cffac85f13ab349173121645aedf00f471663108be",
-    "78ccaaab73373552f207a63599de54d7d8d0c1805f86ce7da15818d09f4cff62",
-    "cf277fb80a82478460e8988570b718f1e083ceb76f7e271a1a1497e5975f53ae",
-    "4bf6ffa2bc131204513289738567a68fa9f4827dac7fd3b3d1f2e94777d57f36",
-    "b49d61e8c2c894e12486176ab8f4d7069d6692fa6495541567872e7ecbddb726",
-    "202b1014739f29b1d905d630ddeb8560a32bf23e666c8a1523a4a600227fef7c",
-    "9e1d1ce5cdca9cdf40fa5786548b58eb19ddfd32395b4582983919099dbd1531",
-    "13784d01e2fae904de62c6fbf9776979ca7a2777ae2632ee278d19aca30f890e",
-    "68c477f83a13a000ad2b5b3e50375b7c3ae782d987ba4b5a65376bbb97469fb3",
-    "71e37864edf08740d592362cd24d0db067bf14cd3b97bd2a68e782adffb43655",
-    "88d0cc35e8abe7d6524569be8aa1a48bb23362326fdfefe961348bc96091c94c",
-    "8545f2c1afdace5d87f06ce1d44bc0a2691aea4414d0ad640be0d9879c8374d9",
-    "2360c4480d69879eadd7ae508409f2f0ba83a2b0fe0da57b40008c064d2c397d",
-    "31763a8e1dedb15ad0c8b88d437fef835aeb958292644810663dc1756550f22b",
-    "fa4c9b1172ab5afebd159573e19e25169975242e10a2ed38dfc805232fb50a64",
-    "3528594d65e9525233b39587174bcf0bba562d95b50b429914c7e0e8a9ae58f9",
-    "1765922797ba721e8937c7470a26d5c2f141f3d4106447dab171fced7d652a69",
-    "0967a645eff3b85652f374ef79c2071c802d8f64a8c810638291352ac9eea358",
-    "31682c19f715cd317da1a553ce384de6902fe26032fecc7de03e40502af05dce",
-    "d50c6062bfcd7bbd0dbd68d1ddeeae095485720a1ce334e9e5e5153066f42260",
-    "9eecfd5ee572b13c1399c9635182421a9435af9e0952042321d9deac95e212d1",
-    "acb98b6fb1a5fdae0a5718d0b812e1de1412e44d875146acc1a7f7c3916c003a",
-    "bb1ff291eb2e614a661d6730b502bae2bde112958cee698478845a1bb3788a6b",
-    "9a91f4c19545d6cd9720d4736591fe70edcf3e33cb2e56f21fdc1244f3d2ef6d",
-    "bdf82c7d252d69c64bd6fa8ee66ad9d30241016981e4580e3c2edc4804b75236",
-    "63bc3b9e8340ab48a66828d7d9d7d5be2f5f280665196d25a39c4d01345cb95e",
-    "a962e4bd7d1f316f845784e115ff103530d85f9dfacd638ad45fbe938ba85c40",
-    "b3f100a0f506f6a6c86c10f107ab4811ddc76f72516fcdfa8a0c9bd71ff912ab",
-    "e7e8dbc3898515970ca6fce19039ca22ae2638e44b24641fd61048b94dc2be25"
-  ],
-  "root_hash": "240685d87f6823d4dc1b80a4cc753edd87ddd0f1b0a3641db8dc8674e7806901"
-}
+``` text
+Loading machine: please wait
+0: 240685d87f6823d4dc1b80a4cc753edd87ddd0f1b0a3641db8dc8674e7806901
 ```
 
-The `target_hash` value `d5ea32c1…` reflects the hash computed for the
-input, whereas `root_hash` value `240685d8…` differs from `ed2f375b…`
-obtained for the template, as expected. Moreover, the `sibling_hashes`
+In addition, the `input-proof.lua` file now contains a Lua table with
+the requested proof, which is produced after the input NVRAM has been
+replaced. The `target_hash` value `0xd5ea32…` reflects the hash computed
+for the input. The `root_hash` value `0x240685…` differs from
+`ed2f375b…` obtained for the template, as expected, and matches the
+final hash printed by the utility. Moreover, the `sibling_hashes`
 entries in the template Cartesi Machine and in the instantiated Cartesi
 Machine remain the same, reflecting the fact that there were no other
 changes in the machine’s initial state.
+
+Using a process similar to the proof verification described above, it is
+possible to go up the Merkle tree for the template using the
+`sibling_hashes` array in the proof, but starting from the hash
+`d5ea32c1…` of the desired `input.raw` image rather than hash
+`292c23a9…` of the template’s pristine NVRAM. The result would be the
+same root hash as that of the instantiated template.
 
 Another useful proof is the one for the *output* drive, once the machine
 is halted. To obtain this proof, run
@@ -2305,7 +2182,7 @@ cartesi-machine \
     --replace-memory-range="start:0x90000000000000,length:1<<12,data_filename:input.raw" \
     --replace-memory-range="start:0xa0000000000000,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof"
+    --final-proof="address:0xa0000000000000,log2_size:12,filename:output-proof.lua"
 ```
 
 This produces the output
@@ -2318,83 +2195,14 @@ Cycles: 63877391
 63877391: 14e5dbafe4a9c399033b24e2e20e7f91d0f8f59ba97894cb5cad2dde76b79785
 ```
 
-The contents of the `output-proof` are
-
-``` js
-{
-  "target_address": 45035996273704960,
-  "log2_target_size": 12,
-  "log2_root_size": 64,
-  "target_hash": "1beb375bfd349ab9612a7a969f05c4f104d85471e5ec5754d96ceb5b9083ce1e",
-  "sibling_hashes": [
-    "292c23a9aa1d8bea7e2435e555a4a60e379a5a35f3f452bae60121073fb6eead",
-    "e1cea92ed99acdcb045a6726b2f87107e8a61620a232cf4d7d5b5766b3952e10",
-    "7ad66c0a68c72cb89e4fb4303841966e4062a76ab97451e3b9fb526a5ceb7f82",
-    "e026cc5a4aed3c22a58cbd3d2ac754c9352c5436f638042dca99034e83636516",
-    "3d04cffd8b46a874edf5cfae63077de85f849a660426697b06a829c70dd1409c",
-    "ad676aa337a485e4728a0b240d92b3ef7b3c372d06d189322bfd5f61f1e7203e",
-    "a2fca4a49658f9fab7aa63289c91b7c7b6c832a6d0e69334ff5b0a3483d09dab",
-    "4ebfd9cd7bca2505f7bef59cc1c12ecc708fff26ae4af19abe852afe9e20c862",
-    "2def10d13dd169f550f578bda343d9717a138562e0093b380a1120789d53cf10",
-    "776a31db34a1a0a7caaf862cffdfff1789297ffadc380bd3d39281d340abd3ad",
-    "e2e7610b87a5fdf3a72ebe271287d923ab990eefac64b6e59d79f8b7e08c46e3",
-    "504364a5c6858bf98fff714ab5be9de19ed31a976860efbd0e772a2efe23e2e0",
-    "4f05f4acb83f5b65168d9fef89d56d4d77b8944015e6b1eed81b0238e2d0dba3",
-    "44a6d974c75b07423e1d6d33f481916fdd45830aea11b6347e700cd8b9f0767c",
-    "edf260291f734ddac396a956127dde4c34c0cfb8d8052f88ac139658ccf2d507",
-    "6075c657a105351e7f0fce53bc320113324a522e8fd52dc878c762551e01a46e",
-    "6ca6a3f763a9395f7da16014725ca7ee17e4815c0ff8119bf33f273dee11833b",
-    "1c25ef10ffeb3c7d08aa707d17286e0b0d3cbcb50f1bd3b6523b63ba3b52dd0f",
-    "fffc43bd08273ccf135fd3cacbeef055418e09eb728d727c4d5d5c556cdea7e3",
-    "c5ab8111456b1f28f3c7a0a604b4553ce905cb019c463ee159137af83c350b22",
-    "0ff273fcbf4ae0f2bd88d6cf319ff4004f8d7dca70d4ced4e74d2c74139739e6",
-    "7fa06ba11241ddd5efdc65d4e39c9f6991b74fd4b81b62230808216c876f827c",
-    "7e275adf313a996c7e2950cac67caba02a5ff925ebf9906b58949f3e77aec5b9",
-    "8f6162fa308d2b3a15dc33cffac85f13ab349173121645aedf00f471663108be",
-    "78ccaaab73373552f207a63599de54d7d8d0c1805f86ce7da15818d09f4cff62",
-    "cf277fb80a82478460e8988570b718f1e083ceb76f7e271a1a1497e5975f53ae",
-    "4bf6ffa2bc131204513289738567a68fa9f4827dac7fd3b3d1f2e94777d57f36",
-    "b49d61e8c2c894e12486176ab8f4d7069d6692fa6495541567872e7ecbddb726",
-    "202b1014739f29b1d905d630ddeb8560a32bf23e666c8a1523a4a600227fef7c",
-    "9e1d1ce5cdca9cdf40fa5786548b58eb19ddfd32395b4582983919099dbd1531",
-    "13784d01e2fae904de62c6fbf9776979ca7a2777ae2632ee278d19aca30f890e",
-    "68c477f83a13a000ad2b5b3e50375b7c3ae782d987ba4b5a65376bbb97469fb3",
-    "71e37864edf08740d592362cd24d0db067bf14cd3b97bd2a68e782adffb43655",
-    "88d0cc35e8abe7d6524569be8aa1a48bb23362326fdfefe961348bc96091c94c",
-    "8545f2c1afdace5d87f06ce1d44bc0a2691aea4414d0ad640be0d9879c8374d9",
-    "2360c4480d69879eadd7ae508409f2f0ba83a2b0fe0da57b40008c064d2c397d",
-    "31763a8e1dedb15ad0c8b88d437fef835aeb958292644810663dc1756550f22b",
-    "fa4c9b1172ab5afebd159573e19e25169975242e10a2ed38dfc805232fb50a64",
-    "3528594d65e9525233b39587174bcf0bba562d95b50b429914c7e0e8a9ae58f9",
-    "1765922797ba721e8937c7470a26d5c2f141f3d4106447dab171fced7d652a69",
-    "f0573e660ba01cff272a1c6f7927d73c94c85d380a84399867626d6429d48bae",
-    "2c3c7cae080cd9542e964085cd9cb7d540286b84928e3424af19dafe0437121b",
-    "d50c6062bfcd7bbd0dbd68d1ddeeae095485720a1ce334e9e5e5153066f42260",
-    "6f1abc38bd9b100e115ea432ab790cd413144d811c78613aaea1448ed6398815",
-    "acb98b6fb1a5fdae0a5718d0b812e1de1412e44d875146acc1a7f7c3916c003a",
-    "bb1ff291eb2e614a661d6730b502bae2bde112958cee698478845a1bb3788a6b",
-    "9a91f4c19545d6cd9720d4736591fe70edcf3e33cb2e56f21fdc1244f3d2ef6d",
-    "bdf82c7d252d69c64bd6fa8ee66ad9d30241016981e4580e3c2edc4804b75236",
-    "63bc3b9e8340ab48a66828d7d9d7d5be2f5f280665196d25a39c4d01345cb95e",
-    "a962e4bd7d1f316f845784e115ff103530d85f9dfacd638ad45fbe938ba85c40",
-    "b3f100a0f506f6a6c86c10f107ab4811ddc76f72516fcdfa8a0c9bd71ff912ab",
-    "e7e8dbc3898515970ca6fce19039ca22ae2638e44b24641fd61048b94dc2be25"
-  ],
-  "root_hash": "14e5dbafe4a9c399033b24e2e20e7f91d0f8f59ba97894cb5cad2dde76b79785"
-}
-```
-
-Note how the `root_hash` field in the proof matches the final state hash
-`14e5dbaf…` output by the `cartesi-machine` command-line utility.
-
-To see that the `target_hash` field matches the `output.raw` NVRAM, use
-the `cartesi-hash-tree-hash` command-line utility
+The `root_hash` field in the proof `0x14e5db…` matches the final state
+hash output by the `cartesi-machine` command-line utility. The
+`target_hash` field `0x1beb37…` matches the `output.raw` NVRAM, use the
+`cartesi-hash-tree-hash` command-line utility
 
 ``` bash
 cartesi-hash-tree-hash --log2-root-size=12 < output.raw
 ```
-
-to obtain
 
 ``` text
 1beb375bfd349ab9612a7a969f05c4f104d85471e5ec5754d96ceb5b9083ce1e
@@ -2940,8 +2748,8 @@ notices, the result of computation it receives as inputs to
 advance-state requests. We will, once again, rely on the `bc`
 command-line utility to perform the computations. To interact with the
 `/dev/cmio` Linux device (i.e., to obtain the advance-state request
-inputs and to generate the notices), we will use the
-`/opt/cartesi/bin/rollup` command-line utility.
+inputs and to generate the notices), we will use the `/usr/bin/rollup`
+command-line utility.
 
 The `rollup` command-line utility supports the commands `accept`,
 `reject`, `voucher`, `notice`, `report`, and `exception`. It uses JSON
@@ -3935,7 +3743,7 @@ local default_config = cartesi.machine:get_default_config()
 
 -- Pretty-print it
 io.write("return ")
-util.dump_config(default_config, io.stdout)
+util.dump_table(default_config, io.stdout)
 ```
 
 This produces:
@@ -5825,7 +5633,7 @@ local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
 io.stderr:write(string.format(
     "\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n",
     mcycle, ucycle))
-util.dump_log(log, io.stderr)
+util.print_log(log, io.stderr)
 ```
 
 with command:
@@ -6117,6 +5925,13 @@ uses binfmt and QEMU to emulate riscv64 and emits the result as a flat
 tarball. The second converts the tarball into an ext2 image with
 [`xgenext2fs`](https://github.com/cartesi/genext2fs), which must be
 installed on the host (release `v1.5.6` or newer).
+
+> \[!NOTE\] The fourth stage of the multi-stage Dockerfile runs natively
+> on `riscv64` through `binfmt_misc` and QEMU emulation. Depending on
+> your host platform’s hardware (e.g., building on x86_64 vs. Apple
+> Silicon), emulating RISC-V instructions during package installation
+> and setup can introduce considerable execution overhead, leading to
+> noticeably slower build times.
 
 The Dockerfile below illustrates the approach with a four-stage build.
 The first stage cross-compiles a C17 and a C++23 “Hello world!” program
@@ -7856,44 +7671,14 @@ Register
 The format of CSRs `tohost` and `fromhost` are as follows:
 <p>
 </p>
-<center>
-<table>
-<tr>
-<th>
-Bits
-</th>
-<td>
-<tt>63–56</tt>
-</td>
-<td>
-<tt>55–48</tt>
-</td>
-<td>
-<tt>47–32</tt>
-</td>
-<td>
-<tt>31–0</tt>
-</td>
-</tr>
-<tr>
-<th>
-Field
-</th>
-<td>
-<tt>DEV</tt>
-</td>
-<td>
-<tt>CMD</tt>
-</td>
-<td>
-<tt>REASON</tt>
-</td>
-<td>
-<tt>DATA</tt>
-</td>
-</tr>
-</table>
-</center>
+
+``` text
+ 63          56 55          48 47              32 31                             0
+┌──────────────┬──────────────┬──────────────────┬───────────────────────────────┐
+│     DEV      │     CMD      │      REASON      │             DATA              │
+└──────────────┴──────────────┴──────────────────┴───────────────────────────────┘
+    8 bits         8 bits           16 bits                   32 bits
+```
 
 Interactions with Cartesi’s HTIF device follow the following protocol:
 
@@ -8958,25 +8743,29 @@ the computation, wherever it may reside within the address space.
 
 The state hash of a Cartesi Machine is the root hash of a Merkle tree.
 Merkle trees are binary trees where a leaf node is labeled with the hash
-of a data block (In the case of Cartesi Machines, a block is simply one
-of the 2<sup>59</sup> aligned `32`-byte blocks in the machine’s physical
-memory address space.) and an inner node is labeled with the hash of the
-concatenated labels of its two child nodes. The root hash can be
-obtained from the `machine:get_root_hash()` method. In the command-line,
-the options `--initial-hash` and `--final-hash` of the `cartesi-machine`
-utility cause it to output the root hash of the Merkle tree as it is
-before the emulator starts running and after it is done running,
-respectively.
+of a data block and an inner node is labeled with the hash of the
+concatenated labels of its two child nodes. In the case of Cartesi
+Machines, a block is simply one of the 2<sup>59</sup> aligned 32-byte
+blocks in the machine’s physical memory address space. The root hash can
+be obtained from the `machine:get_root_hash()` method. In the
+command-line, the options `--initial-hash` and `--final-hash` of the
+`cartesi-machine` utility cause it to output the root hash of the Merkle
+tree as it is before the emulator starts running and after it is done
+running, respectively.
 
-The `cartesi.keccak256(<string>)` function of the `cartesi` Lua module
-returns the hash of the byte string `<string>`. The
+The machine can be configured to use the `"keccak256"` hash function
+(for use with the microarchitecture) or the `"sha256"` hash function
+(for use with ZK). The `cartesi.keccak256(<string>)` function of the
+`cartesi` Lua module returns the hash of the byte string `<string>`. The
 `cartesi.keccak256(<hash1>, <hash2>)` overload returns the hash of the
-concatenation of `<hash1>` and `<hash2>`. In theory, the Merkle tree of
-the entire machine state could be built from these primitives and
-[external state access](#external-state-access) to the machine instance.
-In practice, most of the state is unused and implicitly filled with
-zeros, and this allows the Merkle tree computation to skip large swaths
-of the state by using precomputed pristine hashes of all power-of-2
+concatenation of `<hash1>` and `<hash2>`. The `cartesi.sha256(<string>)`
+and `cartesi.sha256(<hash1>, <hash2>)` behave analogously. In theory,
+the Merkle tree of the entire machine state could be built from these
+primitives and [external state access](#external-state-access) to the
+machine instance. In practice, most of the state is unused and
+implicitly filled with zeros, and this allows the Merkle tree
+computation to skip large swaths of the state by using precomputed
+hashes for subtrees that span zeroed out regions of all power-of-2
 sizes. The computation is also smart enough to only update the parts of
 the tree that changed between invocations.
 

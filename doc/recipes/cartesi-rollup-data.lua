@@ -1,5 +1,5 @@
 #!/usr/bin/env lua5.4
--- Host-side mirror of /opt/cartesi/bin/rollup.
+-- Host-side mirror of /usr/bin/rollup.
 -- Encodes advance/inspect requests for the CMIO rx buffer; decodes
 -- voucher/notice/report/exception/delegate-call-voucher records from
 -- the CMIO tx buffer.

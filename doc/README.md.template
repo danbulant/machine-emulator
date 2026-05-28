@@ -752,7 +752,7 @@ The `--append-init-file=<filename>` command-line option works like `--append-ini
 Cartesi Machine templates are machines in which the contents of one or more flash drives or NVRAMs are still unknown.
 To put it another way, Cartesi Machine templates behave like functions whose parameters are the yet-to-be-defined contents of these drives.
 
-As discussed in detail under [the blockchain perspective](#hash-view-of-state), starting from template hashes, the hashes of the drives, and a small amount of [additional information](#sibling-hashes), it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
+As discussed in detail under [the blockchain perspective](#hash-view-of-state), starting from template hashes, the hashes of the drives, and a small amount of additional information, it is possible to obtain the state hash of the *instantiated template*&mdash;the state hash for a Cartesi Machine with drives replaced by their actual contents.
 This is how a smart contract can specify a computation to be performed off-chain over arbitrary input.
 Starting from the template hash, and in possession of the drive hashes, it instantiates the template, generating the initial state hash for the corresponding Cartesi Machine.
 
@@ -915,7 +915,7 @@ Since the leaves have size []{replace=hash_tree_constants/word_size} bytes, the 
 The range corresponding to each node starts at an `<address>` that is a multiple of its size.
 
 For example, to generate a proof that the Cartesi Machine template above indeed contains a pristine input drive, use the command line
-```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr replace=source outputs=pristine-input-proof}
+```{.bash key=proofs_pristine_run vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr replace=source outputs=pristine-input-proof.lua,root_hash,target_hash,target_address,log2_target_size}
 ln -sf "$template" .
 # docs:begin
 cartesi-machine \
@@ -923,8 +923,16 @@ cartesi-machine \
     --load="calculator-template" \
     --max-mcycle=0 \
     --initial-hash \
-    --initial-proof="address:$input_addr,log2_size:12,filename:pristine-input-proof"
+    --initial-proof="address:$input_addr,log2_size:12,filename:pristine-input-proof.lua"
 # docs:end
+lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.root_hash)' | \
+    hex --encode \ |
+    $RECIPES_DIR/trunc8.sh > root_hash
+lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.target_hash)' | \
+    hex --encode \ |
+    $RECIPES_DIR/trunc8.sh > target_hash
+lua5.4 -e 'input_proof = require"pristine-input-proof"; print(string.format("0x%x", input_proof.target_address))' > target_address
+lua5.4 -e 'input_proof = require"pristine-input-proof"; print(input_proof.log2_target_size)' > log2_target_size
 ```
 Recall the first flash drive, the one with the `rootfs.ext2` image file, is present by default, and is automatically placed at starting address []{replace=ar_drive_formula/drive_start}.
 The input NVRAM is therefore in the second slot.
@@ -934,13 +942,11 @@ The output of the command is
 ```{replace=proofs_pristine_run}
 ```
 
-In addition, the `pristine-input-proof` file now contains a JSON structure with the requested proof
-```{.js replace=proofs_pristine_run/pristine-input-proof}
-```
-The `root_hash` value [...]{replace=calc_template_trunc_hash} is the expected initial state hash seen in the output of the `cartesi-machine` command.
-The `target_address` value []{replace=ar_drive_formula/input_addr_dec} is the same as []{replace=ar_drive_formula/input_addr} in hexadecimal.
-The `log2_target_size` value `12` refers to the size of the 4KiB input NVRAM.
-The `target_hash` value [...]{replace=pristine_input_raw_trunc_hash} in the proof gives the hash of the input NVRAM.
+In addition, the `pristine-input-proof.lua` file now contains a Lua table with the requested proof.
+The value of field `root_hash` is the expected initial state hash [...]{replace=proofs_pristine_run/root_hash} seen in the output of the `cartesi-machine` command.
+The `target_address` value []{replace=proofs_pristine_run/target_address} is the start of the input NVRAM.
+The `log2_target_size` value []{replace=proofs_pristine_run/log2_target_size} refers to the size of the 4KiB input NVRAM.
+The `target_hash` value [...]{replace=proofs_pristine_run/target_hash} in the proof gives the hash of the input NVRAM.
 
 The hash of the input NVRAM can be also computed externally with the `cartesi-hash-tree-hash` command-line utility.
 The utility can produce the hash of any file with a power-of-2 size.
@@ -959,11 +965,10 @@ to obtain
 ```
 As expected, the hash values match.
 
-The <a name="sibling-hashes"> `sibling_hashes` </a> array contains the hashes of the siblings to all nodes in the path from the root all the way down to the target node (excluding the root, which has no sibling).
+The `sibling_hashes` array contains the hashes of the siblings to all nodes in the path from the root all the way down to the target node (excluding the root, which has no sibling).
 In a process explained in the [blockchain perspective](#hash-view-of-state), using the `address` field, the `target_hash` hash, and the `sibling_hashes` array, it is possible to go up the tree computing the hashes along the path, until the root hash is produced.
 If the root hash obtained by this process matches the expected root hash, the proof is valid.
 Otherwise, something is amiss.
-(Incidentally, from the hash of its sibling, the last entry in `sibling_hashes`, it is possible to ascertain that the neighboring range to the input drive also contains 4KiB of bytes 0.)
 
 To compute the hash for the desired `input.raw` file with contents `6*2^1024 + 3*2^512\n`, padded with zeros, run
 ```{.bash key=input_raw_hash replace=source}
@@ -976,12 +981,10 @@ to obtain
 ```{replace=input_raw_hash}
 ```
 
-Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=input_raw_trunc_hash} of the desired `input.raw` image rather than hash [...]{replace=pristine_input_raw_trunc_hash} of the template's pristine NVRAM.
-The result is the initial state hash for the instantiated template: the same that can be seen in the initial state hash produced by the `cartesi-machine` command-line
-
-```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr outputs=input-proof replace=source}
+The initial state hash for the instantiated template can be seen with the `cartesi-machine` command-line
+```{.bash key=input_raw_proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr outputs=input-proof.lua,root_hash,target_hash replace=source}
 ln -sf "$template" .
-rm -f input-proof input.raw
+rm -f input-proof.lua input.raw
 # docs:begin
 echo "6*2^1024 + 3*2^512" > input.raw
 truncate -s 4K input.raw
@@ -990,27 +993,33 @@ cartesi-machine \
     --load="calculator-template" \
     --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
     --initial-hash \
-    --initial-proof="address:$input_addr,log2_size:12,filename:input-proof" \
+    --initial-proof="address:$input_addr,log2_size:12,filename:input-proof.lua" \
     --max-mcycle=0
 # docs:end
+lua5.4 -e 'input_proof = require"input-proof"; print(input_proof.root_hash)' | \
+    hex --encode \ |
+    $RECIPES_DIR/trunc8.sh > root_hash
+lua5.4 -e 'input_proof = require"input-proof"; print(input_proof.target_hash)' | \
+    hex --encode \ |
+    $RECIPES_DIR/trunc8.sh > target_hash
+```
+This produces the output
+
+```{replace=input_raw_proof}
 ```
 
-The contents of the `input-proof` are
-
-```{.js replace=input_raw_proof/input-proof}
-```
-
-```{.bash key=input_raw_proof_root_hash vars=proof->input_raw_proof/input-proof/path replace=null}
-jq -r .root_hash < $proof \
-    | $RECIPES_DIR/trunc8.sh
-```
-The `target_hash` value [...]{replace=input_raw_trunc_hash} reflects the hash computed for the input, whereas `root_hash` value [...]{replace=input_raw_proof_root_hash} differs from [...]{replace=calc_template_trunc_hash} obtained for the template, as expected.
+In addition, the `input-proof.lua` file now contains a Lua table with the requested proof, which is produced after the input NVRAM has been replaced.
+The `target_hash` value [...]{replace=input_raw_proof/target_hash} reflects the hash computed for the input.
+The `root_hash` value [...]{replace=input_raw_proof/root_hash} differs from [...]{replace=calc_template_trunc_hash} obtained for the template, as expected, and matches the final hash printed by the utility.
 Moreover, the `sibling_hashes` entries in the template Cartesi Machine and in the instantiated Cartesi Machine remain the same, reflecting the fact that there were no other changes in the machine's initial state.
+
+Using a process similar to the proof verification described above, it is possible to go up the Merkle tree for the template using the `sibling_hashes` array in the proof, but starting from the hash [...]{replace=input_raw_trunc_hash} of the desired `input.raw` image rather than hash [...]{replace=pristine_input_raw_trunc_hash} of the template's pristine NVRAM.
+The result would be the same root hash as that of the instantiated template.
 
 Another useful proof is the one for the *output* drive, once the machine is halted.
 To obtain this proof, run
 
-```{.bash key=output_raw_proof outputs=output.raw,output-proof vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
+```{.bash key=output_raw_proof outputs=output.raw,output-proof.lua,root_hash,target_hash vars=template->calc_template/calculator-template/path,input_addr->ar_drive_formula/input_addr,output_addr->ar_drive_formula/output_addr replace=source}
 rm -f output-proof input.raw output.raw
 ln -sf "$template" .
 # docs:begin
@@ -1023,32 +1032,27 @@ cartesi-machine \
     --replace-memory-range="start:$input_addr,length:1<<12,data_filename:input.raw" \
     --replace-memory-range="start:$output_addr,length:1<<12,data_filename:output.raw,shared" \
     --final-hash \
-    --final-proof="address:$output_addr,log2_size:12,filename:output-proof"
+    --final-proof="address:$output_addr,log2_size:12,filename:output-proof.lua"
 # docs:end
+lua5.4 -e 'proof = require"output-proof"; print(proof.root_hash)' | hex --encode \
+    | $RECIPES_DIR/trunc8.sh > root_hash
+lua5.4 -e 'proof = require"output-proof"; print(proof.target_hash)' | hex --encode \
+    | $RECIPES_DIR/trunc8.sh > target_hash
 ```
 
 This produces the output
 
 ```{replace=output_raw_proof}
 ```
-The contents of the `output-proof` are
-```{.js replace=output_raw_proof/output-proof}
-```
 
-```{.bash key=output_raw_proof_root_hash vars=proof->output_raw_proof/output-proof/path replace=null}
-jq -r .root_hash < $proof \
-    | $RECIPES_DIR/trunc8.sh
-```
-Note how the `root_hash` field in the proof matches the final state hash [...]{replace=output_raw_proof_root_hash} output by the `cartesi-machine` command-line utility.
-
-To see that the `target_hash` field matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
+The `root_hash` field in the proof [...]{replace=output_raw_proof/root_hash} matches the final state hash output by the `cartesi-machine` command-line utility.
+The `target_hash` field [...]{replace=output_raw_proof/target_hash} matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
 ```{.bash key=proofs_output_raw_hash vars=output_raw->output_raw_proof/output.raw/path replace=source}
 ln -sf "$output_raw" .
 # docs:begin
 cartesi-hash-tree-hash --log2-root-size=12 < output.raw
 # docs:end
 ```
-to obtain
 ```{replace=proofs_output_raw_hash}
 ```
 
@@ -1409,7 +1413,7 @@ A Rolling Cartesi Machine template is a machine that has been configured to supp
 
 As an example, we will create a Rolling Cartesi Machine template for an arbitrary-precision arithmetic expression evaluator that outputs, as notices, the result of computation it receives as inputs to advance-state requests.
 We will, once again, rely on the `bc` command-line utility to perform the computations.
-To interact with the `/dev/cmio` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/opt/cartesi/bin/rollup` command-line utility.
+To interact with the `/dev/cmio` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/usr/bin/rollup` command-line utility.
 
 The `rollup` command-line utility supports the commands `accept`, `reject`, `voucher`, `notice`, `report`, and `exception`.
 It uses JSON objects as inputs and outputs.
@@ -3032,6 +3036,9 @@ Building the rootfs requires two host-side steps.
 The first assembles the rootfs with `docker buildx build --platform=linux/riscv64 --output type=tar`, which uses binfmt and QEMU to emulate riscv64 and emits the result as a flat tarball.
 The second converts the tarball into an ext2 image with [`xgenext2fs`](https://github.com/cartesi/genext2fs), which must be installed on the host (release `v1.5.6` or newer).
 
+> [!NOTE]
+> The fourth stage of the multi-stage Dockerfile runs natively on `riscv64` through `binfmt_misc` and QEMU emulation. Depending on your host platform's hardware (e.g., building on x86_64 vs. Apple Silicon), emulating RISC-V instructions during package installation and setup can introduce considerable execution overhead, leading to noticeably slower build times.
+
 The Dockerfile below illustrates the approach with a four-stage build.
 The first stage cross-compiles a C17 and a C++23 &ldquo;Hello world!&rdquo; program using `g++-14-riscv64-linux-gnu` from the Ubuntu archives, and the `puppet` libcmt-rollup guest application against the headers and shared library shipped by `machine-guest-tools` (downloaded as a tarball release artifact and extracted into a sysroot inside the build stage).
 The second stage cross-compiles an equivalent Rust program, using `rustup` and the same RISC-V GCC as the linker.
@@ -3822,24 +3829,14 @@ It is mapped to a physical memory starting at `0x40008000`, where registers can 
 </center>
 
 The format of CSRs `tohost` and `fromhost` are as follows: <p></p>
-<center>
-<table>
-<tr>
-<th>Bits</th>
-<td><tt>63&ndash;56</tt></td>
-<td><tt>55&ndash;48</tt></td>
-<td><tt>47&ndash;32</tt></td>
-<td><tt>31&ndash;0</tt></td>
-</tr>
-<tr>
-<th>Field</th>
-<td><tt>DEV</tt></td>
-<td><tt>CMD</tt></td>
-<td><tt>REASON</tt></td>
-<td><tt>DATA</tt></td>
-</tr>
-</table>
-</center>
+
+```{.bitfield}
+ 63          56 55          48 47              32 31                             0
++--------------+--------------+------------------+-------------------------------+
+|     DEV      |     CMD      |      REASON      |             DATA              |
++--------------+--------------+------------------+-------------------------------+
+    8 bits         8 bits           16 bits                   32 bits
+```
 
 Interactions with Cartesi's HTIF device follow the following protocol:
 
@@ -4488,14 +4485,17 @@ Cryptographic hash functions, such as Keccak-256, were designed *specifically* t
 :::
 
 The state hash of a Cartesi Machine is the root hash of a Merkle tree.
-Merkle trees are binary trees where a leaf node is labeled with the hash of a data block (In the case of Cartesi Machines, a block is simply one of the 2<sup>[]{replace=hash_tree_constants/log2_leaf_count code=no}</sup> aligned []{replace=hash_tree_constants/word_size}-byte blocks in the machine's physical memory address space.) and an inner node is labeled with the hash of the concatenated labels of its two child nodes.
+Merkle trees are binary trees where a leaf node is labeled with the hash of a data block  and an inner node is labeled with the hash of the concatenated labels of its two child nodes.
+In the case of Cartesi Machines, a block is simply one of the 2<sup>[]{replace=hash_tree_constants/log2_leaf_count code=no}</sup> aligned []{replace=hash_tree_constants/word_size code=no}-byte blocks in the machine's physical memory address space.
 The root hash can be obtained from the `machine:get_root_hash()` method.
 In the command-line, the options `--initial-hash` and `--final-hash` of the `cartesi-machine` utility cause it to output the root hash of the Merkle tree as it is before the emulator starts running and after it is done running, respectively.
 
+The machine can be configured to use the `"keccak256"` hash function (for use with the microarchitecture) or the `"sha256"` hash function (for use with ZK).
 The `cartesi.keccak256(<string>)` function of the `cartesi` Lua module returns the hash of the byte string `<string>`.
 The `cartesi.keccak256(<hash1>, <hash2>)` overload returns the hash of the concatenation of `<hash1>` and `<hash2>`.
+The `cartesi.sha256(<string>)` and `cartesi.sha256(<hash1>, <hash2>)` behave analogously.
 In theory, the Merkle tree of the entire machine state could be built from these primitives and [external state access](#external-state-access) to the machine instance.
-In practice, most of the state is unused and implicitly filled with zeros, and this allows the Merkle tree computation to skip large swaths of the state by using precomputed pristine hashes of all power-of-2 sizes.
+In practice, most of the state is unused and implicitly filled with zeros, and this allows the Merkle tree computation to skip large swaths of the state by using precomputed hashes for subtrees that span zeroed out regions of all power-of-2 sizes.
 The computation is also smart enough to only update the parts of the tree that changed between invocations.
 
 Tree hashes are used instead of linear hashes because they support a variety of operations that are unavailable from linear hashes.
