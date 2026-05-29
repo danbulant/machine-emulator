@@ -516,7 +516,7 @@ However, inspecting the `foo.ext2` image file from outside the emulator shows it
 ```{.bash key=e2ls_not_shared_foo_ext2 replace=source vars=foo_ext2->foo_ext2/foo.ext2/path}
 ln -fs "$foo_ext2" .
 # docs:begin
-e2ls -al foo.ext2:*.txt
+e2ls -aln foo.ext2:*.txt
 # docs:end
 ```
 
@@ -541,7 +541,7 @@ However, `e2ls` now shows the image file `foo.ext2` has indeed been modified.
 ```{.bash key=e2ls_shared_foo_ext2 replace=source vars=foo_ext2->shared_flash/foo.ext2/path}
 ln -sf "$foo_ext2" .
 # docs:begin
-e2ls -al foo.ext2:*.txt
+e2ls -aln foo.ext2:*.txt
 # docs:end
 ```
 
@@ -631,7 +631,11 @@ cartesi-machine \
     --final-hash
 ```
 produces instead the output
-```{replace=state_hashes_no_limit_exec}
+```{key=reorder_state_hashes_no_limit_exec vars=err->state_hashes_no_limit_exec/stderr/path,out->state_hashes_no_limit_exec/stdout/path replace=stdout}
+# stderr comes mixed with stdout in an unfortunate order, so we reorder them
+cat $err | head -n 1
+cat $out
+cat $err | tail -n +2
 ```
 Naturally, the initial state hash is the same as before.
 
@@ -688,7 +692,11 @@ cartesi-machine \
 # docs:end
 ```
 produces the output
-```{replace=persistent_htif_putchar_reload}
+```{key=reorder_persistent_htif_putchar_reload vars=err->persistent_htif_putchar_reload/stderr/path,out->persistent_htif_putchar_reload/stdout/path replace=stdout}
+# here --load prints a line before the initial hash, so keep the first two
+cat $err | head -n 2
+cat $out
+cat $err | tail -n +3
 ```
 Note that, other than `--load`, no initialization command-line options were used.
 These initializations were used to define the machine before it was stored: their values are implicitly encoded in the stored state.
@@ -2423,7 +2431,17 @@ cartesi-machine \
     --final-hash
 ```
 
-```{.text key=compare_utility_and_lua runner=bash replace=stdout vars=lua->state_hashes_lua/both/path,utility->state_hashes_utility/both/path}
+```{.bash key=reorder_state_hashes_lua vars=err->state_hashes_lua/stderr/path,out->state_hashes_lua/stdout/path replace=null}
+cat $err | head -n 1
+cat $out
+cat $err | tail -n +2
+```
+```{.bash key=reorder_state_hashes_utility vars=err->state_hashes_utility/stderr/path,out->state_hashes_utility/stdout/path replace=null}
+cat $err | head -n 1
+cat $out
+cat $err | tail -n +2
+```
+```{.text key=compare_utility_and_lua runner=bash replace=stdout vars=lua->reorder_state_hashes_lua/stdout/path,utility->reorder_state_hashes_utility/stdout/path}
 diff $lua $utility && cat $utility
 ```
 
@@ -3129,7 +3147,9 @@ The rootfs also includes a selection of scripting language interpreters from the
 ```{.tcl key=hello_tcl_src include=hello/hello.tcl}
 ```
 
-The following shell script invokes all of them in order:
+The following shell script runs the examples one after another.
+In order not to bloat our example image, the heaviest interpreters were left out (Node.js, Ruby, and PHP).
+To add them back, uncomment the corresponding lines in the Dockerfile and in the `all.sh` script.
 
 ```{.bash key=hello_all_src include=hello/all.sh}
 ```

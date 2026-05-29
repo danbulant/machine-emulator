@@ -1,17 +1,26 @@
 ARG UBUNTU_TAG=24.04
+ARG UBUNTU_DIGEST=sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 ARG RUST_TAG=1.83-slim
+ARG RUST_DIGEST=sha256:540c902e99c384163b688bbd8b5b8520e94e7731b27f7bd0eaa56ae1960627ab
 ARG GO_TAG=1.23-bookworm
+ARG GO_DIGEST=sha256:167053a2bb901972bf2c1611f8f52c44d5fe7e762e5cab213708d82c421614db
+ARG UBUNTU_SNAPSHOT=20260529T000000Z
 ARG MACHINE_GUEST_TOOLS_VERSION=0.18.0-test3
 ARG MACHINE_GUEST_TOOLS_DEB_SHA256=a7d9531b3969c567b5cd3ca97bfe4f61178385e6bf9e011e2ffb939c06e3e508
 ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256=13d7c3af27a5f4d31911854da24bd0938b2d720dd7664d7392a7db22d342eea1
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Stage 1: cross-compile the C and C++ programs on the host architecture.
-FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG} AS c-cpp-builder
+FROM --platform=$BUILDPLATFORM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS c-cpp-builder
 ARG DEBIAN_FRONTEND
 ARG MACHINE_GUEST_TOOLS_VERSION
 ARG MACHINE_GUEST_TOOLS_TARGZ_SHA256
+ARG UBUNTU_SNAPSHOT
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    sed -i "s|^URIs:.*|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}|" \
+        /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends g++-14-riscv64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARGZ_SHA256} \
@@ -30,7 +39,7 @@ RUN riscv64-linux-gnu-gcc-14 -O2 -std=c17   -o /work/hello-c   /work/hello.c && 
         -o /work/puppet /work/puppet.c -lcmt
 
 # Stage 2: cross-compile the Rust program on the host architecture.
-FROM --platform=$BUILDPLATFORM rust:${RUST_TAG} AS rust-builder
+FROM --platform=$BUILDPLATFORM rust:${RUST_TAG}@${RUST_DIGEST} AS rust-builder
 ARG DEBIAN_FRONTEND
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc-riscv64-linux-gnu libc6-dev-riscv64-cross && \
@@ -43,7 +52,7 @@ ENV CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=riscv64-linux-gnu-gcc
 RUN cargo build --release --target riscv64gc-unknown-linux-gnu
 
 # Stage 3: cross-compile the Go program on the host architecture.
-FROM --platform=$BUILDPLATFORM golang:${GO_TAG} AS go-builder
+FROM --platform=$BUILDPLATFORM golang:${GO_TAG}@${GO_DIGEST} AS go-builder
 WORKDIR /work
 COPY hello/hello.go /work/hello.go
 ENV GOARCH=riscv64 GOOS=linux CGO_ENABLED=0
@@ -51,23 +60,32 @@ RUN go build -ldflags="-s -w" -o /work/hello-go /work/hello.go
 
 # Stage 4: assemble the rootfs by emulating riscv64 through binfmt+QEMU.
 # The platform is set by `--platform=linux/riscv64` on the buildx invocation.
-FROM ubuntu:${UBUNTU_TAG} AS rootfs
+FROM ubuntu:${UBUNTU_TAG}@${UBUNTU_DIGEST} AS rootfs
 ARG DEBIAN_FRONTEND
 ARG MACHINE_GUEST_TOOLS_VERSION
 ARG MACHINE_GUEST_TOOLS_DEB_SHA256
+ARG UBUNTU_SNAPSHOT
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
     https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.deb \
     /tmp/
 RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    sed -i "s|^URIs:.*|URIs: https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT}|" \
+        /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
         /tmp/machine-guest-tools_riscv64.deb \
         libstdc++6 \
-        bc curl device-tree-compiler file gawk gforth jq lua5.4 lua-socket \
-        nodejs perl php-cli python3 ruby tcl xxd && \
-    rm -rf /usr/share/ca-certificates /etc/ssl/certs && \
+        bc curl device-tree-compiler gforth jq lua5.4 lua-socket \
+        python3-minimal tcl && \
+    apt-get purge -y --auto-remove ca-certificates && \
     rm -f /var/cache/ldconfig/aux-cache && \
     rm -rf /var/log/* && \
     rm -rf /var/lib/apt/lists/* /tmp/machine-guest-tools_riscv64.deb
+
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends nodejs ruby php-cli && \
+#     rm -rf /var/lib/apt/lists/*
 
 COPY --from=c-cpp-builder /work/hello-c                                               /home/dapp/hello-c
 COPY --from=c-cpp-builder /work/hello-cpp                                             /home/dapp/hello-cpp

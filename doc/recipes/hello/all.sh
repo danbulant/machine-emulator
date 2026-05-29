@@ -9,10 +9,10 @@ cd $(dirname $0)
 gforth hello.4th
 ./hello.awk
 ./hello.lua
-./hello.js
 ./hello.pl
-./hello.php
 ./hello.py
-./hello.rb
 ./hello.sh
 ./hello.tcl
+#./hello.js
+#./hello.rb
+#./hello.php

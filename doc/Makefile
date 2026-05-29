@@ -32,6 +32,12 @@ ROOTFS_DOCS_INPUTS := \
 $(RECIPES_DIR)/rootfs-docs.ext2: $(ROOTFS_DOCS_INPUTS)
 	cd $(RECIPES_DIR) && ./build-rootfs-docs.sh
 
+# CI cache key, derived from the same inputs the ext2 rule depends on so it
+# cannot drift from the actual build.
+.PHONY: rootfs-docs-cache-key
+rootfs-docs-cache-key:
+	@cat $(sort $(ROOTFS_DOCS_INPUTS)) | sha256sum | head -c 64
+
 check-docs-image:
 	@if docker images $(DOCKER_PLATFORM) -q $(DOCS_IMAGE):$(TAG) 2>/dev/null | grep -q .; then \
 		echo "Docker image $(DOCS_IMAGE):$(TAG) exists"; \

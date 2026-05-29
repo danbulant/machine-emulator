@@ -255,12 +255,16 @@
 --
 -- MAKE-FRAGMENT SHAPE (dry-run)
 --
---   Primary target:  cache/<key>/both
+--   Grouped target: cache/<key>/both, cache/<key>/stdout, cache/<key>/stderr,
+--     and each declared artifact, emitted as one GNU Make grouped target
+--     (`&:`, requires GNU Make >= 4.3; template.d is only -included inside the
+--     docs container). One runner invocation co-produces all of them, so the
+--     grouped form lets make invalidate every consumer whenever a prereq
+--     changes. The older `sibling: primary` empty-recipe form could leave an
+--     indirect consumer (e.g. one reading another block's reordered stdout)
+--     stale on a timestamp tie across the two-pass rebuild.
 --     prereqs: runner, body.<ext>, outputs, [vars.lua, spec] (iff contents-form
 --              vars= exists), depends= prereqs, vars= file prereqs
---   Sibling targets: cache/<key>/stdout, cache/<key>/stderr, each declared artifact.
---   Siblings depend on the primary with an empty recipe (portable to GNU Make
---   3.81, which predates `&:` grouped-target syntax).
 --
 --   include= keys take a simpler shape: a single rule whose only prereq is
 --   the included file, with recipe `touch cache/<key>/both`. The content is
@@ -633,9 +637,13 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
     return resolved
 end
 
--- Emit a make rule. both is the primary target; stdout, stderr, and any
--- declared artifacts are sibling targets that depend on the primary.
--- (GNU Make 3.81 predates `&:` grouped-target syntax.)
+-- Emit a make rule. One runner invocation produces both, stdout, stderr, and
+-- any declared artifacts together, so they are emitted as a single GNU Make
+-- grouped target (`&:`, requires GNU Make >= 4.3, satisfied by the docs image;
+-- template.d is only -included inside the container). The grouped form tells
+-- make the recipe co-produces every output, so editing an intermediate block
+-- reliably invalidates its consumers. The previous `sibling: primary` form left
+-- consumers stale when timestamps tied across the two-pass rebuild.
 function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     local runner_path = info.runner
     local body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
@@ -662,16 +670,18 @@ function emit_rule(key, info, out_list, deps, vars_list, has_contents)
             add_prereq("$(REPLACE_CACHE_DIR)/" .. p.base .. "/" .. p.sub)
         end
     end
-    local primary = "$(REPLACE_CACHE_DIR)/" .. key .. "/both"
-    local siblings = {"stdout", "stderr"}
-    for _, n in ipairs(out_list) do siblings[#siblings + 1] = n end
+    local targets = {
+        "$(REPLACE_CACHE_DIR)/" .. key .. "/both",
+        "$(REPLACE_CACHE_DIR)/" .. key .. "/stdout",
+        "$(REPLACE_CACHE_DIR)/" .. key .. "/stderr",
+    }
+    for _, n in ipairs(out_list) do
+        targets[#targets + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/" .. n
+    end
     local cmd = string.format(
         "\t@REPLACE_KEY=%s bash %s || (echo '==> FAILED: key=%s' >&2; cat $(REPLACE_CACHE_DIR)/%s/both >&2; exit 1)",
         key, runner_path, key, key)
-    rules[#rules + 1] = primary .. ": " .. table.concat(prereqs, " ") .. "\n" .. cmd
-    for _, s in ipairs(siblings) do
-        rules[#rules + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/" .. s .. ": " .. primary
-    end
+    rules[#rules + 1] = table.concat(targets, " ") .. " &: " .. table.concat(prereqs, " ") .. "\n" .. cmd
 end
 
 -- Emit a make rule for an include= key. The included file is the rule's only
