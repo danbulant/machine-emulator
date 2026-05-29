@@ -152,7 +152,13 @@ static int cartesi_mod_tojson(lua_State *L) try {
 }
 
 static int cartesi_mod_fromjson(lua_State *L) try {
-    clua_push_json_table(L, luaL_checkstring(L, 1));
+    lua_settop(L, 2);
+    const char *schema = luaL_optstring(L, 2, nullptr);
+    if (schema != nullptr) {
+        clua_push_schemed_json_table(L, luaL_checkstring(L, 1), schema);
+    } else {
+        clua_push_json_table(L, luaL_checkstring(L, 1));
+    }
     return 1;
 } catch (const std::exception &e) {
     luaL_error(L, "%s", e.what());
