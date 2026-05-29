@@ -755,6 +755,13 @@ jobs:
           make -j"$(nproc)"
           sudo make install
 
+      - name: Ensure doc/README.md is tracked
+        run: |
+          if ! git ls-files --error-unmatch doc/README.md >/dev/null 2>&1; then
+            echo "::error::doc/README.md is not tracked in git. The sync check requires a committed baseline to diff against. Generate it with 'make -C doc README.md' and commit the result."
+            exit 1
+          fi
+
       - name: Build documentation
         run: make -C doc README.md
 

@@ -25,7 +25,7 @@
     - [Rolling Cartesi Machines](#rolling-cartesi-machines)
     - [Rolling Cartesi Machine
       templates](#rolling-cartesi-machine-templates)
-    - [Rarely used options](#rarely-used-options)
+    - [Additional options](#additional-options)
   - [Lua interface](#lua-interface)
     - [Instantiation by configuration](#instantiation-by-configuration)
     - [Default configuration](#default-configuration)
@@ -78,10 +78,9 @@ themselves as exorbitant transaction costs and, even if such costs could
 somehow be overcome, as extremely long computation times.
 
 In comparison, applications running inside Cartesi Machines can process
-relatively unlimited amounts of data, and at a pace over 4 orders of
-magnitude faster. This is possible because Cartesi Machines run
-off-chain, free of the overhead imposed by the consensus mechanisms used
-by blockchains.
+relatively unlimited amounts of data, and at a pace orders of magnitude
+faster. This is possible because Cartesi Machines run off-chain, free of
+the overhead imposed by the consensus mechanisms used by blockchains.
 
 In a typical scenario, one of the parties involved in an application
 will execute the Cartesi Machine off-chain and report its results to the
@@ -189,13 +188,13 @@ than the main processor. The uarch is not visible to the main processor,
 but code running in the uarch has access to the entire state of the
 Cartesi Machine, including the main processor and the entire board. The
 same interpreter source-code for the Cartesi Machine that runs on the
-host can also be compiled to an `uarch.bin` binary that is about to run
-one fetch-execute iteration of the main processor and then halt the
-uarch. In its pristine state, the uarch memory is loaded with this
-`uarch.bin`. Therefore, executing the uarch until it halts, and then
-resetting the uarch to its pristine state, is equivalent to executing
-one instruction of the main processor. This finer granularity is the
-basis for state-transition proofs, described in the [System
+host can also be compiled to an `uarch.bin` binary that runs exactly one
+fetch-execute iteration of the main processor and then halts the uarch.
+In its pristine state, the uarch memory is loaded with this `uarch.bin`.
+Therefore, executing the uarch until it halts, and then resetting the
+uarch to its pristine state, is equivalent to executing one instruction
+of the main processor. This finer granularity is the basis for
+state-transition proofs, described in the [System
 architecture](#system-architecture) chapter.
 
 The initialization of a Cartesi Machine typically loads the Linux kernel
@@ -355,9 +354,11 @@ connect to remote JSON-RPC servers.
 
 The documentation starts from the command-line utility,
 `cartesi-machine`. This utility is used for most prototyping tasks. The
-documentation then covers the Lua interface of `cartesi.machine`. The
-C/C++/JSON-RPC interfaces are very similar, and are covered only within
-their reference manuals.
+documentation then covers the Lua interface of `cartesi.machine`. The C,
+C++, and JSON-RPC interfaces closely mirror the Lua interface documented
+here, so this document does not cover them separately. The C API is
+defined in the `cm.h` header. The JSON-RPC API supports discovery, so
+client bindings can be generated from a running server.
 
 ## Machine playground
 
@@ -402,7 +403,7 @@ docker run \
 Once inside, you can execute the `cartesi-machine` utility as follows:
 
 ``` bash
-cartesi-machine --help
+cartesi-machine --help | head -n 40
 ```
 
 ``` text
@@ -446,707 +447,7 @@ where options are:
   --remote-shutdown
     shutdown the remote cartesi machine after the execution.
 
-  --no-remote-create
-    use existing cartesi machine in the remote server instead of creating
-    a new one.
-
-  --no-remote-destroy
-    do not destroy the cartesi machine in the remote server after the execution.
-
-  --no-rollback
-    disable rollback for advance and inspect states.
-    this allows to perform advance and inspect states on local cartesi machines,
-    however the state is never reverted, even in case inspects or rejected advances.
-
-    DON'T USE THIS OPTION IN PRODUCTION
-
-  --ram-image=<filename>
-    name of file containing RAM image (default: "linux.bin").
-
-  --no-ram-image
-    forget settings for RAM image.
-
-  --ram-length=<number>
-    set RAM length.
-
-  --no-bootargs
-    clear default bootargs.
-
-  --append-bootargs=<string>
-    append <string> to bootargs.
-
-  --no-root-flash-drive
-    clear default root flash drive and associated bootargs parameters.
-
-  --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
-    defines a new flash drive, or modify an existing flash drive definition.
-    flash drives appear as /dev/pmem[0-7].
-
-    <key>:<value> is one of
-        label:<label>
-        start:<number>
-        length:<number>
-        data_filename:<filename>
-        dht_filename:<filename>
-        dpt_filename:<filename>
-        shared
-        create
-        truncate
-        read_only
-        mke2fs
-        mount:<string>
-        user:<string>
-
-        label (optional)
-        identifies the flash drive. init attempts to mount it as /mnt/<label>.
-        the machine always assigns the auto label "flashdriveN" (where N is
-        the zero-based index). the user label is an optional additional alias
-        that can be used to refer to the flash drive in --replace-memory-range.
-        user labels must contain only lowercase letters, digits, and hyphens,
-        must start with a lowercase letter, must not match flashdriveN or
-        nvramN (reserved for auto-generated labels), must be unique across all
-        flash drives and NVRAMs, and must be at most 31 characters long.
-        if omitted, no user label is set.
-
-        start (optional)
-        sets the starting physical memory offset for flash drive in bytes.
-        when omitted, drives start at 1 << 55 and are spaced by 1 << 52.
-        if any start offset is set, all of them must be set.
-
-        length (optional)
-        gives the length of the flash drive in bytes (must be multiple of 4Ki).
-        if omitted, the length is computed from the image in filename.
-        if length and filename are set, the image file size must match length.
-
-        data_filename (optional)
-        gives the name of the file containing the data for the flash drive.
-        when omitted or set to the empty, the drive starts filled with 0.
-
-        dht_filename (optional)
-        gives the name of the file containing the dense hash tree for the flash drive.
-        (this is the part of the hash tree that subintends the entire address
-        range for the drive, down to one hash per page.)
-        when omitted or set to the empty, the hash tree will be built from scratch.
-
-        dpt_filename (optional)
-        gives the name of the file containing the dirty page tree for the flash drive.
-        when omitted or set to the empty, the dirty page tree will be built from scratch.
-
-        shared (optional)
-        target modifications to flash drive modify the memory and hash tree files.
-        by default, image files are not modified and changes are lost.
-
-        create (optional)
-        create the backing storage file, shared must also be true.
-
-        truncate (optional)
-        truncate the memory length to match memory lengths different from the backing storage,
-        in case of shared flash drive, then it also truncates the underlying backing file.
-        by default, when a length is present it must also match the backing storage length.
-
-        read_only (optional)
-        mark flash drive as read-only, disallowing write attempts from the host or the guest.
-        by default, flash drives are not read-only, thus writable.
-
-        mke2fs (optional)
-        whether the flash drive should be formatted as an ext2 filesystem in init.
-        by default, the drive is formatted as ext2 filesystem if there is no backing file,
-        you can use "mke2fs:false" to disable ext2 formatting.
-
-        mount (optional)
-        whether the flash drive should be mounted automatically in init.
-        by default, the drive is mounted if there is an image file backing it or is formatted (mke2fs option),
-        you can use "mount:false" to disable auto mounting,
-        you can also use "mount:<path>" to choose a custom mount point.
-
-        user (optional)
-        when mount is true, changes the user ownership of the mounted directory,
-        otherwise changes the user ownership of the /dev/pmemX device.
-        this option is useful to allow dapp's user access the flash drive.
-        by default the mounted directory ownership is configured by the
-        filesystem being mounted.
-        in case mount is false, the default ownership is set to the root user.
-
-    (an option "--flash-drive=label:root,data_filename:rootfs.ext2" is implicit)
-
-  --nvram=<key>:<value>[,<key>:<value>[,...]...]
-    defines a new NVRAM, or modify an existing NVRAM definition.
-    NVRAMs use the UIO framework and appear as /dev/uio[0-7].
-    unlike flash drives, NVRAMs have no filesystem layer.
-
-    <key>:<value> is one of
-        label:<label>
-        start:<number>
-        length:<number>
-        data_filename:<filename>
-        dht_filename:<filename>
-        dpt_filename:<filename>
-        shared
-        create
-        truncate
-        read_only
-        user:<string>
-
-        label (optional)
-        the machine always assigns the auto label "nvramN" (where N is the
-        zero-based index). the user label is an optional additional alias that
-        can be used to refer to the NVRAM in --replace-memory-range.
-        user labels must contain only lowercase letters, digits, and hyphens,
-        must start with a lowercase letter, must not match flashdriveN or
-        nvramN (reserved for auto-generated labels), must be unique across all
-        flash drives and NVRAMs, and must be at most 31 characters long.
-        if omitted, no user label is set.
-
-        start (optional)
-        sets the starting physical memory offset for the NVRAM in bytes.
-        when omitted, NVRAMs are placed in the same 1 << 55 / 1 << 52-stride
-        pool as flash drives, using the next free slot after all flash drives.
-
-        length (optional)
-        gives the length of the NVRAM in bytes (must be multiple of 4Ki).
-        if omitted, the length is computed from the image in data_filename.
-
-        data_filename (optional)
-        gives the name of the file containing the data for the NVRAM.
-        when omitted or set to empty, the NVRAM starts filled with 0.
-
-        dht_filename, dpt_filename, shared, create, truncate, read_only
-        semantics are the same as for the --flash-drive option.
-
-        user (optional)
-        changes the user ownership of the /dev/uioN device.
-        this option is useful to allow dapp's user access the NVRAM.
-        the default ownership is set to the root user.
-
-  --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
-    replaces an existing memory range right after machine instantiation.
-    (typically used in conjunction with the --load=<directory> option.)
-
-    <key>:<value> is one of
-        label:<string>
-        start:<number>
-        length:<number>
-        data_filename:<filename>
-        dht_filename:<filename>
-        dpt_filename:<filename>
-        shared
-
-    the memory range can be identified by label, by start and length, or both.
-    when both label and start/length are given, they must be consistent with
-    the existing memory range. when only label is given, start and length are
-    resolved from the machine's initial configuration.
-
-  --ram=<key>:<value>[,<key>:<value>[,...]...]
-  --dtb=<key>:<value>[,<key>:<value>[,...]...]
-  --processor=<key>:<value>[,<key>:<value>[,...]...]
-  --cmio-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-  --cmio-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-  --pmas=<key>:<value>[,<key>:<value>[,...]...]
-  --uarch-ram=<key>:<value>[,<key>:<value>[,...]...]
-  --uarch-processor=<key>:<value>[,<key>:<value>[,...]...]
-    configures file storage for other memory ranges in the machine
-
-    <key>:<value> is one of
-        data_filename:<filename>
-        dht_filename:<filename>
-        dpt_filename:<filename>
-        shared
-        create
-        truncate
-
-    semantics are the same as for the --flash-drive option.
-
-  --hash-tree=<key>:<value>[,<key>:<value>[,...]...]
-    configures the global hash tree of the machine
-
-    <key>:<value> is one of
-        hash_function:<string>
-        sht_filename:<filename>
-        phtc_filename:<filename>
-        phtc_size:<number>
-        shared
-
-        hash_function (default: "keccak256")
-		hashing algorithm used for the tree
-
-        sht_filename (optional)
-        gives the name of the file containing the sparse hash-tree for the machine.
-		(this is the part of the hash tree from the root down to leaves that subintend
-        entire memory ranges, such as flash-drives or the ram.)
-        when omitted or set to the empty, the hash tree will be built from scratch.
-
-        phtc_filename (optional)
-        gives the name of the file containing the page hash-tree cache for the machine.
-        (this is a cache with the dense hash-trees for a subset of the pages in the
-        machine, all the way down to 256-bit words.)
-        when omitted or set to the empty, the page hash-tree cache will start empty.
-
-        phtc_size (default: 2048)
-        give the maximum number of pages in the cache.
-
-        shared (optional)
-        target modifications to machine state modify the sparse hash tree file.
-        by default, the file is not modified and changes are lost.
-
-  --cmio-advance-state=<key>:<value>[,<key>:<value>[,...]...]
-    advances the state of the machine through a number of inputs.
-
-    <key>:<value> is one of
-        input:<filename-pattern>
-        input_index_begin:<number>
-        input_index_end:<number>
-        output:<filename-pattern>
-        report:<filename-pattern>
-        output_hashes_root_hash:<filename-pattern>
-        hashes
-
-        input (default: "input-%i.bin")
-        the pattern that derives the name of the file read for input %i.
-
-        input_index_begin (default: 0)
-        index of first input to advance (the first value of %i).
-
-        input_index_end (default: 0)
-        one past index of last input to advance (one past last value of %i).
-
-        output (default: "input-%i-output-%o.bin")
-        the pattern that derives the name of the file written for output %o
-        of input %i.
-
-        report (default: "input-%i-report-%o.bin")
-        the pattern that derives the name of the file written for report %o
-        of input %i.
-
-        output_hashes_root_hash (default: "input-%i-output-hashes-root-hash.bin")
-        the pattern that derives the name of the file written for outputs root
-        hash of input %i.
-
-        hashes
-        print out hashes before every input.
-
-    the input index ranges in {input_index_begin, ..., input_index_end-1}.
-    for each input, "%i" is replaced by the input index, and "%o" by the output
-    or report index.
-
-  --cmio-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
-    inspect the state of the machine with a query.
-    the query happens after the end of --cmio-advance-state.
-
-    <key>:<value> is one of
-        query:<filename>
-        report:<filename-pattern>
-        hashes
-
-        query (default: "query.bin")
-        the name of the file from which to read the query.
-
-        report (default: "query-report-%o.bin")
-        the pattern that derives the name of the file written for report %o
-        of the query.
-
-        hashes
-        print out hashes before every query.
-
-    while the query is processed, "%o" is replaced by the current report index.
-
-  --concurrency=<key>:<value>[,<key>:<value>[,...]...]
-    configures the number of threads used in some implementation parts.
-
-    <key>:<value> is one of
-        update_hash_tree:<number>
-
-        update_hash_tree (optional)
-        defines the number of threads to use while calculating the hash tree.
-        when omitted or defined as 0, the number of hardware threads is used if
-        it can be identified or else a single thread is used.
-
-    --console-io=<key>:<value>[,<key>:<value>[,...]...]
-        console input/output runtime options,
-        allowing console redirection to pipes or files.
-
-        <key>:<value> is one of
-            output_destination:<string>
-            output_flush_mode:<string>
-            output_fd:<number>
-            output_filename:<filename>
-            input_source:<string>
-            input_fd:<number>
-            input_filename:<filename>
-            tty_rows:<number>
-            tty_cols:<number>
-
-            output_destination (default: "to_stdout")
-            the console output destination, can be one of:
-                - "to_null", write to nowhere (no console output)
-                - "to_stdout", write to host's stdout
-                - "to_stderr", write to host's stderr
-                - "to_fd", write to a host's file descriptor
-                - "to_file", write to a host's file
-
-            output_flush_mode (default: "every_line" if non-interactive, otherwise "every_char")
-            the console output flush mode, can be one of:
-                - "when_full", flush when buffer is full
-                - "every_char", flush after every new character
-                - "every_line", flush after every new line (or when buffer is full)
-
-            output_fd (default: -1)
-            host's file descriptor to write the console output,
-            this option automatically sets output destination to "to_fd".
-
-            output_filename (default: "")
-            host's file name to append the console output,
-            this option automatically sets output destination to "to_file".
-
-            input_source (default: "from_null" if non-interactive, otherwise "from_stdin")
-            the console input source, can be one of:
-                - "from_null", read from nowhere (no console input)
-                - "from_stdin", read from host's stdin
-                - "from_fd", read from a host's file descriptor
-                - "from_file", read from a host's file
-
-            input_fd (default: -1)
-            host's file descriptor to feed to the console input,
-            this option automatically sets input source to "from_fd".
-
-            input_filename (default: "")
-            host's file name to feed to the console input,
-            this option automatically sets input source to "from_file".
-
-            tty_rows (default: 25)
-            tty_cols (default: 80)
-            terminal size, only relevant when input source is different from stdin.
-
-  --skip-version-check
-    skip emulator version check when loading a stored machine.
-    i.e., assume the stored machine is compatible with current emulator version.
-    this is only intended to test old snapshots during emulator development.
-
-    DON'T USE THIS OPTION IN PRODUCTION
-
-  --no-reserve
-    don't reserve swap memory for flash drives.
-
-    DON'T USE THIS OPTION IN PRODUCTION
-
-  --max-mcycle=<number>
-    stop at a given mcycle (default: 2305843009213693952).
-
-  --max-uarch-cycle=<number>
-    stop at a given micro cycle.
-
-  --unreproducible
-    run machine in unreproducible mode.
-    unreproducible machines will advance time normally when its CPU is idle.
-    i.e., when sleeping 1 second on the guest, 1 second will pass on the host.
-    this is automatically implied by all options marked as NON REPRODUCIBLE.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --sync-init-date
-    set the guest date to match the host date on initialization.
-    this option is recommended when using TLS connections or when sharing
-    host directories.
-    this is automatically implied with --network or --volume options.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --virtio-9p=<tag>:<directory>
-    add a VirtIO Plan9 filesystem device for sharing a host directory
-    in the guest.
-    the filesystem will have a tag that can be used to mount the host directory
-    in the guest using the following command:
-
-        busybox mount -t 9p <tag> <mountpoint>
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  -v or --volume=<host_directory>:<guest_directory>
-    like --virtio-9p, but also appends init commands to auto mount the
-    host directory in the guest directory.
-    mount tags are incrementally set to "vfs0", "vfs1", ...
-
-    this option implies --sync-init-date.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --virtio-net=<iface>
-    add a VirtIO network device using host TUN/TAP interface.
-    this allows the use of the host network from inside the machine.
-    this is more efficient and has fewer limitations than the user-space
-    networking option (--virtio-net=user).
-
-    run the following commands in the host before starting the emulator:
-
-        sudo modprobe tun
-        sudo ip link add br0 type bridge
-        sudo ip tuntap add dev tap0 mode tap user $USER
-        sudo ip link set dev tap0 master br0
-        sudo ip link set dev br0 up
-        sudo ip link set dev tap0 up
-        sudo ip addr add 10.0.2.2/24 dev br0
-        sudo sysctl -w net.ipv4.ip_forward=1
-        sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-
-    (in the example above, the host public internet interface is eth0,
-    but this depends on your host.)
-
-    then, start the machine with using --virtio-net=tap0 and
-    execute the following commands in the guest (with root privilege):
-
-        busybox ip link set dev eth0 up
-        busybox ip addr add 10.0.2.15/24 dev eth0
-        busybox ip route add default via 10.0.2.2 dev eth0
-        echo "nameserver 8.8.8.8" > /etc/resolv.conf
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --virtio-net=user
-    add a VirtIO network device using host user-space networking.
-    this allows the use of the host network from inside the machine.
-    you don't need root privilege or any configuration in the host to use this.
-    although this mode is easier to use, it has the following limitations:
-      - there is an additional emulation layer of the TCP/IP stack;
-      - not all IP protocols are emulated, but TCP and UDP should work;
-      - host cannot connect to guest TCP ports.
-    the implementation uses the libslirp TCP/IP emulator library.
-
-    you must execute the following commands in the guest (with root privilege):
-
-        busybox ip link set dev eth0 up
-        busybox ip addr add 10.0.2.15/24 dev eth0
-        busybox ip route add default via 10.0.2.2 dev eth0
-        echo 'nameserver 10.0.2.3' > /etc/resolv.conf
-
-    the network settings configuration is fixed to the following:
-        Network:      10.0.2.0
-        Netmask:      255.255.255.0
-        Host/Gateway: 10.0.2.2
-        DHCP Start:   10.0.2.15
-        Nameserver:   10.0.2.3
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  -n or --network
-    like --virtio-net=user, but automatically appends init commands to
-    initialize the network in the guest.
-
-    this option implies --sync-init-date.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  -p=... or --port-forward=[hostip:]hostport[:guestip][:guestport][/protocol]
-    redirect incoming TCP or UDP connections.
-    bind the host hostip:hostport to the guest guestip:guestport.
-    protocol can be "tcp" or "udp".
-    if host ip is absent, it's set to "127.0.0.1".
-    if guest ip is absent, it's set to "10.0.2.15".
-    if guest port is absent, it's set to the same as host port.
-    if protocol is absent, it's set to "tcp".
-    you can pass this option multiple times.
-    this option requires --network or --virtio-net=user option.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  -i or --htif-console-getchar
-    run in interactive mode using a HTIF console device.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --virtio-console
-    add a VirtIO console device.
-    VirtIO console is more responsive than the HTIF console and
-    supports terminal size.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  -it
-    run in enhanced interactive mode using a VirtIO console device.
-    the console is resizable, more responsive, and support more features
-    than the -i option.
-
-    like --virtio-console, but automatically appends init commands to forward
-    TERM and LANG environment variables from the host to the guest,
-    allowing the use of true colors and special characters (when supported).
-
-    this option implies --sync-init-date.
-
-    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
-
-  --no-htif-yield-manual
-    do not honor yield requests with manual reset by target.
-
-  --no-htif-yield-automatic
-    do not honor yield requests with automatic reset by target.
-
-  --create=<directory>
-    initializes a machine using fully on-disk state stored to <directory>,
-    the effect is similar as creating a machine and using --store=<directory>,
-    however this is the only safe way to create machines with large address spaces
-    or to propagate "shared" backing stores to configuration files.
-
-    MUST BE USED WITH --no-rollback
-
-  --load=<directory>[,<key>:<value>[,...]...]
-    load machine stored in <directory>.
-
-    <key>:<value> is one of
-        clone:<source_directory>
-        sharing:<mode>
-
-        clone (optional)
-        clones previously stored machine from <source_directory> to <directory> and loads it.
-        writable address ranges use reference links on copy-on-write filesystems.
-        read-only address ranges use hard links to avoid unnecessary copying.
-        files sparsity is preserved to minimize storage usage.
-
-        sharing (optional)
-        affects how address ranges modifications reflect the loaded backing stores:
-            none: keeps state in-memory only; no backing store modifications.
-            config: only configured "shared" backing stores operate on-disk and are modified.
-            all: keeps state on-disk, modifying all backing stores.
-        the default mode is "none", but if clone is present then the default mode is "all".
-        all modes except "none" MUST BE USED WITH --no-rollback.
-
-  --store=<directory>[,<key>:<value>[,...]...]
-    store machine to <directory>, where "%h" is substituted by the
-    state hash in the directory name.
-
-    <key>:<value> is one of
-        sharing:<mode>
-
-        sharing (optional)
-        affects how address ranges modifications reflect the new backing stores:
-            none: copies backing stores as they were during load (rarely useful).
-            config: store "shared" backing stores from current state; others are copied as they were during load.
-            all: (default) store current state for all backings stores.
-
-  --initial-hash
-    print initial state hash before running machine.
-
-  --final-hash
-    print final state hash when done.
-
-  --periodic-hashes=<number-period>[,<number-start>]
-    prints root hash every <number-period> cycles.
-    if <number-start> is given, the periodic hashing will start at that mcycle.
-    this option implies --initial-hash and --final-hash.
-    (default: none)
-
-  --dense-uarch-hashes=<number-length>[,<number-start>]
-    prints root hash every uarch cycle for <number-length> mcycles.
-    if <number-start> is given, the dense hashing will start at that mcycle.
-
-  --log-step=<mcycle-count>,<filename>
-    log and save a step of <mcycle-count> mcycles to <filename>.
-
-  --log-step-uarch
-    advance one micro step and print access log.
-
-  --log-reset-uarch
-    reset the microarchitecture state and print the access log.
-
-  --auto-reset-uarch
-    reset uarch automatically after halt.
-
-  --store-config[=<filename>]
-    store initial machine config as Lua script to <filename>.
-    If <filename> is omitted, print the initial machine config to stdout.
-
-  --store-json-config[=<filename>]
-    store initial machine config as JSON to <filename>.
-    If <filename> is omitted, print the initial machine config to stdout.
-
-  --load-config=<filename>
-    load initial machine config from Lua script <filename>. If a field is omitted on
-    the config table, it will fall back into the respective command-line
-    argument or into the default value.
-
-  --load-json-config=<filename>
-    load initial machine config from JSON <filename>. If a field is omitted on
-    the config table, it will fall back into the respective command-line
-    argument or into the default value.
-
-  --uarch-ram-image=<filename>
-    name of file containing microarchitecture RAM image.
-
-  --dump-address-ranges[=<dir>]
-    dump all address ranges to files under <dir>.
-    If <dir> is omitted, files are written to the current directory.
-
-  --assert-rolling-template
-    exit with failure in case the generated machine is not compatible with
-    Rolling Cartesi Machine templates.
-
-  --quiet
-    suppress cartesi-machine.lua output.
-    exceptions: --initial-hash, --final-hash and text emitted from the target.
-
-  --no-init-splash
-    don't show cartesi machine splash on boot.
-
-  -u=<name> or --user=<name>
-    appends to init the user who should execute the entrypoint command.
-    when omitted, the user is set to "dapp" by rootfs init script.
-
-  -e=<name>=<value> or --env=<name>=<value>
-    appends to init an environment variable export.
-
-  -w=<dir> or --workdir=<dir>
-    appends to init the entrypoint working directory.
-
-  -h=<name> or --hostname=<name>
-    appends to init a machine hostname change.
-
-  --append-init=<string>
-    append <string> to the machine's init script, to execute as root.
-    <string> is executed on boot after mounting flash drives but before
-    running the entrypoint.
-    you can pass this option multiple times.
-
-  --append-init-file=<filename>
-    like --append-init, but read contents from a file.
-
-  --append-entrypoint=<string>
-    append a <string> to the machine's entrypoint script, to execute as dapp.
-    <string> is executed after the machine is initialized, and before the
-    command and arguments passed last in the command line.
-    you can pass this option multiple times.
-
-  --append-entrypoint-file=<filename>
-    like --append-entrypoint, but read contents from a file.
-
-  --gdb[=<ip>:<port>]
-    listen at <ip>:<port> and wait for a GDB connection to debug the machine.
-    if <ip>:<port> is omitted, '127.0.0.1:1234' is used by default.
-    the host GDB client must have support for RISC-V architecture.
-
-    host GDB can connect with the following command:
-        gdb -ex "set arch riscv:rv64" -ex "target remote <ip>:<port>" [elf]
-
-        elf (optional)
-        the binary elf file with symbols and debugging information
-        to be debugged, such as:
-        - vmlinux (for kernel debugging)
-        - BBL elf (for debugging the BBL boot loader)
-        - a test elf (for debugging tests)
-
-    to perform cycle stepping in a debug session,
-    use the command "stepc" after adding the following in your ~/.gdbinit file:
-      source <emulator-path>/tools/gdb/gdbinit
-
-and command and arguments:
-
-  command
-    the full path to the program inside the target system.
-    (default: /bin/sh)
-
-  arguments
-    the given command arguments.
-
-<number> can be specified in decimal (e.g., 16) or hexadecimal (e.g., 0x10),
-with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
-or a left shift (e.g., 2 << 20).
-
+...
 ```
 
 A final check can also be performed to verify if the contents inside the
@@ -1535,7 +836,7 @@ from outside the emulator shows it is unchanged.
 e2ls -al foo.ext2:*.txt
 ```
 
-``` bash
+``` text
          11  -rw-r--r--     1000     1000       13  1-Jan-1970 00:00 bar.txt
 ```
 
@@ -1560,7 +861,7 @@ the image file `foo.ext2` has indeed been modified.
 e2ls -al foo.ext2:*.txt
 ```
 
-``` bash
+``` text
          11  -rw-r--r--     1000     1000       13  1-Jan-1970 00:00 bar.txt
          12  -rw-r--r--     1001     1001       13  1-Jan-1970 00:00 baz.txt
 ```
@@ -2197,8 +1498,9 @@ Cycles: 63877391
 
 The `root_hash` field in the proof `0x14e5db…` matches the final state
 hash output by the `cartesi-machine` command-line utility. The
-`target_hash` field `0x1beb37…` matches the `output.raw` NVRAM, use the
-`cartesi-hash-tree-hash` command-line utility
+`target_hash` field `0x1beb37…` is the hash of the `output.raw` NVRAM.
+To compute it independently, use the `cartesi-hash-tree-hash`
+command-line utility
 
 ``` bash
 cartesi-hash-tree-hash --log2-root-size=12 < output.raw
@@ -2490,20 +1792,11 @@ cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 EOF
 ```
 
-Listing the files created
+Listing the files created with `ls *.bin`, we see
 
-``` bash
-ls *.bin
-```
-
-We see
-
-``` bash
-input-1-output-0.bin
-input-1-output-hashes-root-hash.bin
+``` text
 input-1.bin
 input-2.bin
-query-report-0.bin
 query.bin
 ```
 
@@ -2518,9 +1811,11 @@ is shown later under [The libcmt library](#the-libcmt-library). The
 of the form `notice:<data>` or `voucher:<data>` causes the named output
 to be emitted with `<data>`, and likewise for `report:<data>`. A payload
 of the form `exception:<data>` halts the machine with `<data>` as the
-error message. Any payload that does not match a known verb causes the
-advance-state request to be rejected. Inspect-state queries are echoed
-back as a single report.
+error message. The bare payload `exit` breaks out of the request loop
+and returns from `main`. Control then returns to `cartesi-init`, which
+halts the machine. Any payload that does not match a known verb causes
+the advance-state request to be rejected. Inspect-state queries are
+echoed back as a single report.
 
 Running a Rolling Cartesi Machine in the command line requires using the
 `cartesi-jsonrpc-machine` server in combination with the
@@ -2665,7 +1960,7 @@ Here is the complete list of `.bin` files after the client exits:
 ls *.bin
 ```
 
-``` bash
+``` text
 input-1-output-0.bin
 input-1-output-hashes-root-hash.bin
 input-1.bin
@@ -2782,8 +2077,7 @@ is as follows
 }
 ```
 
-and the output (not used by `calc.sh`) gives the index of the
-just-output notice as follows
+and the output gives the index of the just-output notice as follows
 
 ``` js
 {
@@ -2822,20 +2116,21 @@ done
 rm "$reqfile"
 ```
 
-The loop in the `calc.sh` script calls `rollup finish` to obtain the
-next request (and accept or reject the previous). It uses `jq` to
-extract the `request_type` field and, if it is an `"advance_state"`
-request, it uses `jq` again to extract the `"payload"` field inside the
-`"data"` field. The hex-encoded payload is decoded back to bytes by
-`hex --decode` and passed to `bc`, which outputs the result split into
-lines terminated by `\`. Unfortunately, `bc` does not exit with an error
-when it detects one. Instead, it prints a message to the error stream
-and exits successfully. The `grep .` exits with an error in that case,
-because the output stream of `bc` will be empty. Otherwise, `grep .`
-simply passes the output through unchanged. In that case, `tr` utility
-joins the lines back together. The joined result is hex-encoded by
-`hex --encode` and fed to `jq`, which assembles the proper JSON object
-with a `"payload"` field that is passed to `rollup notice`.
+The loop in the `calc.sh` script calls `rollup accept` or
+`rollup reject` (shortcuts for `rollup finish`) to accept or reject the
+previous request and obtain the next one. It uses `jq` to extract the
+`request_type` field and, if it is an `"advance_state"` request, it uses
+`jq` again to extract the `"payload"` field inside the `"data"` field.
+The hex-encoded payload is decoded back to bytes by `hex --decode` and
+passed to `bc`, which outputs the result split into lines terminated by
+`\`. Unfortunately, `bc` does not exit with an error when it detects
+one. Instead, it prints a message to the error stream and exits
+successfully. The `grep .` exits with an error in that case, because the
+output stream of `bc` will be empty. Otherwise, `grep .` simply passes
+the output through unchanged. In that case, `tr` utility joins the lines
+back together. The joined result is hex-encoded by `hex --encode` and
+fed to `jq`, which assembles the proper JSON object with a `"payload"`
+field that is passed to `rollup notice`.
 
 To use `calc.sh` in a Rolling Cartesi Machine template, first create a
 file-system with the program:
@@ -3033,7 +2328,7 @@ console.
 (standard_in) 1: syntax error
 ```
 
-### Rarely used options
+### Additional options
 
 > [!WARNING]
 >
@@ -3066,7 +2361,7 @@ Machines from generating outputs. Each time `cartesi-machine` receives
 control due to a yield, it prints a progress message (shown at 44%
 below) and resumes the emulator so it can continue working.
 
-``` bash
+``` text
 Progress:  44.00
 ```
 
@@ -4052,7 +3347,7 @@ written to that file (and `--load-config=<filename>` reloads it later).
 
 Adding `--store-config` to the example above, we obtain the complete
 contents of the corresponding `machine_config`, including default values
-conveniently marked as such by the `cartesi-machine` utility. Editting
+conveniently marked as such by the `cartesi-machine` utility. Editing
 them out and storing into a file, we would get:
 
 ``` lua
@@ -4341,7 +3636,7 @@ lua5.4 run-config.lua config-cat-foo-bar
 Hello world!
 ```
 
-(The function call `require(argv[1])` translates the argument
+(The function call `require(arg[1])` translates the argument
 `"config-cat-foo-bar"` to `"config-cat-foo-bar.lua"` and loads that
 file.)
 
@@ -4382,9 +3677,9 @@ dependencies.
 
 To load a machine from disk, use the `machine:load(<directory>)` method
 on an empty `machine` handle. Alternatively, the shortcut
-`machine = cartesi.machine(<machine_config>)` combines the effects of
-`machine = cartesi.new()` and `machine:create(<machine_config>)` into a
-single call. In fact, running the following script
+`machine = cartesi.machine(<directory>)` combines the effects of
+`machine = cartesi.new()` and `machine:load(<directory>)` into a single
+call. In fact, running the following script
 
 ``` lua
 -- Load the Cartesi module
@@ -4403,7 +3698,7 @@ has exactly the same effect as the example [above](#run-cat-foo-bar),
 where the machine was instantiated from the configuration and directly
 run until it halted:
 
-``` bash
+``` text
 Hello world!
 ```
 
@@ -4567,7 +3862,7 @@ lua5.4 run-config-in-chunks-with-progress.lua config-progress
 
 produces the output (shown at 44% completion) below
 
-``` bash
+``` text
 Progress:  44.00
 ```
 
@@ -4658,18 +3953,9 @@ The result is, as expected,
 
 ### State hashes
 
-State hashes are Merkle tree root hashes of the entire 64-bit address
-space of the Cartesi Machine, where the leaves are aligned 256-bit
-words. Since Cartesi Machines are transparent, the contents of this
-address space encompass the entire machine state, including all the
-processor’s CSRs and general-purpose registers, the contents of RAM, of
-all flash drives and NVRAMs, and of all other devices or memory ranges
-connected to the board. State hashes therefore work as cryptographic
-signatures of the machine, and implicitly of the computation they are
-about to execute.
-
-The following script shows how state hashes can be obtained from a
-Cartesi Machine instance:
+State hashes (defined earlier under [State hashes](#state-hashes)) are
+Merkle tree root hashes of the machine’s entire address space. Here we
+obtain them from a Cartesi Machine instance with the following script:
 
 ``` lua
 -- Load the Cartesi module
@@ -4763,7 +4049,7 @@ cartesi-machine \
     --final-hash
 ```
 
-``` bash
+``` text
 0: 933420c3cdabafa9df5b3e7bb2afb5d6c798dd843d94dde1ee3abe9e566c0042
 
          .
@@ -4976,11 +4262,11 @@ example discussed above. It uses two helper functions from the
 `machine:get_proof()`.
 
 ``` lua
-local function roll_hash_up_tree(address, log2_target_size, sibling_hashes, target_hash)
+local function roll_hash_up_tree(proof, target_hash)
     local hash = target_hash
-    for log2_size = log2_target_size, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
-        local sibling = sibling_hashes[log2_size - log2_target_size + 1]
-        local bit = (address & (1 << log2_size)) ~= 0
+    for log2_size = proof.log2_target_size, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
+        local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
+        local bit = (proof.target_address & (1 << log2_size)) ~= 0
         local first, second
         if bit then
             first, second = sibling, hash
@@ -4994,12 +4280,8 @@ end
 ```
 
 ``` lua
-local function slice_assert(root_hash, address, log2_target_size, proof)
-    assert(root_hash == proof.root_hash, "proof root_hash mismatch")
-    assert(
-        roll_hash_up_tree(address, log2_target_size, proof.sibling_hashes, proof.target_hash) == root_hash,
-        "node not in tree"
-    )
+local function slice_assert(proof)
+    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "node not in tree")
 end
 ```
 
@@ -5009,6 +4291,7 @@ verify the output NVRAM proof.
 ``` lua
 -- Load the Cartesi module
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local proof = require("proof")
 
 -- Instantiate machine from configuration
@@ -5027,35 +4310,34 @@ until break_reason == cartesi.BREAK_REASON_HALTED or break_reason == cartesi.BRE
 -- Obtain value proof for output NVRAM
 local output_state_hash = machine:get_root_hash()
 local output_nvram = config.nvram[2]
-local log2_target_size = 12 -- 4 KiB output NVRAM
+local log2_target_size = util.ilog2(output_nvram.length)
 local output_proof = machine:get_proof(output_nvram.start, log2_target_size)
 
 -- Verify proof
-proof.slice_assert(output_state_hash, output_nvram.start, log2_target_size, output_proof)
+proof.slice_assert(output_proof)
 print("\nOutput NVRAM proof accepted!\n")
 
 print((string.unpack("z", machine:read_memory(output_nvram.start, output_nvram.length))))
 ```
 
 The bulk of work happens in
-`roll_hash_up_tree(<address>, <log2_target_size>, <sibling_hashes>, <target_hash>)`.
-In the first iteration of the loop, the function uses the bit with value
-2<sup>`log2_target_size`</sup> in `<address>` to determine if the
-sibling of the target node comes before or after it in the address space
-of the Cartesi Machine. It then computes the hash of the concatenation
-of the target node’s hash and its sibling’s hash (in the correct order).
-To do so, it uses the
+`roll_hash_up_tree(<proof>, <new_target_hash>)`. In the first iteration
+of the loop, the function uses the bit with value
+2<sup>`proof.log2_target_size`</sup> in `proof.target_address` to
+determine if the sibling of the target node comes before or after it in
+the address space of the Cartesi Machine. It then computes the hash of
+the concatenation of the target node’s hash and its sibling’s hash (in
+the correct order). To do so, it uses the
 `cartesi.keccak256(<first-string>, <second-string>)` function. The
 result must be the hash of the parent node to the target and its
-sibling. The loop then goes up the `sibling_hashes` array, and obtains
-the sibling of this parent node. This is again concatenated with the
-just-calculated hash of the parent node (in the correct order) to obtain
-what must be the hash of the grandparent node. This process is repeated
-until the hash of what must be the root node is found and returned.
-Function
-`slice_assert(<root_hash>, <address>, <log2_target_size>, <proof>)` then
-compares this to the hash that was expected in the root node. If they
-match, the proof passes. Otherwise, something is amiss.
+sibling. The loop then goes up the `proof.sibling_hashes` array, and
+obtains the sibling of this parent node. This is again concatenated with
+the just-calculated hash of the parent node (in the correct order) to
+obtain what must be the hash of the grandparent node. This process is
+repeated until the hash of what must be the root node is found and
+returned. Function `slice_assert(<proof>)` then compares this to
+`proof.root_hash`. If they match, the proof passes. Otherwise, something
+is amiss.
 
 The single-argument form `cartesi.keccak256(<string>)` returns the hash
 of the byte string `<string>`.
@@ -5489,22 +4771,12 @@ expression `1+(` was entered:
 ### State transition proofs
 
 During verification, the blockchain mediates a *verification game*
-between the disputing parties. This process is explained in detail under
-[the blockchain perspective](#verification-game). In a nutshell, both
-parties started from a Cartesi Machine that has a known and agreed upon
-initial state hash. (E.g., an agreed upon template that was instantiated
-with an agreed upon input drive.) At the end of the computation, these
-parties now disagree on the state hash for the halted machine. The state
-hash evolves as the machine executes steps in its fetch-execute loop.
-The first stage of the verification game therefore searches for the
-*step of disagreement*: the particular cycle such that the parties agree
-on the state hash before the step, but disagree on the state hash after
-the step. Once this step of disagreement is identified, one of the
-parties sends to the blockchain a log of state accesses that happen
-along the step, including Merkle-tree proofs for every value read from
-or written to the state. This log proves to the blockchain that the
-execution of the step transitions the state in such a way that it
-finally reaches the state hash claimed by the submitting party.
+between the disputing parties (explained under [the blockchain
+perspective](#verification-game)). In brief, the parties agree on an
+initial state hash but disagree on a later one. The first stage of the
+game finds the *step of disagreement*, after which one party submits an
+access log, with Merkle-tree proofs for every value read from or written
+to the state, proving the transition.
 
 To obtain the access log for the next uarch step in the execution of a
 Cartesi Machine instance, use the `machine:log_step_uarch(<log_type>)`
@@ -7767,8 +7039,11 @@ The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine. This
 will permanently set register `iflags_H` to 1 and return control back to
 the host.
 
-Send request `CMD=HTIF_HALT_CMD_HALT` and `DATA` containing bit 0 set
-to 1. Bits 47–1 can be set to an arbitrary exit code.
+Send request `CMD=HTIF_HALT_CMD_HALT` with bit 0 of the 32-bit `DATA`
+field (bits 31–0) set to 1. The remaining bits 31–1 of `DATA` carry an
+arbitrary exit code, read as `DATA >> 1`, following the convention used
+by the RISC-V test framework. The `cartesi-machine` utility reports this
+value as the machine’s exit code.
 
 ##### Console
 
@@ -8726,20 +8001,11 @@ the computation, wherever it may reside within the address space.
 
 > [!NOTE]
 >
-> The scare quotes around “completely” are pedantic. It is true that
-> there are a multitude of machine states that produce the same state
-> hash. After all, the Keccak-256 state hashes fit in 256-bits, whereas
-> machine states can take gigabytes. There are therefore many more
-> possible machine states than possible state hashes. By the pigeonhole
-> principle, there must be multiple machines with the same hash (i.e.,
-> hash collisions). However, given only the state hash, finding a
-> Cartesi Machine with that state hash should be virtually impossible.
-> Given a Cartesi Machine and its state hash, finding a *second*
-> (distinct) Cartesi Machine with the same state hash should also be
-> virtually impossible. Even finding two different Cartesi Machines that
-> have the same state hash (any hash) should be virtually impossible.
-> Cryptographic hash functions, such as Keccak-256, were designed
-> *specifically* to have these properties.
+> The same caveat applies to “completely” here as to “only” earlier (see
+> [State hashes](#state-hashes)). There are vastly more possible machine
+> states than 256-bit state hashes, so collisions must exist, but
+> finding one is infeasible for a cryptographic hash function such as
+> Keccak-256.
 
 The state hash of a Cartesi Machine is the root hash of a Merkle tree.
 Merkle trees are binary trees where a leaf node is labeled with the hash
@@ -8827,11 +8093,11 @@ The workhorse is `roll_hash_up_tree`, which rebuilds the path’s labels
 bottom-up from the target node:
 
 ``` lua
-local function roll_hash_up_tree(address, log2_target_size, sibling_hashes, target_hash)
+local function roll_hash_up_tree(proof, target_hash)
     local hash = target_hash
-    for log2_size = log2_target_size, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
-        local sibling = sibling_hashes[log2_size - log2_target_size + 1]
-        local bit = (address & (1 << log2_size)) ~= 0
+    for log2_size = proof.log2_target_size, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
+        local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
+        local bit = (proof.target_address & (1 << log2_size)) ~= 0
         local first, second
         if bit then
             first, second = sibling, hash
@@ -8848,12 +8114,8 @@ The slicing check `slice_assert` wires this walk into the proof
 structure returned by `machine:get_proof()`:
 
 ``` lua
-local function slice_assert(root_hash, address, log2_target_size, proof)
-    assert(root_hash == proof.root_hash, "proof root_hash mismatch")
-    assert(
-        roll_hash_up_tree(address, log2_target_size, proof.sibling_hashes, proof.target_hash) == root_hash,
-        "node not in tree"
-    )
+local function slice_assert(proof)
+    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "node not in tree")
 end
 ```
 
@@ -8871,12 +8133,9 @@ hash of a tree with the old node replaced by the new. This is exactly
 what `splice_assert` does:
 
 ``` lua
-local function splice_assert(root_hash, address, log2_target_size, proof, new_target_hash, new_root_hash)
-    slice_assert(root_hash, address, log2_target_size, proof)
-    assert(
-        roll_hash_up_tree(address, log2_target_size, proof.sibling_hashes, new_target_hash) == new_root_hash,
-        "new node not in tree"
-    )
+local function splice_assert(proof, new_target_hash, new_root_hash)
+    slice_assert(proof)
+    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "new node not in tree")
 end
 ```
 

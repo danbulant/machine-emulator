@@ -1,5 +1,6 @@
 -- Load the Cartesi module
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local proof = require("proof")
 
 -- Instantiate machine from configuration
@@ -18,11 +19,11 @@ until break_reason == cartesi.BREAK_REASON_HALTED or break_reason == cartesi.BRE
 -- Obtain value proof for output NVRAM
 local output_state_hash = machine:get_root_hash()
 local output_nvram = config.nvram[2]
-local log2_target_size = 12 -- 4 KiB output NVRAM
+local log2_target_size = util.ilog2(output_nvram.length)
 local output_proof = machine:get_proof(output_nvram.start, log2_target_size)
 
 -- Verify proof
-proof.slice_assert(output_state_hash, output_nvram.start, log2_target_size, output_proof)
+proof.slice_assert(output_proof)
 print("\nOutput NVRAM proof accepted!\n")
 
 print((string.unpack("z", machine:read_memory(output_nvram.start, output_nvram.length))))

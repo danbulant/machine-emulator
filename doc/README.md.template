@@ -14,7 +14,7 @@ It was designed to bring mainstream scalability to decentralized applications an
 Applications running exclusively on smart contracts face severe constraints on the amount of data they can manipulate and on the complexity of computations they can perform.
 These limitations manifest themselves as exorbitant transaction costs and, even if such costs could somehow be overcome, as extremely long computation times.
 
-In comparison, applications running inside Cartesi Machines can process relatively unlimited amounts of data, and at a pace over 4 orders of magnitude faster.
+In comparison, applications running inside Cartesi Machines can process relatively unlimited amounts of data, and at a pace orders of magnitude faster.
 This is possible because Cartesi Machines run off-chain, free of the overhead imposed by the consensus mechanisms used by blockchains.
 
 In a typical scenario, one of the parties involved in an application will execute the Cartesi Machine off-chain and report its results to the blockchain.
@@ -75,7 +75,7 @@ The execution of this program modifies the registers and memories and interacts 
 The Cartesi Machine also includes a _microarchitecture_ (uarch).
 The uarch can be seen as a lower-level emulator, with its own separate registers and memory, implementing a much narrower RISC-V ISA than the main processor.
 The uarch is not visible to the main processor, but code running in the uarch has access to the entire state of the Cartesi Machine, including the main processor and the entire board.
-The same interpreter source-code for the Cartesi Machine that runs on the host can also be compiled to an `uarch.bin` binary that is about to run one fetch-execute iteration of the main processor and then halt the uarch.
+The same interpreter source-code for the Cartesi Machine that runs on the host can also be compiled to an `uarch.bin` binary that runs exactly one fetch-execute iteration of the main processor and then halts the uarch.
 In its pristine state, the uarch memory is loaded with this `uarch.bin`.
 Therefore, executing the uarch until it halts, and then resetting the uarch to its pristine state, is equivalent to executing one instruction of the main processor.
 This finer granularity is the basis for state-transition proofs, described in the [System architecture](#system-architecture) chapter.
@@ -174,7 +174,9 @@ The C, C++, Lua APIs as well as the command-line utility can seamlessly instanti
 The documentation starts from the command-line utility, `cartesi-machine`.
 This utility is used for most prototyping tasks.
 The documentation then covers the Lua interface of `cartesi.machine`.
-The C/C++/JSON-RPC interfaces are very similar, and are covered only within their reference manuals.
+The C, C++, and JSON-RPC interfaces closely mirror the Lua interface documented here, so this document does not cover them separately.
+The C API is defined in the `cm.h` header.
+The JSON-RPC API supports discovery, so client bindings can be generated from a running server.
 
 ## Machine playground
 
@@ -210,11 +212,14 @@ docker run \
 Once inside, you can execute the `cartesi-machine` utility as follows:
 
 ```{.bash key=cli_help replace=source}
-cartesi-machine --help
+set +o pipefail
+# docs:begin
+cartesi-machine --help | head -n 40
+# docs:end
+echo ...
 ```
 
 ```{.text replace=cli_help}
-cartesi-machine --help
 ```
 
 A final check can also be performed to verify if the contents inside the container are as expected:
@@ -515,7 +520,7 @@ e2ls -al foo.ext2:*.txt
 # docs:end
 ```
 
-```{.bash replace=e2ls_not_shared_foo_ext2}
+```{.text replace=e2ls_not_shared_foo_ext2}
 ```
 
 This behavior is appropriate when the flash drives will only be used as inputs.
@@ -540,7 +545,7 @@ e2ls -al foo.ext2:*.txt
 # docs:end
 ```
 
-```{.bash replace=e2ls_shared_foo_ext2/both}
+```{.text replace=e2ls_shared_foo_ext2/both}
 ```
 
 ### Limiting execution
@@ -1046,7 +1051,8 @@ This produces the output
 ```
 
 The `root_hash` field in the proof [...]{replace=output_raw_proof/root_hash} matches the final state hash output by the `cartesi-machine` command-line utility.
-The `target_hash` field [...]{replace=output_raw_proof/target_hash} matches the `output.raw` NVRAM, use the `cartesi-hash-tree-hash` command-line utility
+The `target_hash` field [...]{replace=output_raw_proof/target_hash} is the hash of the `output.raw` NVRAM.
+To compute it independently, use the `cartesi-hash-tree-hash` command-line utility
 ```{.bash key=proofs_output_raw_hash vars=output_raw->output_raw_proof/output.raw/path replace=source}
 ln -sf "$output_raw" .
 # docs:begin
@@ -1217,7 +1223,8 @@ The `cartesi-rollup-data.lua` command-line utility, available in the `cartesi/ma
 For example, the following commands create the input files for two distinct advance-state requests
 (saved as `input-1.bin` and `input-2.bin`), and one query for an inspect-state request (saved as `query.bin`):
 
-```{.bash key=rolling_puppet_encode replace=source}
+```{.bash key=rolling_puppet_encode outputs=ls_bin replace=source}
+# docs:begin
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
   "chain_id": 0,
@@ -1247,16 +1254,11 @@ cartesi-rollup-data.lua encode inspect > query.bin <<EOF
   "payload": "$(printf 'hello from query!' | hex --encode)"
 }
 EOF
-```
-Listing the files created
-```{.bash key=rolling_puppet_encoded_bins vars=rolling_puppet replace=source}
-ln -sf $rolling_puppet/*.bin .
-# docs:begin
-ls *.bin
 # docs:end
+ls *.bin > ls_bin
 ```
-We see
-```{.bash key=encoded_bins_ls replace=rolling_puppet_encoded_bins}
+Listing the files created with `ls *.bin`, we see
+```{.text replace=rolling_puppet_encode/ls_bin}
 ```
 
 #### Running a simple guest application
@@ -1266,6 +1268,8 @@ Its source is shown later under [The libcmt library](#the-libcmt-library).
 The `puppet` interprets each advance-state payload as a command.
 A payload of the form `notice:<data>` or `voucher:<data>` causes the named output to be emitted with `<data>`, and likewise for `report:<data>`.
 A payload of the form `exception:<data>` halts the machine with `<data>` as the error message.
+The bare payload `exit` breaks out of the request loop and returns from `main`.
+Control then returns to `cartesi-init`, which halts the machine.
 Any payload that does not match a known verb causes the advance-state request to be rejected.
 Inspect-state queries are echoed back as a single report.
 
@@ -1366,7 +1370,7 @@ ln -sf $rolling_puppet/*.bin .
 ls *.bin
 # docs:end
 ```
-```{.bash replace=rolling_puppet_all_bins}
+```{.text replace=rolling_puppet_all_bins}
 ```
 
 #### Decoding responses
@@ -1441,7 +1445,7 @@ The input format is as follows
   "payload": <hex-data>
 }
 ```
-and the output (not used by `calc.sh`) gives the index of the just-output notice as follows
+and the output gives the index of the just-output notice as follows
 ```js
 {
   "index": <number>
@@ -1453,7 +1457,7 @@ A `bc`-based arbitrary precision application, for example, might look like this:
 ```{.bash key=rolling_calc_sh include=calc.sh title="calc.sh"}
 ```
 
-The loop in the `calc.sh` script calls `rollup finish` to obtain the next request (and accept or reject the previous).
+The loop in the `calc.sh` script calls `rollup accept` or `rollup reject` (shortcuts for `rollup finish`) to accept or reject the previous request and obtain the next one.
 It uses `jq` to extract the `request_type` field and, if it is an `"advance_state"` request, it uses `jq` again to extract the `"payload"` field inside the `"data"` field.
 The hex-encoded payload is decoded back to bytes by `hex --decode` and passed to `bc`, which outputs the result split into lines terminated by `\`.
 Unfortunately, `bc` does not exit with an error when it detects one.
@@ -1615,7 +1619,7 @@ In production, these error messages should have been captured and output as a re
 ```{replace=rolling_calc_template/server}
 ```
 
-### Rarely used options
+### Additional options
 
 :::warning
 This is an advanced section, not needed by regular users of the Cartesi platform.
@@ -1641,7 +1645,7 @@ By default, the emulator honors automatic yield requests from the guest.
 Passing `--no-htif-yield-automatic` makes `cartesi-machine` ignore them, but be careful since doing so would _also_ prevent Rolling Cartesi Machines from generating outputs.
 Each time `cartesi-machine` receives control due to a yield, it prints a progress message (shown at 44% below) and resumes the emulator so it can continue working.
 
-```{.bash key=truncated_progress_output replace=stdout vars=log->progress/both/path}
+```{.text key=truncated_progress_output runner=bash replace=stdout vars=log->progress/both/path}
 # tr replaces carriage returns with line feeds
 # first sed command passes through anything not a progress line.
 # second sed command finds 44.00 and immediately aborts
@@ -2124,7 +2128,7 @@ Without an argument, the configuration is printed to standard output.
 With `=<filename>`, it is written to that file (and `--load-config=<filename>` reloads it later).
 
 Adding `--store-config` to the example above, we obtain the complete contents of the corresponding `machine_config`, including default values conveniently marked as such by the `cartesi-machine` utility.
-Editting them out and storing into a file, we would get:
+Editing them out and storing into a file, we would get:
 ```{.lua runner=bash key=config_ls_bin replace=stdout vars=config->ls_bin/config-ls-bin.lua/path title="config-ls-bin.lua"}
 lua5.4 $RECIPES_DIR/minimal-config.lua $config
 ```
@@ -2212,7 +2216,7 @@ lua5.4 run-config.lua config-cat-foo-bar
 ```{.text replace=run_config_cat_foo_bar}
 ```
 
-(The function call `require(argv[1])` translates the argument `"config-cat-foo-bar"` to `"config-cat-foo-bar.lua"` and loads that file.)
+(The function call `require(arg[1])` translates the argument `"config-cat-foo-bar"` to `"config-cat-foo-bar.lua"` and loads that file.)
 
 ### Instantiation from persistent state
 
@@ -2241,13 +2245,13 @@ After the execution of the script above, the directory `./cat-foo-bar/` contains
 There are no external dependencies.
 
 To load a machine from disk, use the `machine:load(<directory>)` method on an empty `machine` handle.
-Alternatively, the shortcut `machine = cartesi.machine(<machine_config>)` combines the effects of `machine = cartesi.new()` and `machine:create(<machine_config>)` into a single call.
+Alternatively, the shortcut `machine = cartesi.machine(<directory>)` combines the effects of `machine = cartesi.new()` and `machine:load(<directory>)` into a single call.
 In fact, running the following script
 ```{.lua key=load_cat_foo_bar include=load-cat-foo-bar.lua title="load-cat-foo-bar.lua"}
 ```
 has exactly the same effect as the example [above](#run-cat-foo-bar), where the machine was instantiated from the configuration and directly run until it halted:
 
-```{.bash key=run_load_cat_foo_bar replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=load_cat_foo_bar}
+```{.text key=run_load_cat_foo_bar runner=bash replace=both vars=template->run_store_cat_foo_bar/cat-foo-bar/path depends=load_cat_foo_bar}
 ln -sf "$RECIPES_DIR/load-cat-foo-bar.lua" .
 ln -sf "$template" .
 lua5.4 load-cat-foo-bar.lua
@@ -2328,7 +2332,7 @@ lua5.4 run-config-in-chunks-with-progress.lua config-progress
 # docs:end
 ```
 produces the output (shown at 44% completion) below
-```{.bash key=truncated_lua_progress_output replace=stdout vars=log->lua_progress/both/path}
+```{.text key=truncated_lua_progress_output runner=bash replace=stdout vars=log->lua_progress/both/path}
 # tr replaces carriage returns with line feeds
 # first sed command passes through anything not a progress line.
 # second sed command finds 44.00 and immediately aborts
@@ -2375,11 +2379,8 @@ The result is, as expected,
 
 ### State hashes
 
-State hashes are Merkle tree root hashes of the entire 64-bit address space of the Cartesi Machine, where the leaves are aligned 256-bit words.
-Since Cartesi Machines are transparent, the contents of this address space encompass the entire machine state, including all the processor's CSRs and general-purpose registers, the contents of RAM, of all flash drives and NVRAMs, and of all other devices or memory ranges connected to the board.
-State hashes therefore work as cryptographic signatures of the machine, and implicitly of the computation they are about to execute.
-
-The following script shows how state hashes can be obtained from a Cartesi Machine instance:
+State hashes (defined earlier under [State hashes](#state-hashes)) are Merkle tree root hashes of the machine's entire address space.
+Here we obtain them from a Cartesi Machine instance with the following script:
 ```{.lua key=run_config_with_hashes include=run-config-with-hashes.lua title="run-config-with-hashes.lua"}
 ```
 
@@ -2422,7 +2423,7 @@ cartesi-machine \
     --final-hash
 ```
 
-```{.bash key=compare_utility_and_lua replace=stdout vars=lua->state_hashes_lua/both/path,utility->state_hashes_utility/both/path}
+```{.text key=compare_utility_and_lua runner=bash replace=stdout vars=lua->state_hashes_lua/both/path,utility->state_hashes_utility/both/path}
 diff $lua $utility && cat $utility
 ```
 
@@ -2545,15 +2546,15 @@ The calculator script requires this module and uses `slice_assert` to verify the
 ```{.lua key=run_calculator_with_proof include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
 ```
 
-The bulk of work happens in `roll_hash_up_tree(<address>, <log2_target_size>, <sibling_hashes>, <target_hash>)`.
-In the first iteration of the loop, the function uses the bit with value 2<sup>`log2_target_size`</sup> in `<address>` to determine if the sibling of the target node comes before or after it in the address space of the Cartesi Machine.
+The bulk of work happens in `roll_hash_up_tree(<proof>, <new_target_hash>)`.
+In the first iteration of the loop, the function uses the bit with value 2<sup>`proof.log2_target_size`</sup> in `proof.target_address` to determine if the sibling of the target node comes before or after it in the address space of the Cartesi Machine.
 It then computes the hash of the concatenation of the target node's hash and its sibling's hash (in the correct order).
 To do so, it uses the `cartesi.keccak256(<first-string>, <second-string>)` function.
 The result must be the hash of the parent node to the target and its sibling.
-The loop then goes up the `sibling_hashes` array, and obtains the sibling of this parent node.
+The loop then goes up the `proof.sibling_hashes` array, and obtains the sibling of this parent node.
 This is again concatenated with the just-calculated hash of the parent node (in the correct order) to obtain what must be the hash of the grandparent node.
 This process is repeated until the hash of what must be the root node is found and returned.
-Function `slice_assert(<root_hash>, <address>, <log2_target_size>, <proof>)` then compares this to the hash that was expected in the root node.
+Function `slice_assert(<proof>)` then compares this to `proof.root_hash`.
 If they match, the proof passes.
 Otherwise, something is amiss.
 
@@ -2755,15 +2756,9 @@ The remote console shows only the error generated when the invalid expression `1
 
 ### State transition proofs
 
-During verification, the blockchain mediates a *verification game* between the disputing parties.
-This process is explained in detail under [the blockchain perspective](#verification-game).
-In a nutshell, both parties started from a Cartesi Machine that has a known and agreed upon initial state hash.
-(E.g., an agreed upon template that was instantiated with an agreed upon input drive.)
-At the end of the computation, these parties now disagree on the state hash for the halted machine.
-The state hash evolves as the machine executes steps in its fetch-execute loop.
-The first stage of the verification game therefore searches for the *step of disagreement*: the particular cycle such that the parties agree on the state hash before the step, but disagree on the state hash after the step.
-Once this step of disagreement is identified, one of the parties sends to the blockchain a log of state accesses that happen along the step, including Merkle-tree proofs for every value read from or written to the state.
-This log proves to the blockchain that the execution of the step transitions the state in such a way that it finally reaches the state hash claimed by the submitting party.
+During verification, the blockchain mediates a *verification game* between the disputing parties (explained under [the blockchain perspective](#verification-game)).
+In brief, the parties agree on an initial state hash but disagree on a later one.
+The first stage of the game finds the *step of disagreement*, after which one party submits an access log, with Merkle-tree proofs for every value read from or written to the state, proving the transition.
 
 To obtain the access log for the next uarch step in the execution of a Cartesi Machine instance, use the `machine:log_step_uarch(<log_type>)` function.
 Note that the function indeed performs the step, and therefore advances the microarchitecture state, in addition to collecting the access log.
@@ -3910,8 +3905,9 @@ Unavailable commands are silently ignored by the machine.
 The Halt device (`DEV=HTIF_DEV_HALT`) is used to halt the machine.
 This will permanently set register `iflags_H` to 1 and return control back to the host.
 
-Send request `CMD=HTIF_HALT_CMD_HALT` and `DATA` containing bit 0 set to&nbsp;1.
-Bits 47&ndash;1 can be set to an arbitrary exit code.
+Send request `CMD=HTIF_HALT_CMD_HALT` with bit 0 of the 32-bit `DATA` field (bits 31&ndash;0) set to&nbsp;1.
+The remaining bits 31&ndash;1 of `DATA` carry an arbitrary exit code, read as `DATA >> 1`, following the convention used by the RISC-V test framework.
+The `cartesi-machine` utility reports this value as the machine's exit code.
 
 ##### Console
 
@@ -4473,15 +4469,8 @@ This is because a given state always evolves in exactly the same way (because Ca
 By the same token, once the machine is done, the state hash &ldquo;completely&rdquo; specifies the result of the computation, wherever it may reside within the address space.
 
 :::info
-The scare quotes around &ldquo;completely&rdquo; are pedantic.
-It is true that there are a multitude of machine states that produce the same state hash.
-After all, the Keccak-256 state hashes fit in 256-bits, whereas machine states can take gigabytes.
-There are therefore many more possible machine states than possible state hashes.
-By the pigeonhole principle, there must be multiple machines with the same hash (i.e., hash collisions).
-However, given only the state hash, finding a Cartesi Machine with that state hash should be virtually impossible.
-Given a Cartesi Machine and its state hash, finding a *second* (distinct) Cartesi Machine with the same state hash should also be virtually impossible.
-Even finding two different Cartesi Machines that have the same state hash (any hash) should be virtually impossible.
-Cryptographic hash functions, such as Keccak-256, were designed *specifically* to have these properties.
+The same caveat applies to &ldquo;completely&rdquo; here as to &ldquo;only&rdquo; earlier (see [State hashes](#state-hashes)).
+There are vastly more possible machine states than 256-bit state hashes, so collisions must exist, but finding one is infeasible for a cryptographic hash function such as Keccak-256.
 :::
 
 The state hash of a Cartesi Machine is the root hash of a Merkle tree.
