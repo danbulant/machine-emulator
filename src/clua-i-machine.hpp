@@ -153,45 +153,39 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 
-/// \brief Replaces a Lua table with its JSON string representation and returns the string
+/// \brief Converts a Lua schema-dictionary table to JSON, once at the Lua boundary
 /// \param L Lua state
-/// \param idx Lua table stack index which will be converted to a Lua string
-/// \param indent JSON indentation when converting it to a string
+/// \param idx Stack index of the Lua schema-dictionary table
 /// \param ctxidx Index (or pseudo-index) of clua context
-/// \param schema Schema for the table
-/// \param schema_dict Dictionary containing schema for all types
+/// \returns Reference to the schema dictionary as a JSON object (a shared empty object when idx is nil or none)
+/// \details The returned reference stays valid while, and only while, the slot it pushes onto the stack
+/// remains there.
+const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1));
+
+/// \brief Replaces a Lua value with its JSON string representation and returns the string
+/// \param L Lua state
+/// \param idx Stack index of the Lua value which will be converted to a Lua string
+/// \param indent JSON indentation when converting it to a string
+/// \param schema_name Name of the root type, resolved in user_schema_dict then the machine dictionary
+/// (nullptr means no schema)
+/// \param user_schema_dict User-supplied schema dictionary (empty object means none)
+/// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the Lua value while converting to a JSON object
-/// \details In case the Lua valua is already a string, it just returns it
-const char *clua_check_json_string(lua_State *L, int idx, int indent = -1, int ctxidx = lua_upvalueindex(1),
-    const nlohmann::json &schema = nlohmann::json(), const nlohmann::json &schema_dict = nlohmann::json());
+/// \details The value may be a table, string, number, boolean or nil, allowing a bare hash or scalar to
+/// be serialized (e.g. a binary string under the "Base64" schema), not only a table
+const char *clua_tojson(lua_State *L, int idx, int indent = -1, const char *schema_name = nullptr,
+    const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 
 /// \brief Parses a JSON from a string and pushes it as a Lua table
 /// \param L Lua state
 /// \param s JSON string
+/// \param schema_name Name of the root type, resolved in user_schema_dict then the machine dictionary
+/// (nullptr means no schema)
+/// \param user_schema_dict User-supplied schema dictionary (empty object means none)
 /// \param ctxidx Index (or pseudo-index) of clua context
-/// \param schema Schema for the table
-/// \param schema_dict Dictionary containing schema for all types
 /// \returns It traverses the JSON object while converting to a Lua object
-void clua_push_json_table(lua_State *L, const char *s, int ctxidx = lua_upvalueindex(1),
-    const nlohmann::json &schema = nlohmann::json(), const nlohmann::json &schema_dict = nlohmann::json());
-
-/// \brief Replaces a Lua table with its JSON string representation and returns the string (schemed version)
-/// \param L Lua state
-/// \param idx Lua table stack index which will be converted to a Lua string
-/// \param schema_name Schema name to be used while converting the table
-/// \param indent JSON indentation when converting it to a string
-/// \param ctxidx Index (or pseudo-index) of clua context
-const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int indent = -1,
-    int ctxidx = lua_upvalueindex(1));
-
-/// \brief Parses a JSON from a string and pushes it as a Lua table (schemed version)
-/// \param L Lua state
-/// \param s JSON string
-/// \param idx Lua table stack index which will be converted to a Lua string
-/// \param schema_name Schema name to be used while converting the table
-/// \param ctxidx Index (or pseudo-index) of clua context
-void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string &schema_name,
-    int ctxidx = lua_upvalueindex(1));
+void clua_fromjson(lua_State *L, const char *s, const char *schema_name = nullptr,
+    const nlohmann::json &user_schema_dict = nlohmann::json(), int ctxidx = lua_upvalueindex(1));
 
 } // namespace cartesi
 

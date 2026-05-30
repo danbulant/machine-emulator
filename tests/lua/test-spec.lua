@@ -32,6 +32,7 @@ require("spec-runtime-console")
 require("spec-cm-cli")
 require("spec-evmu")
 require("spec-machine-api")
+require("spec-json")
 
 lester.report() -- Print overall statistic of the tests run.
 lester.exit() -- Exit with success if all tests passed.

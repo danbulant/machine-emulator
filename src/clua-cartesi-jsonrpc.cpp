@@ -84,7 +84,7 @@ static int jsonrpc_machine_obj_index_get_server_version(lua_State *L) {
     if (cm_jsonrpc_get_server_version(m.get(), &version) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, version);
+    clua_fromjson(L, version);
     return 1;
 }
 

@@ -136,15 +136,11 @@ static int cartesi_mod_frombase64(lua_State *L) try {
 }
 
 static int cartesi_mod_tojson(lua_State *L) try {
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
-    const char *schema = luaL_optstring(L, 3, nullptr);
-    if (schema != nullptr) {
-        clua_check_schemed_json_string(L, 1, schema, indent);
-    } else {
-        clua_check_json_string(L, 1, indent);
-    }
-    lua_pop(L, 2);
+    const char *schema_name = luaL_optstring(L, 3, nullptr);
+    clua_tojson(L, 1, indent, schema_name, clua_tojsonschemadict(L, 4));
+    lua_settop(L, 1);
     return 1;
 } catch (const std::exception &e) {
     luaL_error(L, "%s", e.what());
@@ -152,13 +148,9 @@ static int cartesi_mod_tojson(lua_State *L) try {
 }
 
 static int cartesi_mod_fromjson(lua_State *L) try {
-    lua_settop(L, 2);
-    const char *schema = luaL_optstring(L, 2, nullptr);
-    if (schema != nullptr) {
-        clua_push_schemed_json_table(L, luaL_checkstring(L, 1), schema);
-    } else {
-        clua_push_json_table(L, luaL_checkstring(L, 1));
-    }
+    lua_settop(L, 3);
+    const char *schema_name = luaL_optstring(L, 2, nullptr);
+    clua_fromjson(L, luaL_checkstring(L, 1), schema_name, clua_tojsonschemadict(L, 3));
     return 1;
 } catch (const std::exception &e) {
     luaL_error(L, "%s", e.what());

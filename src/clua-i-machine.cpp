@@ -17,7 +17,6 @@
 #include "clua-i-machine.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include <json.hpp>
 
@@ -271,18 +271,46 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     return len;
 }
 
-static const nlohmann::json &clua_get_json_field_schema(const std::string_view field_name, const nlohmann::json &schema,
-    const nlohmann::json &schema_dict) {
+static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L);
+
+/// \brief Resolves a named type against the user dictionary first, then the machine dictionary.
+/// \details nullptr yields an empty (passthrough) schema; an unknown name is an error.
+static const nlohmann::json &clua_get_type_schema(lua_State *L, const char *type_name,
+    const nlohmann::json &user_schema_dict = nlohmann::json()) {
+    static const nlohmann::json empty_schema;
+    if (type_name == nullptr || strcmp(type_name, "Default") == 0) {
+        return empty_schema;
+    }
+    if (user_schema_dict.contains(type_name)) {
+        return user_schema_dict.at(type_name);
+    }
+    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
+    if (machine_schema_dict.contains(type_name)) {
+        return machine_schema_dict.at(type_name);
+    }
+    luaL_error(L, "type \"%s\" is not defined in schema dictionary", type_name);
+    return empty_schema; // will not be reached
+}
+
+/// \brief Resolves the schema of a field within a parent definition.
+/// \details A field absent in the parent yields an empty (passthrough) schema. The field's type name
+/// is resolved against the user dictionary first, then the machine dictionary.
+static const nlohmann::json &clua_get_field_schema(lua_State *L, const std::string_view field_name,
+    const nlohmann::json &schema, const nlohmann::json &user_schema_dict) {
     static const nlohmann::json empty_schema;
     if (!schema.contains(field_name)) {
         return empty_schema;
     }
     const auto &type_name = schema.at(field_name).template get<std::string_view>();
-    return schema_dict.at(type_name);
+    if (user_schema_dict.contains(type_name)) {
+        return user_schema_dict.at(type_name);
+    }
+    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
+    return machine_schema_dict.at(type_name);
 }
 
-static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxidx, const nlohmann::json &schema,
-    const nlohmann::json &schema_dict) {
+static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx, const nlohmann::json &schema,
+    const nlohmann::json &user_schema_dict, int ctxidx) {
     nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
@@ -290,10 +318,10 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxid
             const int64_t len = clua_get_array_table_len(L, idx);
             if (len >= 0) { // array
                 j = nlohmann::json::array();
-                const auto &field_schema = clua_get_json_field_schema("items", schema, schema_dict);
+                const auto &field_schema = clua_get_field_schema(L, "items", schema, user_schema_dict);
                 for (int64_t i = 1; i <= len; ++i) {
                     lua_geti(L, idx, i);
-                    j.push_back(clua_push_json_value_ref(L, -1, ctxidx, field_schema, schema_dict));
+                    j.push_back(clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx));
                     lua_pop(L, 2); // pop value, child j reference
                 }
             } else { // object
@@ -305,8 +333,8 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxid
                         luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
                     const char *field_name = lua_tostring(L, -2);
-                    const auto &field_schema = clua_get_json_field_schema(field_name, schema, schema_dict);
-                    j[field_name] = clua_push_json_value_ref(L, -1, ctxidx, field_schema, schema_dict);
+                    const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
+                    j[field_name] = clua_push_managed_toclose_json_ref(L, -1, field_schema, user_schema_dict, ctxidx);
                     lua_pop(L, 2); // pop value, child j reference
                 }
                 lua_pop(L, 1); // pop table
@@ -349,35 +377,15 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxid
     return j;
 }
 
-const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx, const nlohmann::json &schema,
-    const nlohmann::json &schema_dict) {
-    assert(idx > 0);
-    if (!lua_istable(L, idx)) {
-        luaL_error(L, "failed to parse JSON from a Lua value: expected a table but got type \"%s\"",
-            lua_typename(L, lua_type(L, idx)));
-    }
-    try {
-        const nlohmann::json &j = clua_push_json_value_ref(L, idx, ctxidx, schema, schema_dict);
-        std::string &s = *clua_push_new_managed_toclose_ptr(L, j.dump(indent), ctxidx);
-        lua_pushlstring(L, s.data(), s.size());
-        lua_replace(L, idx);             // replace the Lua value with its JSON string representation
-        lua_pop(L, 2);                   // pop s, j references
-        return luaL_checkstring(L, idx); // return the string
-    } catch (const std::exception &e) {
-        luaL_error(L, "failed to parse JSON from a Lua table: %s", e.what());
-        return nullptr;
-    }
-}
-
-static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxidx, const nlohmann::json &schema,
-    const nlohmann::json &schema_dict) {
+static void clua_push_json_value(lua_State *L, const nlohmann::json &j, const nlohmann::json &schema,
+    const nlohmann::json &user_schema_dict, int ctxidx) {
     switch (j.type()) {
         case nlohmann::json::value_t::array: {
-            const auto &field_schema = clua_get_json_field_schema("items", schema, schema_dict);
+            const auto &field_schema = clua_get_field_schema(L, "items", schema, user_schema_dict);
             lua_createtable(L, static_cast<int>(j.size()), 0);
             int64_t i = 1;
             for (auto it = j.begin(); it != j.end(); ++it, ++i) {
-                clua_push_json_value(L, *it, ctxidx, field_schema, schema_dict);
+                clua_push_json_value(L, *it, field_schema, user_schema_dict, ctxidx);
                 lua_rawseti(L, -2, i);
             }
             break;
@@ -386,8 +394,8 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
             lua_createtable(L, 0, static_cast<int>(j.size()));
             for (const auto &el : j.items()) {
                 const auto &field_name = el.key();
-                const auto &field_schema = clua_get_json_field_schema(field_name, schema, schema_dict);
-                clua_push_json_value(L, el.value(), ctxidx, field_schema, schema_dict);
+                const auto &field_schema = clua_get_field_schema(L, field_name, schema, user_schema_dict);
+                clua_push_json_value(L, el.value(), field_schema, user_schema_dict, ctxidx);
                 lua_setfield(L, -2, field_name.c_str());
             }
             break;
@@ -402,7 +410,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
                 lua_pop(L, 1);      // pop binary_data reference
             } else if (schema.is_object() && schema.contains(data)) {
                 static const nlohmann::json empty_schema;
-                clua_push_json_value(L, schema.at(data), ctxidx, empty_schema, schema_dict);
+                clua_push_json_value(L, schema.at(data), empty_schema, user_schema_dict, ctxidx);
             } else {
                 lua_pushlstring(L, data.data(), data.length());
             }
@@ -439,19 +447,6 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
     }
 }
 
-void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohmann::json &schema,
-    const nlohmann::json &schema_dict) {
-    try {
-        lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
-        const nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s), ctxidx);
-        clua_push_json_value(L, j, ctxidx, schema, schema_dict);
-        lua_replace(L, -3); // move into the placeholder slot
-        lua_pop(L, 1);      // pop j reference
-    } catch (const std::exception &e) {
-        luaL_error(L, "failed to parse JSON from a string: %s", e.what());
-    }
-}
-
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     // In order to convert Lua tables <-> JSON objects we have to define a schema
     // to transform some special fields, we only care about:
@@ -460,6 +455,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
     static const nlohmann::json machine_schema_dict = {
         {"Base64", "Base64"},
+        {"Schema", "Schema"},
         {"InterpreterBreakReason",
             {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},
                 {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},
@@ -528,23 +524,47 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     return dummy;
 }
 
-const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int indent,
-    int ctxidx) {
-    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
-    const auto it = machine_schema_dict.find(schema_name);
-    if (it == machine_schema_dict.end()) {
-        luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
+const nlohmann::json &clua_tojsonschemadict(lua_State *L, int idx, int ctxidx) {
+    if (lua_isnoneornil(L, idx)) {
+        static const nlohmann::json empty_object = nlohmann::json::object();
+        return empty_object;
     }
-    return clua_check_json_string(L, idx, indent, ctxidx, *it, machine_schema_dict);
+    // A schema dictionary is plain JSON with only string/int leaves and no translated fields,
+    // so the "Schema" primitive makes converting one a pure passthrough. The returned reference stays
+    // valid while, and only while, the slot it pushes onto the stack remains there.
+    const auto &schema = clua_get_type_schema(L, "Schema");
+    return clua_push_managed_toclose_json_ref(L, idx, schema, nlohmann::json(), ctxidx);
 }
 
-void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string &schema_name, int ctxidx) {
-    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
-    const auto it = machine_schema_dict.find(schema_name);
-    if (it == machine_schema_dict.end()) {
-        luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
+const char *clua_tojson(lua_State *L, int idx, int indent, const char *schema_name,
+    const nlohmann::json &user_schema_dict, int ctxidx) {
+    idx = lua_absindex(L, idx);
+    try {
+        const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
+        const nlohmann::json &j = clua_push_managed_toclose_json_ref(L, idx, schema, user_schema_dict, ctxidx);
+        std::string &s = *clua_push_new_managed_toclose_ptr(L, j.dump(indent), ctxidx);
+        lua_pushlstring(L, s.data(), s.size());
+        lua_replace(L, idx);             // replace the Lua value with its JSON string representation
+        lua_pop(L, 2);                   // pop s, j references
+        return luaL_checkstring(L, idx); // return the string
+    } catch (const std::exception &e) {
+        luaL_error(L, "failed to convert a Lua value to JSON: %s", e.what());
+        return nullptr;
     }
-    clua_push_json_table(L, s, ctxidx, *it, machine_schema_dict);
+}
+
+void clua_fromjson(lua_State *L, const char *s, const char *schema_name, const nlohmann::json &user_schema_dict,
+    int ctxidx) {
+    try {
+        const nlohmann::json &schema = clua_get_type_schema(L, schema_name, user_schema_dict);
+        lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
+        const nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s), ctxidx);
+        clua_push_json_value(L, j, schema, user_schema_dict, ctxidx);
+        lua_replace(L, -3); // move into the placeholder slot
+        lua_pop(L, 1);      // pop j reference
+    } catch (const std::exception &e) {
+        luaL_error(L, "failed to parse JSON from a string: %s", e.what());
+    }
 }
 
 /// \brief This is the machine:get_proof() method implementation.
@@ -559,7 +579,7 @@ static int machine_obj_index_get_proof(lua_State *L) {
     if (cm_get_proof(m.get(), address, log2_target_size, log2_root_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, proof, "Proof");
+    clua_fromjson(L, proof, "Proof");
     return 1;
 }
 
@@ -573,7 +593,7 @@ static int machine_obj_index_get_hash_tree_stats(lua_State *L) {
     if (cm_get_hash_tree_stats(m.get(), clear, &stats) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, stats);
+    clua_fromjson(L, stats);
     return 1;
 }
 
@@ -583,7 +603,7 @@ static int machine_obj_index_get_initial_config(lua_State *L) {
     if (cm_get_initial_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, config);
+    clua_fromjson(L, config);
     return 1;
 }
 
@@ -595,7 +615,7 @@ static int machine_obj_index_get_runtime_config(lua_State *L) {
     if (cm_get_runtime_config(m.get(), &runtime_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, runtime_config);
+    clua_fromjson(L, runtime_config);
     return 1;
 }
 
@@ -603,7 +623,7 @@ static int machine_obj_index_get_runtime_config(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_set_runtime_config(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = clua_check_json_string(L, 2);
+    const char *runtime_config = clua_tojson(L, 2);
     if (cm_set_runtime_config(m.get(), runtime_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -771,7 +791,7 @@ static int machine_obj_index_get_address_ranges(lua_State *L) {
     if (cm_get_address_ranges(m.get(), &ranges) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, ranges);
+    clua_fromjson(L, ranges);
     return 1;
 }
 
@@ -784,7 +804,7 @@ static int machine_obj_index_log_reset_uarch(lua_State *L) {
     if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, log, "AccessLog");
+    clua_fromjson(L, log, "AccessLog");
     return 1;
 }
 
@@ -810,7 +830,7 @@ static int machine_obj_index_log_step_uarch(lua_State *L) {
     if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, log, "AccessLog");
+    clua_fromjson(L, log, "AccessLog");
     return 1;
 }
 
@@ -1001,7 +1021,7 @@ static int machine_obj_index_write_console_input(lua_State *L) {
 static int machine_obj_index_replace_memory_range(lua_State *L) {
     lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *range_config = clua_check_json_string(L, 2);
+    const char *range_config = clua_tojson(L, 2);
     if (cm_replace_memory_range(m.get(), range_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1071,7 +1091,7 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, log, "AccessLog");
+    clua_fromjson(L, log, "AccessLog");
     return 1;
 }
 
@@ -1092,10 +1112,10 @@ static int machine_obj_index_is_empty(lua_State *L) {
 static int machine_obj_index_create(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
     const char *dir = luaL_optstring(L, 4, nullptr);
     // Create or load a machine depending on the type of the first argument
-    const char *config = clua_check_json_string(L, 2);
+    const char *config = clua_tojson(L, 2);
     if (cm_create(m.get(), config, runtime_config, dir) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -1112,14 +1132,13 @@ static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
     const uint64_t mcycle_period = luaL_checkinteger(L, 3);
     const uint64_t mcycle_phase = luaL_optinteger(L, 4, 0);
     const auto log2_bundle_uarch_cycle_count = static_cast<int32_t>(luaL_optinteger(L, 5, 0));
-    const char *previous_back_tree =
-        !lua_isnil(L, 6) ? clua_check_schemed_json_string(L, 6, "BackMerkleTree") : nullptr;
+    const char *previous_back_tree = !lua_isnil(L, 6) ? clua_tojson(L, 6, -1, "BackMerkleTree") : nullptr;
     const char *result = nullptr;
     if (cm_collect_mcycle_root_hashes(m.get(), mcycle_end, mcycle_period, mcycle_phase, log2_bundle_uarch_cycle_count,
             previous_back_tree, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, result, "McycleRootHashes");
+    clua_fromjson(L, result, "McycleRootHashes");
     return 1;
 }
 
@@ -1134,7 +1153,7 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
     if (cm_collect_uarch_cycle_root_hashes(m.get(), mcycle_end, log2_bundle_uarch_cycle_count, &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_schemed_json_table(L, result, "UarchCycleRootHashes");
+    clua_fromjson(L, result, "UarchCycleRootHashes");
     return 1;
 }
 
@@ -1143,7 +1162,7 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
 static int machine_obj_index_load(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
     const char *dir = luaL_checkstring(L, 2);
     const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
     if (cm_load(m.get(), dir, runtime_config, sharing) != 0) {
@@ -1161,7 +1180,7 @@ static int machine_obj_index_get_default_config(lua_State *L) {
     if (cm_get_default_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, config);
+    clua_fromjson(L, config);
     return 1;
 }
 
@@ -1213,7 +1232,7 @@ static int machine_obj_index_verify_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash{};
     clua_check_cm_hash(L, 2, &root_hash);
-    const char *log = clua_check_schemed_json_string(L, 3, "AccessLog");
+    const char *log = clua_tojson(L, 3, -1, "AccessLog");
     cm_hash target_hash{};
     clua_check_cm_hash(L, 4, &target_hash);
     if (cm_verify_step_uarch(m.get(), &root_hash, log, &target_hash) != 0) {
@@ -1229,7 +1248,7 @@ static int machine_obj_index_verify_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash{};
     clua_check_cm_hash(L, 2, &root_hash);
-    const char *log = clua_check_schemed_json_string(L, 3, "AccessLog");
+    const char *log = clua_tojson(L, 3, -1, "AccessLog");
     cm_hash target_hash{};
     clua_check_cm_hash(L, 4, &target_hash);
     if (cm_verify_reset_uarch(m.get(), &root_hash, log, &target_hash) != 0) {
@@ -1249,7 +1268,7 @@ static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     cm_hash root_hash{};
     clua_check_cm_hash(L, 4, &root_hash);
-    const char *log = clua_check_schemed_json_string(L, 5, "AccessLog");
+    const char *log = clua_tojson(L, 5, -1, "AccessLog");
     cm_hash target_hash{};
     clua_check_cm_hash(L, 6, &target_hash);
     if (cm_verify_send_cmio_response(m.get(), reason, data, length, &root_hash, log, &target_hash) != 0) {
@@ -1334,10 +1353,10 @@ static int machine_meta_call(lua_State *L) {
     if (cm_clone_empty(m.get(), &new_m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
+    const char *runtime_config = !lua_isnil(L, 3) ? clua_tojson(L, 3) : nullptr;
     // Create or load a machine depending on the type of the first argument
     if (lua_isstring(L, 2) == 0) {
-        const char *config = clua_check_json_string(L, 2);
+        const char *config = clua_tojson(L, 2);
         const char *dir = luaL_optstring(L, 4, nullptr);
         if (cm_create(new_m.get(), config, runtime_config, dir) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
