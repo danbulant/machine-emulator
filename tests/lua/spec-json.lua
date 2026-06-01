@@ -63,6 +63,25 @@ describe("tojson / fromjson schema dictionary", function()
         expect.equal(back, env)
     end)
 
+    it("should follow a user type that aliases a compound machine type", function()
+        local proof = machine:get_proof(0, 12)
+        -- a bare top-level alias resolves to its target's schema, not just to a leaf like
+        -- Base64; here it reaches the compound Proof object so the hashes still ride as base64
+        local SCHEMA = { ProofAlias = "Proof" }
+        expect.equal(cartesi.fromjson(cartesi.tojson(proof, nil, "ProofAlias", SCHEMA), "ProofAlias", SCHEMA), proof)
+        -- and a multi-hop alias chain resolves the same way
+        local CHAIN = { A = "B", B = "Proof" }
+        expect.equal(cartesi.fromjson(cartesi.tojson(proof, nil, "A", CHAIN), "A", CHAIN), proof)
+    end)
+
+    it("should leave a Default field as a plain table", function()
+        -- a field typed "Default" carries no schema, so it rides as a plain nested table while a
+        -- sibling Base64 field is still translated
+        local SCHEMA = { Msg = { hash = "Base64", meta = "Default" } }
+        local msg = { hash = HASH, meta = { a = 1, b = "x", c = { 2, 3 } } }
+        expect.equal(cartesi.fromjson(cartesi.tojson(msg, nil, "Msg", SCHEMA), "Msg", SCHEMA), msg)
+    end)
+
     it("should let user types override machine types of the same name", function()
         -- the machine dictionary defines Bracket.where as ArrayIndex (0-based in JSON)...
         expect.equal(cartesi.fromjson(cartesi.tojson({ where = 5 }, nil, "Bracket")).where, 4)

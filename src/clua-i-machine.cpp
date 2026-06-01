@@ -275,38 +275,65 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L);
 
 /// \brief Resolves a named type against the user dictionary first, then the machine dictionary.
 /// \details nullptr yields an empty (passthrough) schema; an unknown name is an error.
+/// \brief Resolves a type name to its schema definition, following alias chains.
+/// \details A name is looked up in the user dictionary first, then the machine dictionary. It maps
+/// either to an object schema, which is returned, or to a string. A string naming a different type
+/// is an alias and is followed. A string naming itself is a leaf primitive (Base64, ArrayIndex,
+/// Schema) and is returned as is. Following aliases is what lets a user type be a bare top-level
+/// alias to a compound machine type (e.g. "AccessLog"), not just to a leaf. An unknown name or a
+/// cyclic chain is an error.
+static const nlohmann::json &clua_resolve_type_schema(lua_State *L, std::string_view type_name,
+    const nlohmann::json &user_schema_dict) {
+    static const nlohmann::json empty_schema;
+    // The chain cannot be longer than the number of distinct names, so bound the walk generously
+    // to turn a cyclic user dictionary into an error rather than an infinite loop.
+    for (int hops = 0; hops < 1024; ++hops) {
+        // "Default" and the empty name carry no schema, so the value passes through untranslated,
+        // as a plain table. This holds for a top-level name and for a field type alike.
+        if (type_name.empty() || type_name == "Default") {
+            return empty_schema;
+        }
+        const nlohmann::json *value = nullptr;
+        if (user_schema_dict.contains(type_name)) {
+            value = &user_schema_dict.at(type_name);
+        } else {
+            const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
+            if (!machine_schema_dict.contains(type_name)) {
+                throw std::runtime_error{"type \"" + std::string{type_name} + "\" is not defined in schema dictionary"};
+            }
+            value = &machine_schema_dict.at(type_name);
+        }
+        if (!value->is_string()) {
+            return *value; // object schema
+        }
+        const auto next = value->template get<std::string_view>();
+        if (next == type_name) {
+            return *value; // self-referential leaf primitive
+        }
+        type_name = next; // follow the alias
+    }
+    throw std::runtime_error{"type \"" + std::string{type_name} + "\" has a cyclic schema definition"};
+}
+
 static const nlohmann::json &clua_get_type_schema(lua_State *L, const char *type_name,
     const nlohmann::json &user_schema_dict = nlohmann::json()) {
     static const nlohmann::json empty_schema;
-    if (type_name == nullptr || strcmp(type_name, "Default") == 0) {
+    if (type_name == nullptr) {
         return empty_schema;
     }
-    if (user_schema_dict.contains(type_name)) {
-        return user_schema_dict.at(type_name);
-    }
-    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
-    if (machine_schema_dict.contains(type_name)) {
-        return machine_schema_dict.at(type_name);
-    }
-    luaL_error(L, "type \"%s\" is not defined in schema dictionary", type_name);
-    return empty_schema; // will not be reached
+    return clua_resolve_type_schema(L, type_name, user_schema_dict);
 }
 
 /// \brief Resolves the schema of a field within a parent definition.
 /// \details A field absent in the parent yields an empty (passthrough) schema. The field's type name
-/// is resolved against the user dictionary first, then the machine dictionary.
+/// is resolved through the same alias chain as a top-level name.
 static const nlohmann::json &clua_get_field_schema(lua_State *L, const std::string_view field_name,
     const nlohmann::json &schema, const nlohmann::json &user_schema_dict) {
     static const nlohmann::json empty_schema;
     if (!schema.contains(field_name)) {
         return empty_schema;
     }
-    const auto &type_name = schema.at(field_name).template get<std::string_view>();
-    if (user_schema_dict.contains(type_name)) {
-        return user_schema_dict.at(type_name);
-    }
-    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
-    return machine_schema_dict.at(type_name);
+    return clua_resolve_type_schema(L, schema.at(field_name).template get<std::string_view>(), user_schema_dict);
 }
 
 static nlohmann::json &clua_push_managed_toclose_json_ref(lua_State *L, int idx, const nlohmann::json &schema,
