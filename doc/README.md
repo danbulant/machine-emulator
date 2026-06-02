@@ -3035,8 +3035,8 @@ the default Cartesi Machine configuration:
 
 ``` lua
 -- Load the Cartesi module and utilities
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
 -- Obtain default config
 local default_config = cartesi.machine:get_default_config()
@@ -3734,7 +3734,9 @@ The following script illustrates the process
 local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -3812,7 +3814,9 @@ information throughout a computation performed inside a Cartesi Machine:
 local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -3967,11 +3971,15 @@ obtain them from a Cartesi Machine instance with the following script:
 local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 
 -- Converts hash from binary to hexadecimal string
 local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
+    return (string.gsub(hash, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
 end
 
 -- Instantiate machine from configuration
@@ -4303,6 +4311,9 @@ local output_state_hash = machine:get_root_hash()
 local output_nvram = assert(util.find_drive(config, "nvram", "output"))
 local output_proof = machine:get_proof(output_nvram.start, output_nvram.log2_size)
 
+-- Proof must be rooted at the current machine state
+assert(output_proof.root_hash == output_state_hash, "proof root mismatch")
+
 -- Verify proof
 hash_tree.verify_slice(output_proof)
 print("\nOutput NVRAM proof accepted!\n")
@@ -4389,7 +4400,7 @@ module:
 
 ``` lua
 -- Load the JSON-RPC submodule for remote Cartesi Machines
-local cartesi_jsonrpc = require"cartesi.jsonrpc"
+local cartesi_jsonrpc = require("cartesi.jsonrpc")
 
 -- Writes formatted text to stderr
 local function stderr(fmt, ...)
@@ -4399,8 +4410,8 @@ end
 -- Connect to remote Cartesi Machine server (shut it down automatically on exit)
 local remote_address = assert(arg[1], "missing remote address")
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address)):
-    set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+local cartesi_jsonrpc_machine <close> =
+    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
 local v = assert(cartesi_jsonrpc_machine:get_server_version())
@@ -4542,9 +4553,9 @@ server calculator [example](#rolling-cartesi-machine-templates)):
 
 ``` lua
 -- Load the JSON-RPC submodule and the EVM ABI helpers
-local cartesi = require"cartesi"
-local cartesi_jsonrpc = require"cartesi.jsonrpc"
-local evmu = require"cartesi.evmu"
+local cartesi = require("cartesi")
+local cartesi_jsonrpc = require("cartesi.jsonrpc")
+local evmu = require("cartesi.evmu")
 
 local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
     .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
@@ -4574,7 +4585,9 @@ end
 
 -- Print a string folded into lines of width w
 local function fold(s, w)
-    for i = 1, #s, w do print(s:sub(i, i + w - 1)) end
+    for i = 1, #s, w do
+        print(s:sub(i, i + w - 1))
+    end
 end
 
 -- Decode a response inside a notice
@@ -4585,8 +4598,8 @@ end
 -- Connect to remote Cartesi Machine server (and shut it down on exit)
 local remote_address = assert(arg[1], "missing remote address")
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address)):
-    set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+local cartesi_jsonrpc_machine <close> =
+    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
 local v = assert(cartesi_jsonrpc_machine:get_server_version())
@@ -4597,9 +4610,13 @@ local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
 local backup
-local function snapshot() backup = machine:fork_server() end
+local function snapshot()
+    backup = machine:fork_server()
+end
 local function commit()
-    if backup then backup:shutdown_server() end
+    if backup then
+        backup:shutdown_server()
+    end
     backup = nil
 end
 local function rollback()
@@ -4621,7 +4638,9 @@ repeat
             commit()
             stderr("type expression\n")
             local expr = io.read()
-            if not expr then break end
+            if not expr then
+                break
+            end
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
             snapshot()
@@ -4853,8 +4872,8 @@ Running the `dump-step.lua` program:
 
 ``` lua
 -- Load the Cartesi modules
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -4870,9 +4889,7 @@ assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
 -- Obtain access log and dump it to screen
 local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-io.stderr:write(string.format(
-    "\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n",
-    mcycle, ucycle))
+io.stderr:write(string.format("\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
 util.print_log(log, io.stderr)
 ```
 
@@ -4939,7 +4956,7 @@ The following script illustrates the verification of a state transition.
 
 ``` lua
 -- Load the Cartesi modules
-local cartesi = require"cartesi"
+local cartesi = require("cartesi")
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -8099,7 +8116,7 @@ structure returned by `machine:get_proof()`:
 
 ``` lua
 local function verify_slice(proof)
-    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "node not in tree")
+    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "target node not in tree")
 end
 ```
 
@@ -8119,7 +8136,7 @@ what `verify_splice` does:
 ``` lua
 local function verify_splice(proof, new_target_hash, new_root_hash)
     verify_slice(proof)
-    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "new node not in tree")
+    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "target node not in tree")
 end
 ```
 
@@ -8194,27 +8211,27 @@ at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
 
 ``` lua
 local function get_root_hash(data, log2_root_size)
-	assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
-	-- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
-	local level = {}
-	local full = #data - #data % WORD_LENGTH
-	for i = 1, full, WORD_LENGTH do
-		level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
-	end
-	if full < #data then
-		local word = data:sub(full + 1)
-		level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
-	end
-	-- Pair upward to the root, the pristine hash standing in for every node the data misses.
-	local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
-	for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
-		local parents = {}
-		for i = 1, #level, 2 do
-			parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
-		end
-		level, pristine = parents, cartesi.keccak256(pristine, pristine)
-	end
-	return level[1]
+    assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
+    -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
+    local level = {}
+    local full = #data - #data % WORD_LENGTH
+    for i = 1, full, WORD_LENGTH do
+        level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
+    end
+    if full < #data then
+        local word = data:sub(full + 1)
+        level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
+    end
+    -- Pair upward to the root, the pristine hash standing in for every node the data misses.
+    local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
+    for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
+        local parents = {}
+        for i = 1, #level, 2 do
+            parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
+        end
+        level, pristine = parents, cartesi.keccak256(pristine, pristine)
+    end
+    return level[1]
 end
 ```
 
@@ -8387,7 +8404,8 @@ local function adjudicate_dispute(players, initial_hash)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1] or players[2]
+    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1]
+        or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end

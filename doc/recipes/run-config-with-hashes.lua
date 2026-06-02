@@ -2,11 +2,15 @@
 local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 
 -- Converts hash from binary to hexadecimal string
 local function hexhash(hash)
-    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
+    return (string.gsub(hash, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
 end
 
 -- Instantiate machine from configuration

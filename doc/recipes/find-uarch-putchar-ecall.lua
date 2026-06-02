@@ -18,6 +18,8 @@ while machine:read_reg("uarch_halt_flag") == 0 do
     end
     local uarch_cycle = machine:read_reg("uarch_cycle")
     machine:run_uarch(uarch_cycle + 1)
-    if uarch_cycle % 10 ^ 5 == 0 then collectgarbage("collect") end
+    if uarch_cycle % 10 ^ 5 == 0 then
+        collectgarbage("collect")
+    end
 end
 error("putchar ecall not found before uarch halt")

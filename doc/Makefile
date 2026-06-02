@@ -20,8 +20,23 @@ REPLACE_CACHE_DIR := $(RECIPES_DIR)/cache
 export RECIPES_DIR REPLACE_CACHE_DIR
 export LUA_PATH := $(CURDIR)/?.lua;$(RECIPES_DIR)/?.lua;$(LUA_PATH);;
 
-.PHONY: build-docs-image clean
+STYLUA=stylua
+STYLUA_FLAGS=--indent-type Spaces --respect-ignores
+
+.PHONY: build-docs-image clean format-lua check-format-lua check-lua
 .DELETE_ON_ERROR:
+
+# Lua linting/formatting for the recipe snippets and pandoc filters. The
+# generated cache (REPLACE_CACHE_DIR) holds extracted block bodies that are
+# rewritten on every render, so it is excluded from both tools.
+format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) .
+
+check-format-lua:
+	@$(STYLUA) $(STYLUA_FLAGS) --check .
+
+check-lua:
+	luacheck . --exclude-files '$(REPLACE_CACHE_DIR)/**'
 
 ROOTFS_DOCS_INPUTS := \
     $(RECIPES_DIR)/Dockerfile.rootfs-docs \

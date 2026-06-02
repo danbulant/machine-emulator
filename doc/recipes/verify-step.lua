@@ -1,5 +1,5 @@
 -- Load the Cartesi modules
-local cartesi = require"cartesi"
+local cartesi = require("cartesi")
 
 -- Instantiate machine from configuration
 local config = require(arg[1])

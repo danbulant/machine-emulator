@@ -24,14 +24,14 @@ end
 
 -- docs:begin verify_slice
 local function verify_slice(proof)
-    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "node not in tree")
+    assert(roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash, "target node not in tree")
 end
 -- docs:end verify_slice
 
 -- docs:begin verify_splice
 local function verify_splice(proof, new_target_hash, new_root_hash)
     verify_slice(proof)
-    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "new node not in tree")
+    assert(roll_hash_up_tree(proof, new_target_hash) == new_root_hash, "target node not in tree")
 end
 -- docs:end verify_splice
 
@@ -42,27 +42,27 @@ end
 -- root of an all-zero subtree, which doubles each level climbed. Overflow is rejected.
 -- docs:begin get_root_hash
 local function get_root_hash(data, log2_root_size)
-	assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
-	-- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
-	local level = {}
-	local full = #data - #data % WORD_LENGTH
-	for i = 1, full, WORD_LENGTH do
-		level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
-	end
-	if full < #data then
-		local word = data:sub(full + 1)
-		level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
-	end
-	-- Pair upward to the root, the pristine hash standing in for every node the data misses.
-	local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
-	for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
-		local parents = {}
-		for i = 1, #level, 2 do
-			parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
-		end
-		level, pristine = parents, cartesi.keccak256(pristine, pristine)
-	end
-	return level[1]
+    assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
+    -- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
+    local level = {}
+    local full = #data - #data % WORD_LENGTH
+    for i = 1, full, WORD_LENGTH do
+        level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
+    end
+    if full < #data then
+        local word = data:sub(full + 1)
+        level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
+    end
+    -- Pair upward to the root, the pristine hash standing in for every node the data misses.
+    local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
+    for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
+        local parents = {}
+        for i = 1, #level, 2 do
+            parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
+        end
+        level, pristine = parents, cartesi.keccak256(pristine, pristine)
+    end
+    return level[1]
 end
 -- docs:end get_root_hash
 
@@ -70,5 +70,5 @@ return {
     roll_hash_up_tree = roll_hash_up_tree,
     verify_slice = verify_slice,
     verify_splice = verify_splice,
-    get_root_hash = get_root_hash
+    get_root_hash = get_root_hash,
 }

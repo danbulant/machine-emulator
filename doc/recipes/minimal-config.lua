@@ -6,15 +6,19 @@
 -- entry added by the user), an empty string or `false` value on the given
 -- config side is treated as default and dropped too.
 
-local cartesi = require "cartesi"
+local cartesi = require("cartesi")
 
 local function prune(t, def)
-    if type(t) ~= "table" then return t end
+    if type(t) ~= "table" then
+        return t
+    end
     for k, v in pairs(t) do
         local d = def and def[k]
         if type(v) == "table" then
             prune(v, type(d) == "table" and d or nil)
-            if next(v) == nil then t[k] = nil end
+            if next(v) == nil then
+                t[k] = nil
+            end
         elseif v == d or (d == nil and (v == "" or v == false)) then
             t[k] = nil
         end
@@ -32,20 +36,26 @@ local function dump(out, what, indent)
         return
     end
     local keys = {}
-    for k in pairs(what) do keys[#keys + 1] = k end
+    for k in pairs(what) do
+        keys[#keys + 1] = k
+    end
     if #keys == 0 then
         out:write("{}")
         return
     end
     table.sort(keys, function(a, b)
-        if type(a) == type(b) then return a < b end
+        if type(a) == type(b) then
+            return a < b
+        end
         return type(a) == "number"
     end)
     local next_indent = indent .. "  "
     out:write("{\n")
     for _, k in ipairs(keys) do
         out:write(next_indent)
-        if type(k) == "string" then out:write(k, " = ") end
+        if type(k) == "string" then
+            out:write(k, " = ")
+        end
         dump(out, what[k], next_indent)
         out:write(",\n")
     end

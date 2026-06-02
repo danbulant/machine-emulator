@@ -379,7 +379,14 @@ end
 -- Broadcasts one bisection round at `target` on `level`, carrying the branch taken at the
 -- previous round, and returns both players' root hashes there, keyed by player index.
 local function wait_for_bisection(players, branch, level, target)
-    return wait_for_all(players, "BisectionCommitment", "return player:commit_bisection(%q, %q, %d)", branch, level, target)
+    return wait_for_all(
+        players,
+        "BisectionCommitment",
+        "return player:commit_bisection(%q, %q, %d)",
+        branch,
+        level,
+        target
+    )
 end
 
 -- Sends a player the terminal round, naming the agreed uarch cycle so the player logs the
@@ -481,7 +488,8 @@ local function adjudicate_dispute(players, initial_hash)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1] or players[2]
+    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1]
+        or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end
@@ -566,8 +574,10 @@ end
 -- of the template instantiated with it, with hash_tree.get_root_hash padding the rest to match the honest
 -- player's NVRAM. Honest play starts from exactly this state, never a player-declared one.
 local function new_referee(dapp_contract, expr)
-    local initial_hash =
-        hash_tree.roll_hash_up_tree(dapp_contract.input_proof, hash_tree.get_root_hash(expr .. "\n", dapp_contract.input.log2_size))
+    local initial_hash = hash_tree.roll_hash_up_tree(
+        dapp_contract.input_proof,
+        hash_tree.get_root_hash(expr .. "\n", dapp_contract.input.log2_size)
+    )
     return { initial_hash = initial_hash, run = run_referee }
 end
 

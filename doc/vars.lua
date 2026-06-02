@@ -2,7 +2,9 @@ local M = {}
 
 function M.apply(body, pairs)
     for _, p in ipairs(pairs) do
-        body = body:gsub('%$' .. p.var .. '%f[%W]', function() return p.value end)
+        body = body:gsub("%$" .. p.var .. "%f[%W]", function()
+            return p.value
+        end)
     end
     return body
 end

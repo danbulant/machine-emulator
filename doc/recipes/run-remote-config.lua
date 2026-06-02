@@ -1,5 +1,5 @@
 -- Load the JSON-RPC submodule for remote Cartesi Machines
-local cartesi_jsonrpc = require"cartesi.jsonrpc"
+local cartesi_jsonrpc = require("cartesi.jsonrpc")
 
 -- Writes formatted text to stderr
 local function stderr(fmt, ...)
@@ -9,8 +9,8 @@ end
 -- Connect to remote Cartesi Machine server (shut it down automatically on exit)
 local remote_address = assert(arg[1], "missing remote address")
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address)):
-    set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+local cartesi_jsonrpc_machine <close> =
+    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
 local v = assert(cartesi_jsonrpc_machine:get_server_version())

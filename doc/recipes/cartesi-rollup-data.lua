@@ -4,13 +4,13 @@
 -- voucher/notice/report/exception/delegate-call-voucher records from
 -- the CMIO tx buffer.
 
-local evmu = require "cartesi.evmu"
-local json = require "dkjson"
+local evmu = require("cartesi.evmu")
+local json = require("dkjson")
 
 local EVM_ADVANCE = "EvmAdvance(uint256,address,address,uint256,uint256,uint256,uint256,bytes)"
-local VOUCHER     = "Voucher(address,uint256,bytes)"
-local DELEGATE    = "DelegateCallVoucher(address,bytes)"
-local NOTICE      = "Notice(bytes)"
+local VOUCHER = "Voucher(address,uint256,bytes)"
+local DELEGATE = "DelegateCallVoucher(address,bytes)"
+local NOTICE = "Notice(bytes)"
 
 local USAGE = [[Usage:
     cartesi-rollup-data.lua <direction> <type>
@@ -75,7 +75,9 @@ end
 local function read_json_stdin()
     local s = io.read("a")
     local t, _, err = json.decode(s)
-    if err then error("invalid JSON on stdin: " .. err) end
+    if err then
+        error("invalid JSON on stdin: " .. err)
+    end
     return t
 end
 
@@ -86,7 +88,9 @@ end
 
 local function require_field(t, key)
     local v = t[key]
-    if v == nil then error("missing required field: " .. key) end
+    if v == nil then
+        error("missing required field: " .. key)
+    end
     return v
 end
 
@@ -118,17 +122,23 @@ function decoders.advance()
     local t = evmu.decode_calldata(EVM_ADVANCE, io.read("a"))
     local bint = evmu.bint
     write_json({
-        chain_id        = bint.touinteger(t[1]),
-        app_contract    = t[2],
-        msg_sender      = t[3],
-        block_number    = bint.touinteger(t[4]),
+        chain_id = bint.touinteger(t[1]),
+        app_contract = t[2],
+        msg_sender = t[3],
+        block_number = bint.touinteger(t[4]),
         block_timestamp = bint.touinteger(t[5]),
-        prev_randao     = uint256_to_hex(t[6]),
-        index           = bint.touinteger(t[7]),
-        payload         = t[8],
+        prev_randao = uint256_to_hex(t[6]),
+        index = bint.touinteger(t[7]),
+        payload = t[8],
     }, {
-        "chain_id", "app_contract", "msg_sender", "block_number",
-        "block_timestamp", "prev_randao", "index", "payload",
+        "chain_id",
+        "app_contract",
+        "msg_sender",
+        "block_number",
+        "block_timestamp",
+        "prev_randao",
+        "index",
+        "payload",
     })
 end
 
@@ -140,8 +150,8 @@ function decoders.voucher()
     local t = evmu.decode_calldata(VOUCHER, io.read("a"))
     write_json({
         destination = t[1],
-        value       = uint256_to_hex(t[2]),
-        payload     = t[3],
+        value = uint256_to_hex(t[2]),
+        payload = t[3],
     }, { "destination", "value", "payload" })
 end
 
@@ -149,7 +159,7 @@ decoders["delegate-call-voucher"] = function()
     local t = evmu.decode_calldata(DELEGATE, io.read("a"))
     write_json({
         destination = t[1],
-        payload     = t[2],
+        payload = t[2],
     }, { "destination", "payload" })
 end
 
@@ -184,5 +194,7 @@ else
     fail()
 end
 local h = handlers[arg[2] or ""]
-if not h then fail() end
+if not h then
+    fail()
+end
 h()

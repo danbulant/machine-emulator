@@ -1,7 +1,7 @@
 -- Load the JSON-RPC submodule and the EVM ABI helpers
-local cartesi = require"cartesi"
-local cartesi_jsonrpc = require"cartesi.jsonrpc"
-local evmu = require"cartesi.evmu"
+local cartesi = require("cartesi")
+local cartesi_jsonrpc = require("cartesi.jsonrpc")
+local evmu = require("cartesi.evmu")
 
 local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
     .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
@@ -31,7 +31,9 @@ end
 
 -- Print a string folded into lines of width w
 local function fold(s, w)
-    for i = 1, #s, w do print(s:sub(i, i + w - 1)) end
+    for i = 1, #s, w do
+        print(s:sub(i, i + w - 1))
+    end
 end
 
 -- Decode a response inside a notice
@@ -42,8 +44,8 @@ end
 -- Connect to remote Cartesi Machine server (and shut it down on exit)
 local remote_address = assert(arg[1], "missing remote address")
 stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
-local cartesi_jsonrpc_machine <close> = assert(cartesi_jsonrpc.connect_server(remote_address)):
-    set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+local cartesi_jsonrpc_machine <close> =
+    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 
 -- Print server version (and test connection)
 local v = assert(cartesi_jsonrpc_machine:get_server_version())
@@ -54,9 +56,13 @@ local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
 
 -- Snapshot via fork: the backup server keeps the pre-input state
 local backup
-local function snapshot() backup = machine:fork_server() end
+local function snapshot()
+    backup = machine:fork_server()
+end
 local function commit()
-    if backup then backup:shutdown_server() end
+    if backup then
+        backup:shutdown_server()
+    end
     backup = nil
 end
 local function rollback()
@@ -78,7 +84,9 @@ repeat
             commit()
             stderr("type expression\n")
             local expr = io.read()
-            if not expr then break end
+            if not expr then
+                break
+            end
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
             i = i + 1
             snapshot()

@@ -295,40 +295,44 @@
 --     artifact subs are rejected.
 
 local deps_target
-local default_enabled = true  -- overridden in Pandoc() from -M default-replace=
+local default_enabled = true -- overridden in Pandoc() from -M default-replace=
 local REPLACE_CACHE_DIR = os.getenv("REPLACE_CACHE_DIR") or error("REPLACE_CACHE_DIR not set")
 local RECIPES_DIR = os.getenv("RECIPES_DIR") or error("RECIPES_DIR not set")
 
 -- Locate the directory containing this filter file; runners live alongside it.
 local REPLACE_DIR = PANDOC_SCRIPT_FILE:match("(.+)/[^/]+$") or "."
-local vars = require "vars"
+local vars = require("vars")
 
 local LANG_INFO = {
-    bash = { ext = "sh",  runner = REPLACE_DIR .. "/run-bash.sh" },
-    lua  = { ext = "lua", runner = REPLACE_DIR .. "/run-lua.sh"  },
+    bash = { ext = "sh", runner = REPLACE_DIR .. "/run-bash.sh" },
+    lua = { ext = "lua", runner = REPLACE_DIR .. "/run-lua.sh" },
 }
 local DEFAULT_LANG = "bash"
 
 local RESERVED = { stdout = true, stderr = true, both = true, source = true, null = true }
 
 -- State accumulated as the document is walked.
-local pending    = {} -- key -> { attr, body, classes, deps, vars }  (pass 1: raw collection)
-local defining   = {} -- key -> true  (cycle detection during ensure_defined)
-local defined    = {} -- key -> true  (set after define_script completes)
-local outputs_t  = {} -- key -> { artifact_name -> true }
-local sources    = {} -- key -> resolved body (for replace=source)
-local rules      = {} -- list of make rule strings (dry-run only)
-local consumed   = {} -- "<key>/<file>" -> true (referenced cache files)
-local no_runner  = {} -- key -> lang string (for keys whose runner= is not in LANG_INFO)
+local pending = {} -- key -> { attr, body, classes, deps, vars }  (pass 1: raw collection)
+local defining = {} -- key -> true  (cycle detection during ensure_defined)
+local defined = {} -- key -> true  (set after define_script completes)
+local outputs_t = {} -- key -> { artifact_name -> true }
+local sources = {} -- key -> resolved body (for replace=source)
+local rules = {} -- list of make rule strings (dry-run only)
+local consumed = {} -- "<key>/<file>" -> true (referenced cache files)
+local no_runner = {} -- key -> lang string (for keys whose runner= is not in LANG_INFO)
 local sequential = {} -- tag -> last-seen key with this sequential= tag (built during collect)
 
+-- Defined further below, but referenced by define_script above their definition.
+local emit_rule, emit_include_rule
+
 local function assertf(cond, fmt, ...)
-    if not cond then error(string.format(fmt, ...)) end
+    if not cond then
+        error(string.format(fmt, ...))
+    end
 end
 
 local function check_identifier(s, label)
-    assertf(s:match("^[%a_][%w_]*$"),
-        "%s: '%s' is not an identifier (must match [a-zA-Z_][a-zA-Z0-9_]*)", label, s)
+    assertf(s:match("^[%a_][%w_]*$"), "%s: '%s' is not an identifier (must match [a-zA-Z_][a-zA-Z0-9_]*)", label, s)
 end
 
 local function strip_ansi(s)
@@ -337,14 +341,20 @@ end
 
 local function is_enabled(attr)
     local v = attr.enabled
-    if v == nil then return default_enabled end
+    if v == nil then
+        return default_enabled
+    end
     return v == "yes" or v == "true" or v == "1"
 end
 
 local function parse_list(s)
     local r = {}
-    if not s then return r end
-    for tok in s:gmatch("[^,%s]+") do r[#r + 1] = tok end
+    if not s then
+        return r
+    end
+    for tok in s:gmatch("[^,%s]+") do
+        r[#r + 1] = tok
+    end
     return r
 end
 
@@ -352,15 +362,19 @@ local function parse_depends(s)
     local r = {}
     for _, tok in ipairs(parse_list(s)) do
         local base, sub = tok:match("^([%w_][%w_%-%.]*)/(.+)$")
-        if not base then base = tok end
+        if not base then
+            base = tok
+        end
         check_identifier(base, "depends=" .. tok)
-        r[#r + 1] = {base = base, sub = sub}
+        r[#r + 1] = { base = base, sub = sub }
     end
     return r
 end
 
 local function parse_sequential(s)
-    if not s then return nil end
+    if not s then
+        return nil
+    end
     local tag = s:match("^%s*(.-)%s*$")
     assertf(tag ~= "", "sequential=%s: empty tag", s)
     assertf(not tag:find("[,%s]"), "sequential=%s: only one tag per block (no commas or whitespace)", s)
@@ -370,7 +384,9 @@ end
 
 local function parse_vars(s)
     local r = {}
-    if not s then return r end
+    if not s then
+        return r
+    end
     for tok in s:gmatch("[^,%s]+") do
         local var, ref = tok:match("^([%w_]+)%->(.+)$")
         local shortcut = var == nil
@@ -378,14 +394,12 @@ local function parse_vars(s)
             check_identifier(tok, "vars=" .. tok)
             var, ref = tok, tok
         end
-        assertf(ref:match("^[%w._%-/]+$"),
-            "vars=%s->%s: invalid characters in ref", var, ref)
+        assertf(ref:match("^[%w._%-/]+$"), "vars=%s->%s: invalid characters in ref", var, ref)
         local base, sub, kind
         -- Try K/SUB/path
         base, sub = ref:match("^([%w_][%w_%-%.]*)/(.+)/path$")
         if base then
-            assertf(not sub:match("^source/"),
-                "vars=%s->%s: K/source/REGION/path is not allowed", var, ref)
+            assertf(not sub:match("^source/"), "vars=%s->%s: K/source/REGION/path is not allowed", var, ref)
             kind = "path"
         else
             -- Try K/SUB
@@ -402,7 +416,7 @@ local function parse_vars(s)
             end
         end
         check_identifier(base, "vars=" .. var .. "->" .. ref)
-        r[#r + 1] = {var = var, base = base, sub = sub, kind = kind, raw = ref}
+        r[#r + 1] = { var = var, base = base, sub = sub, kind = kind, raw = ref }
     end
     return r
 end
@@ -412,8 +426,12 @@ end
 -- so $foo does not consume the start of $foobar.
 local function substitute(body, var_pairs)
     local sorted_pairs = {}
-    for _, p in ipairs(var_pairs) do sorted_pairs[#sorted_pairs + 1] = p end
-    table.sort(sorted_pairs, function(a, b) return #a.var > #b.var end)
+    for _, p in ipairs(var_pairs) do
+        sorted_pairs[#sorted_pairs + 1] = p
+    end
+    table.sort(sorted_pairs, function(a, b)
+        return #a.var > #b.var
+    end)
     local out, i, n = {}, 1, #body
     while i <= n do
         local c = body:sub(i, i)
@@ -452,7 +470,9 @@ end
 -- into a comment that severs the logical line.
 -- Multiple non-overlapping null regions are allowed. Nesting is not.
 local function process_null_regions(body, keep_content, label)
-    if not body:find("[#%-/]+%s*docs:begin%s+null") then return body end
+    if not body:find("[#%-/]+%s*docs:begin%s+null") then
+        return body
+    end
     local scan = body:sub(-1) == "\n" and body or (body .. "\n")
     local out = {}
     local in_null = false
@@ -469,7 +489,9 @@ local function process_null_regions(body, keep_content, label)
     end
     assertf(not in_null, "%s: unterminated docs:begin null", label)
     local result = table.concat(out, "\n")
-    if body:sub(-1) == "\n" then result = result .. "\n" end
+    if body:sub(-1) == "\n" then
+        result = result .. "\n"
+    end
     return result
 end
 
@@ -492,7 +514,9 @@ local function strip_all_markers(body)
         end
     end
     local result = table.concat(out, "\n")
-    if body:sub(-1) == "\n" then result = result .. "\n" end
+    if body:sub(-1) == "\n" then
+        result = result .. "\n"
+    end
     return result
 end
 
@@ -505,7 +529,7 @@ local function extract_region(body, name, label)
     -- Ensure the last line is terminated so a final docs:end at EOF is matched.
     local scan = body:sub(-1) == "\n" and body or (body .. "\n")
     scan:gsub("()[%s]*[#%-/]+[%s]*docs:(%a+)[ \t]*(.-)[ \t]*()\n", function(s, kw, rname, e)
-        markers[#markers + 1] = {s = s, kw = kw, name = rname, e = e}
+        markers[#markers + 1] = { s = s, kw = kw, name = rname, e = e }
     end)
     local regions = {}
     for _, m in ipairs(markers) do
@@ -520,9 +544,9 @@ local function extract_region(body, name, label)
         end
     end
     local r = regions[target]
-    assertf(r,                 "%s: no region '%s' found",                   label, target)
-    assertf(r.first,           "%s: region '%s' has no docs:begin",          label, target)
-    assertf(r.last,            "%s: region '%s' has no docs:end",            label, target)
+    assertf(r, "%s: no region '%s' found", label, target)
+    assertf(r.first, "%s: region '%s' has no docs:begin", label, target)
+    assertf(r.last, "%s: region '%s' has no docs:end", label, target)
     assertf(r.first <= r.last, "%s: region '%s' docs:end before docs:begin", label, target)
     return (scan:sub(r.first, r.last):gsub("\n$", ""))
 end
@@ -536,11 +560,18 @@ local function read_file(path, label)
 end
 
 local function read_output(key, sub, label)
-    assertf(not no_runner[key],
+    assertf(
+        not no_runner[key],
         "%s: runner=%s is not in LANG_INFO; cannot consume cache/%s/%s",
-        label, no_runner[key], key, sub)
+        label,
+        no_runner[key],
+        key,
+        sub
+    )
     consumed[key .. "/" .. sub] = true
-    if deps_target then return "" end
+    if deps_target then
+        return ""
+    end
     local path = REPLACE_CACHE_DIR .. "/" .. key .. "/" .. sub
     return (strip_ansi(read_file(path, label)):gsub("\n$", ""))
 end
@@ -554,7 +585,9 @@ local function write_idempotent(path, content)
     if f then
         local existing = f:read("a")
         f:close()
-        if existing == content then return end
+        if existing == content then
+            return
+        end
     end
     os.execute("mkdir -p '" .. path:match("(.*)/") .. "'")
     f = assert(io.open(path, "w"))
@@ -570,12 +603,14 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
     end
     if include_abs then
         assertf(#out_list == 0, "key=%s: outputs= not allowed on include= keys", key)
-        assertf(#deps == 0,     "key=%s: depends= not allowed on include= keys", key)
+        assertf(#deps == 0, "key=%s: depends= not allowed on include= keys", key)
         assertf(#vars_list == 0, "key=%s: vars= not allowed on include= keys", key)
-        defined[key]   = true
+        defined[key] = true
         outputs_t[key] = {}
         write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/both", body)
-        if deps_target then emit_include_rule(key, include_abs) end
+        if deps_target then
+            emit_include_rule(key, include_abs)
+        end
         return
     end
     for _, d in ipairs(deps) do
@@ -594,12 +629,16 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         end
     end
     local resolved = substitute(body, path_pairs)
-    resolved = resolved:gsub("%$REPLACE_KEY%f[%W]", function() return key end)
+    resolved = resolved:gsub("%$REPLACE_KEY%f[%W]", function()
+        return key
+    end)
     local lang = pick_lang(attr, classes)
     local info = LANG_INFO[lang]
     defined[key] = true
     outputs_t[key] = {}
-    for _, n in ipairs(out_list) do outputs_t[key][n] = true end
+    for _, n in ipairs(out_list) do
+        outputs_t[key][n] = true
+    end
     sources[key] = resolved
     if not info then
         no_runner[key] = lang
@@ -615,7 +654,9 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         end
     end
     if #contents_entries > 0 then
-        table.sort(contents_entries, function(a, b) return a.var < b.var end)
+        table.sort(contents_entries, function(a, b)
+            return a.var < b.var
+        end)
         local lines = {}
         for _, p in ipairs(contents_entries) do
             lines[#lines + 1] = p.var .. "=" .. REPLACE_CACHE_DIR .. "/" .. p.base .. "/" .. p.sub
@@ -628,12 +669,16 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
     local outputs_text = ""
     if #out_list > 0 then
         local sorted_out = {}
-        for _, n in ipairs(out_list) do sorted_out[#sorted_out + 1] = n end
+        for _, n in ipairs(out_list) do
+            sorted_out[#sorted_out + 1] = n
+        end
         table.sort(sorted_out)
         outputs_text = table.concat(sorted_out, "\n") .. "\n"
     end
     write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/outputs", outputs_text)
-    if deps_target then emit_rule(key, info, out_list, deps, vars_list, #contents_entries > 0) end
+    if deps_target then
+        emit_rule(key, info, out_list, deps, vars_list, #contents_entries > 0)
+    end
     return resolved
 end
 
@@ -647,7 +692,7 @@ end
 function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     local runner_path = info.runner
     local body_path = "$(REPLACE_CACHE_DIR)/" .. key .. "/body." .. info.ext
-    local prereqs = {runner_path, body_path, "$(REPLACE_CACHE_DIR)/" .. key .. "/outputs"}
+    local prereqs = { runner_path, body_path, "$(REPLACE_CACHE_DIR)/" .. key .. "/outputs" }
     if has_contents then
         prereqs[#prereqs + 1] = REPLACE_DIR .. "/vars.lua"
         prereqs[#prereqs + 1] = "$(REPLACE_CACHE_DIR)/" .. key .. "/spec"
@@ -680,7 +725,11 @@ function emit_rule(key, info, out_list, deps, vars_list, has_contents)
     end
     local cmd = string.format(
         "\t@REPLACE_KEY=%s bash %s || (echo '==> FAILED: key=%s' >&2; cat $(REPLACE_CACHE_DIR)/%s/both >&2; exit 1)",
-        key, runner_path, key, key)
+        key,
+        runner_path,
+        key,
+        key
+    )
     rules[#rules + 1] = table.concat(targets, " ") .. " &: " .. table.concat(prereqs, " ") .. "\n" .. cmd
 end
 
@@ -697,7 +746,9 @@ end
 
 -- Lazily define key and all its transitive depends= in DFS order.
 local function ensure_defined(key)
-    if defined[key] then return end
+    if defined[key] then
+        return
+    end
     assertf(not defining[key], "key=%s: dependency cycle", key)
     local p = pending[key]
     assertf(p, "key=%s: not defined", key)
@@ -716,10 +767,9 @@ end
 
 -- Pandoc gfm renders a classless CodeBlock as 4-space-indented; force fence.
 local function force_fenced(el)
-    local has_attrs = false
-    for _ in pairs(el.attr.attributes) do has_attrs = true; break end
+    local has_attrs = #el.attr.attributes > 0
     if #el.classes == 0 and not has_attrs and el.identifier == "" then
-        el.classes = {"text"}
+        el.classes = { "text" }
     end
 end
 
@@ -730,9 +780,15 @@ end
 -- kind == "artifact" -> a = artifact name (own key only; must be in outputs=)
 -- kind == "cross"    -> a = K, b = thing (stream/artifact/source[/region])
 local function parse_replace_target(val, self_key)
-    if val == "null" then return "null" end
-    if val == "source" then return "source", nil end
-    if val == "stdout" or val == "stderr" or val == "both" then return "stream", val end
+    if val == "null" then
+        return "null"
+    end
+    if val == "source" then
+        return "source", nil
+    end
+    if val == "stdout" or val == "stderr" or val == "both" then
+        return "stream", val
+    end
     if val:sub(1, 7) == "source/" then
         local region = val:sub(8)
         assertf(region ~= "null", "replace=source/null: 'null' is a reserved marker name, not a region")
@@ -742,12 +798,16 @@ local function parse_replace_target(val, self_key)
         return "artifact", val
     end
     local k, rest = val:match("^([%w._%-]+)/(.+)$")
-    if k then return "cross", k, rest end
-    if val:match("^[%w._%-]+$") then return "cross", val, "both" end
+    if k then
+        return "cross", k, rest
+    end
+    if val:match("^[%w._%-]+$") then
+        return "cross", val, "both"
+    end
     error("replace=" .. val .. ": unrecognized value")
 end
 
-local render_source  -- forward declaration (render_source <-> cross_read mutual ref)
+local render_source -- forward declaration (render_source <-> cross_read mutual ref)
 
 local function cross_read(K, thing, vars_spec, label)
     ensure_defined(K)
@@ -756,17 +816,21 @@ local function cross_read(K, thing, vars_spec, label)
     -- other than K, K/both, K/path, K/both/path with a clear error.
     if pending[K] and pending[K].include_abs then
         local v = thing == "both" or thing == "path" or thing == "both/path"
-        assertf(v, "%s: include= key '%s' only supports K, K/both, K/path, K/both/path (got K/%s)",
-                label, K, thing)
+        assertf(v, "%s: include= key '%s' only supports K, K/both, K/path, K/both/path (got K/%s)", label, K, thing)
     end
     if thing == "path" then
         return REPLACE_CACHE_DIR .. "/" .. K
     end
     local sub_path = thing:match("^(.+)/path$")
     if sub_path then
-        assertf(not no_runner[K],
+        assertf(
+            not no_runner[K],
             "%s: runner=%s is not in LANG_INFO; cannot consume cache/%s/%s",
-            label, no_runner[K], K, sub_path)
+            label,
+            no_runner[K],
+            K,
+            sub_path
+        )
         return REPLACE_CACHE_DIR .. "/" .. K .. "/" .. sub_path
     end
     -- globals/NAME renders the value of `-M NAME=...`.
@@ -786,8 +850,7 @@ local function cross_read(K, thing, vars_spec, label)
     if thing == "stdout" or thing == "stderr" or thing == "both" then
         return read_output(K, thing, label)
     end
-    assertf(outputs_t[K] and outputs_t[K][thing],
-        "%s: key '%s' has no artifact '%s'", label, K, thing)
+    assertf(outputs_t[K] and outputs_t[K][thing], "%s: key '%s' has no artifact '%s'", label, K, thing)
     return read_output(K, thing, label)
 end
 
@@ -825,19 +888,28 @@ local function process_codeblock(el)
     local attr = el.attr.attributes
     local key, replace = attr.key, attr.replace
     local has_include = attr.include ~= nil
-    if not key and not replace then return el end
+    if not key and not replace then
+        return el
+    end
 
     local enabled = is_enabled(attr)
     if enabled then
-        if key then ensure_defined(key) end
+        if key then
+            ensure_defined(key)
+        end
         -- include= blocks produce the included body as their output; default
         -- to replace=both, and forbid forms that don't apply (no stdout/stderr/
         -- artifact/source for include= keys).
-        if has_include and not replace then replace = "both" end
+        if has_include and not replace then
+            replace = "both"
+        end
         assertf(replace, "%s: replace= attribute required", key and "key=" .. key or "CodeBlock")
-        assertf(not has_include or replace == "both" or replace == "null",
+        assertf(
+            not has_include or replace == "both" or replace == "null",
             "key=%s: include= block only supports replace=both or replace=null (got replace=%s)",
-            key, replace)
+            key,
+            replace
+        )
     end
 
     local vars_spec = parse_vars(attr.vars)
@@ -858,12 +930,16 @@ local function process_codeblock(el)
         return el
     end
 
-    if replace == "null" then return {} end
+    if replace == "null" then
+        return {}
+    end
 
     local label = key and "key=" .. key or "replace=" .. replace
     local kind, a, b = parse_replace_target(replace, key)
 
-    if kind == "null" then return {} end
+    if kind == "null" then
+        return {}
+    end
     if kind == "source" then
         assertf(key, "%s: replace=source requires key=", label)
         el.text = render_source(sources[key], a, vars_spec, label)
@@ -887,14 +963,18 @@ end
 local function process_code(el)
     local attr = el.attr.attributes
     local replace = attr.replace
-    if not replace then return el end
+    if not replace then
+        return el
+    end
     assertf(not attr.include, "inline Code: include= not supported (use key= CodeBlock)")
-    assertf(not attr.runner,  "inline Code: runner= not supported (use key= CodeBlock)")
+    assertf(not attr.runner, "inline Code: runner= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     attr.replace = nil
     attr.enabled = nil
     attr.include = nil
-    if not enabled then return el end
+    if not enabled then
+        return el
+    end
     local label = "inline Code replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
     if kind == "cross" then
@@ -907,16 +987,20 @@ end
 local function process_span(el)
     local attr = el.attr.attributes
     local replace = attr.replace
-    if not replace then return el end
+    if not replace then
+        return el
+    end
     assertf(not attr.include, "inline Span: include= not supported (use key= CodeBlock)")
-    assertf(not attr.runner,  "inline Span: runner= not supported (use key= CodeBlock)")
+    assertf(not attr.runner, "inline Span: runner= not supported (use key= CodeBlock)")
     local enabled = is_enabled(attr)
     local code = attr.code
     attr.replace = nil
     attr.enabled = nil
     attr.include = nil
     attr.code = nil
-    if not enabled then return el end
+    if not enabled then
+        return el
+    end
     local label = "inline Span replace=" .. replace
     local kind, a, b = parse_replace_target(replace, nil)
     if kind == "cross" then
@@ -930,7 +1014,7 @@ local function process_span(el)
     error(label .. ": only cross-block replace= (K or K/<thing>) supported on inline Span")
 end
 
-local INLINE_FILTER = {Code = process_code, Span = process_span}
+local INLINE_FILTER = { Code = process_code, Span = process_span }
 
 -- Walk a list of blocks in document order, processing CodeBlocks via
 -- process_codeblock and recursing into block containers (Div, BlockQuote,
@@ -975,15 +1059,19 @@ end
 local function walk_block(b)
     if b.tag == "CodeBlock" and b.classes:includes("bitfield") then
         local new_text = translate_bitfield(b.text)
-        return pandoc.CodeBlock(new_text, {class = "text"})
+        return pandoc.CodeBlock(new_text, { class = "text" })
     end
-    if b.tag == "CodeBlock" then return process_codeblock(b) end
+    if b.tag == "CodeBlock" then
+        return process_codeblock(b)
+    end
     if b.content and (b.tag == "Div" or b.tag == "BlockQuote") then
         b.content = walk_blocks(b.content)
         return pandoc.walk_block(b, INLINE_FILTER)
     end
     if (b.tag == "BulletList" or b.tag == "OrderedList") and b.content then
-        for i, item in ipairs(b.content) do b.content[i] = walk_blocks(item) end
+        for i, item in ipairs(b.content) do
+            b.content[i] = walk_blocks(item)
+        end
         return pandoc.walk_block(b, INLINE_FILTER)
     end
     return pandoc.walk_block(b, INLINE_FILTER)
@@ -994,7 +1082,9 @@ walk_blocks = function(blocks)
     for _, b in ipairs(blocks) do
         local r = walk_block(b)
         if type(r) == "table" and not r.tag then
-            for _, x in ipairs(r) do out[#out + 1] = x end
+            for _, x in ipairs(r) do
+                out[#out + 1] = x
+            end
         elseif r then
             out[#out + 1] = r
         end
@@ -1004,13 +1094,15 @@ end
 
 local function sorted(t)
     local r = {}
-    for k in pairs(t) do r[#r + 1] = k end
+    for k in pairs(t) do
+        r[#r + 1] = k
+    end
     table.sort(r)
     return r
 end
 
 local function build_makefile_text()
-    local out = {deps_target, ":"}
+    local out = { deps_target, ":" }
     for _, c in ipairs(sorted(consumed)) do
         out[#out + 1] = " $(REPLACE_CACHE_DIR)/"
         out[#out + 1] = c
@@ -1025,8 +1117,12 @@ end
 
 local function collect_codeblock(b)
     local key = b.attr.attributes.key
-    if not key then return end
-    if not is_enabled(b.attr.attributes) then return end
+    if not key then
+        return
+    end
+    if not is_enabled(b.attr.attributes) then
+        return
+    end
     check_identifier(key, "key=" .. key)
     assertf(key ~= "globals", "key=globals: 'globals' is a reserved pseudo-key")
     assertf(not pending[key], "key=%s: duplicate definition", key)
@@ -1034,9 +1130,7 @@ local function collect_codeblock(b)
     local body = b.text
     local include_abs
     if include then
-        assertf(body == "",
-            "key=%s: include=%s: block body must be empty when include= is set",
-            key, include)
+        assertf(body == "", "key=%s: include=%s: block body must be empty when include= is set", key, include)
         -- Disambiguate FILE/<region> from a plain path: try the whole value as a
         -- file path first. If that fails and the value contains a '/', split on
         -- the last '/' and treat the RHS as a region name within the LHS file.
@@ -1049,38 +1143,38 @@ local function collect_codeblock(b)
             local lhs, rhs = include:match("^(.+)/([^/]+)$")
             assertf(lhs, "key=%s: include=%s: file not found", key, include)
             file_path = lhs
-            region    = rhs
+            region = rhs
         end
-        include_abs        = RECIPES_DIR .. "/" .. file_path
+        include_abs = RECIPES_DIR .. "/" .. file_path
         local file_content = read_file(include_abs, "key=" .. key .. " include=" .. include)
         if region then
-            body = extract_region(file_content, region,
-                "key=" .. key .. " include=" .. include)
+            body = extract_region(file_content, region, "key=" .. key .. " include=" .. include)
         else
             body = strip_all_markers(file_content)
         end
     end
     local seq = parse_sequential(b.attr.attributes.sequential)
-    assertf(not (include and seq),
-        "key=%s: sequential= not allowed on include= keys", key)
+    assertf(not (include and seq), "key=%s: sequential= not allowed on include= keys", key)
     local deps = parse_depends(b.attr.attributes.depends)
     if seq then
         local prev = sequential[seq]
-        if prev then deps[#deps + 1] = {base = prev, sub = nil} end
+        if prev then
+            deps[#deps + 1] = { base = prev, sub = nil }
+        end
         sequential[seq] = key
     end
     pending[key] = {
-        attr        = b.attr.attributes,
-        body        = body,
-        classes     = b.classes,
-        deps        = deps,
-        vars        = parse_vars(b.attr.attributes.vars),
+        attr = b.attr.attributes,
+        body = body,
+        classes = b.classes,
+        deps = deps,
+        vars = parse_vars(b.attr.attributes.vars),
         include_abs = include_abs,
     }
 end
 
 local function collect(blocks)
-    pandoc.walk_block(pandoc.Div(blocks), {CodeBlock = collect_codeblock})
+    pandoc.walk_block(pandoc.Div(blocks), { CodeBlock = collect_codeblock })
 end
 
 function Pandoc(doc)
@@ -1096,7 +1190,10 @@ function Pandoc(doc)
     for k, v in pairs(doc.meta) do
         if k:match("^[%a_][%w_%-]*$") then
             local f = io.open(globals_dir .. "/" .. k, "w")
-            if f then f:write(pandoc.utils.stringify(v)) f:close() end
+            if f then
+                f:write(pandoc.utils.stringify(v))
+                f:close()
+            end
         end
     end
     defined["globals"] = true
@@ -1110,4 +1207,4 @@ function Pandoc(doc)
     return doc
 end
 
-return {{Pandoc = Pandoc}}
+return { { Pandoc = Pandoc } }

@@ -1,6 +1,6 @@
 -- Load the Cartesi modules
-local cartesi = require"cartesi"
-local util = require"cartesi.util"
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
 -- Instantiate machine from configuration
 local config = require(arg[1])
@@ -16,7 +16,5 @@ assert(machine:read_reg("uarch_cycle") == ucycle, "uarch halted before target")
 
 -- Obtain access log and dump it to screen
 local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-io.stderr:write(string.format(
-    "\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n",
-    mcycle, ucycle))
+io.stderr:write(string.format("\nAccess log of uarch step at mcycle=%u uarch_cycle=%u:\n\n", mcycle, ucycle))
 util.print_log(log, io.stderr)

@@ -2,7 +2,9 @@
 local cartesi = require("cartesi")
 
 -- Writes formatted text to stderr
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 
 -- Instantiate machine from configuration
 local config = require(arg[1])

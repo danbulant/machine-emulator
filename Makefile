@@ -253,11 +253,14 @@ test% coverage% build-tests%:
 
 build-tests-misc-with-builder-image: build-emulator-builder-image
 
-lint check-format format check-format-lua check-lua format-lua:
+lint check-format format:
 	@$(MAKE) $@-src $@-tests
 
+check-format-lua check-lua format-lua:
+	@$(MAKE) $@-src $@-tests $@-doc
+
 lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -src,$@),src,tests) $(subst -src,,$(subst -tests,,$@))
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -doc,$@),doc,$(if $(findstring -src,$@),src,tests)) $(subst -doc,,$(subst -src,,$(subst -tests,,$@)))
 
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
