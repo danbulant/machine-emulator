@@ -4637,7 +4637,20 @@ One is honest, the other cheats past a chosen point by switching to a machine th
 
 The game opens with each player committing the final state hash of its machine, obtained by running it until it halts.
 If the two hashes agree there is no dispute and the result can be extracted directly.
-When they disagree, the referee narrows the disagreement to the single transition responsible for it, by bisection, repeatedly asking both players for the state hash at the midpoint of an interval of cycles and keeping the half where they still disagree.
+When they disagree the referee settles the dispute before accepting the result.
+```{.lua key=vg_run_referee include=verification-game.lua/run_referee title="verification-game.lua (excerpt)"}
+```
+
+### Settling a dispute
+
+The dispute is settled in two bisections.
+The first ranges over `mcycle` and isolates the disputed main processor instruction, the second ranges over `uarch_cycle` and isolates the single microarchitecture step within it.
+```{.lua key=vg_adjudicate include=verification-game.lua/adjudicate_dispute title="verification-game.lua (excerpt)"}
+```
+
+### One bisection level
+
+Each bisection narrows the disagreement to the single transition responsible for it, repeatedly asking both players for the state hash at the midpoint of an interval of cycles and keeping the half where they still disagree.
 ```{.lua key=vg_bisect_level include=verification-game.lua/bisect_level title="verification-game.lua (excerpt)"}
 ```
 The main processor has a fixed-point property once the machine halts.
@@ -4647,27 +4660,33 @@ Running it for more `uarch_cycle`s leaves the state unchanged, until a reset beg
 This is what lets each bisection range over the full cycle ceiling without knowing in advance where either machine halts.
 A midpoint past a halt simply repeats the final hash, and the disagreement is still found at the cycle where the two computations diverge.
 
-The dispute is settled in two such bisections.
-The first ranges over `mcycle` and isolates the disputed main processor instruction, the second ranges over `uarch_cycle` and isolates the single microarchitecture step within it.
-```{.lua key=vg_adjudicate include=verification-game.lua/adjudicate_dispute title="verification-game.lua (excerpt)"}
-```
+### Verifying the state transition
+
 Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the access log of the transition out of it, and verifies that log without ever instantiating a machine.
 This stands for a Cartesi contract that can verify such logs directly on the blockchain.
 The transition is either an ordinary microarchitecture step or the terminal reset that begins the next main processor instruction.
 Which one it is depends only on the agreed cycle, since the only transition out of `cartesi.UARCH_CYCLE_MAX - 1` is the reset, so the referee checks the log with `verify_reset_uarch` at that boundary and `verify_step_uarch` everywhere else.
-If the log proves that the agreed before-hash advances to the player's committed after-hash, that player was honest, otherwise the other one was.
+If the log proves that the agreed before-hash advances to the player's committed after-hash, that player was honest, otherwise the other one is assumed to be.
+```{.lua key=vg_verify_transition include=verification-game.lua/verify_state_transition title="verification-game.lua (excerpt)"}
+```
+
+### Verifying the result
 
 Naming the winner settles which final state hash is the true one.
-The result of the computation is then whatever value verifies against that hash, by the same slicing operation shown earlier.
+The referee asks both players for a result and accepts the first that verifies against that hash.
+```{.lua key=vg_wait_for_result include=verification-game.lua/wait_for_result title="verification-game.lua (excerpt)"}
+```
+A posted result verifies, by the same slicing operation shown earlier, only if its bytes hash to the proof's target, the target sits at the output drive's address, and the proof rolls up to the winner's final hash.
 ```{.lua key=vg_verify_output include=verification-game.lua/verify_output title="verification-game.lua (excerpt)"}
 ```
-A posted result is accepted only if its bytes hash to the proof's target, the target sits at the output drive's address, and the proof rolls up to the winner's final hash.
 A result that does not, from the dishonest player or anyone else, is rejected.
 This keeps the result phase decoupled from the dispute, the parties who settle it are not the parties who later rely on the finalized hash to prove the result.
 
+### Running the game
+
 To run the whole game, start the referee, the server the players connect to:
-```{.bash key=vg_run vars=template->calc_template/calculator-template/path outputs=referee replace=source/server}
-ln -sf "$template" calculator-template
+```{.bash key=vg_run vars=template->calc_template/calculator-template/path depends=vg_verify_output outputs=referee replace=source/server}
+ln -sf "$template" .
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
 ln -sf "$RECIPES_DIR/hash-tree.lua" .
@@ -4675,7 +4694,7 @@ ln -sf "$RECIPES_DIR/hash-tree.lua" .
 # docs:begin server
 lua5.4 verification-game.lua referee 127.0.0.1:8086 "6*2^1024 + 3*2^512"
 # docs:end server
-} > referee 2>&1 &
+} > /dev/null 2>&1 &
 while ! netstat -ntl 2>&1 | grep 8086 > /dev/null; do sleep 1; done
 {
 # docs:begin honest
@@ -4684,10 +4703,23 @@ lua5.4 verification-game.lua honest 127.0.0.1:8086 "6*2^1024 + 3*2^512"
 } > /dev/null 2>&1 &
 {
 # docs:begin dishonest
-lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 0 "2+2"
+lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 7 "2+2"
 # docs:end dishonest
 } > /dev/null 2>&1 &
 wait
+# The referee leaves one file per narration phase. Show the short phases whole and reduce each
+# long bisection to its first and last three rounds.
+{
+cat commitments
+head -n 3 bisect_mcycle
+echo ...
+tail -n 3 bisect_mcycle
+head -n 3 bisect_uarch_cycle
+echo ...
+tail -n 3 bisect_uarch_cycle
+cat verdict
+cat output
+} > referee
 ```
 then the honest player, which evaluates the public expression:
 ```{.bash replace=vg_run/source/honest}
@@ -4700,9 +4732,47 @@ The referee narrates the dispute from start to finish:
 ```
 The bisection converges on the cheat point, the disputed step verifies in the honest player's favor, and the cheater's result is rejected before the true one is accepted.
 
+```{.lua key=vg_uarch_cycle_max replace=null}
+local cartesi = require("cartesi")
+print(cartesi.UARCH_CYCLE_MAX)
+```
+That dispute resolved on an ordinary microarchitecture step, since the cheat point fell early in the disputed instruction's microarchitecture cycles.
+Cheating instead at the last microarchitecture cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the disagreement onto the terminal reset that begins the next instruction, the case the referee checks with `verify_reset_uarch`:
+```{.bash key=vg_run_reset vars=template->calc_template/calculator-template/path,uarch_cycle_max->vg_uarch_cycle_max/stdout depends=vg_run outputs=referee replace=source/dishonest}
+ln -sf "$template" .
+ln -sf "$RECIPES_DIR/verification-game.lua" .
+ln -sf "$RECIPES_DIR/dishonest.lua" .
+ln -sf "$RECIPES_DIR/hash-tree.lua" .
+{
+lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
+} > /dev/null 2>&1 &
+while ! netstat -ntl 2>&1 | grep 8087 > /dev/null; do sleep 1; done
+{
+lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
+} > /dev/null 2>&1 &
+last_uarch_cycle=$(( $uarch_cycle_max - 1 ))
+{
+# docs:begin dishonest
+lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
+# docs:end dishonest
+} > /dev/null 2>&1 &
+wait
+# Show only what differs from the step run: the uarch bisection climbing to the reset
+# boundary, then the verdict.
+{
+head -n 3 bisect_uarch_cycle
+echo ...
+tail -n 3 bisect_uarch_cycle
+cat verdict
+} > referee
+```
+This time the microarchitecture bisection climbs to the reset boundary and the honest player's reset log verifies just the same:
+```{replace=vg_run_reset/referee}
+```
+
 For simplicity this model uses only two players, but the same idea is the basis for efficient algorithms that resolve disputes among many players.
 Our implementation has since moved on to use our [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439).
-For an even better algorithm, see our [Dave](https://doi.org/10.1145/3734698).
+For an even better algorithm, see our [Dave: A Decentralized, Secure, and Lively Fraud-Proof Algorithm](https://doi.org/10.1145/3734698).
 
 [modeline]: # ( vim: set filetype=markdown spell spelllang=en: )
 

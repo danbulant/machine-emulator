@@ -62,6 +62,11 @@
   - [Hash-view of state](#hash-view-of-state)
     - [Merkle tree operations](#merkle-tree-operations)
   - [Verification game](#verification-game)
+    - [Settling a dispute](#settling-a-dispute)
+    - [One bisection level](#one-bisection-level)
+    - [Verifying the state transition](#verifying-the-state-transition)
+    - [Verifying the result](#verifying-the-result)
+    - [Running the game](#running-the-game)
 
 # Introduction
 
@@ -8345,27 +8350,72 @@ machine that ran a different expression.
 The game opens with each player committing the final state hash of its
 machine, obtained by running it until it halts. If the two hashes agree
 there is no dispute and the result can be extracted directly. When they
-disagree, the referee narrows the disagreement to the single transition
-responsible for it, by bisection, repeatedly asking both players for the
-state hash at the midpoint of an interval of cycles and keeping the half
-where they still disagree.
+disagree the referee settles the dispute before accepting the result.
+
+``` lua
+local function run_referee(referee, dapp_contract)
+    local players = wait_for_commitments()
+
+    local winner = players[1]
+    if players[1].final_hash ~= players[2].final_hash then
+        winner = adjudicate_dispute(players, referee.initial_hash)
+    end
+
+    wait_for_result(dapp_contract, players, winner.final_hash)
+end
+```
+
+### Settling a dispute
+
+The dispute is settled in two bisections. The first ranges over `mcycle`
+and isolates the disputed main processor instruction, the second ranges
+over `uarch_cycle` and isolates the single microarchitecture step within
+it.
+
+``` lua
+local function adjudicate_dispute(players, initial_hash)
+    local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
+
+    -- Bisect to the disputed main-processor instruction.
+    bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, state)
+    -- Narrow down to the microarchitecture instruction.
+    bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
+
+    -- A converged cycle of UARCH_CYCLE_MAX-1 means the disputed transition is the reset, else a step.
+    phase("verdict")
+    local log = wait_for_log(players[1], state.branch, state.lo)
+    eventf("Player 1 posted log")
+
+    -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
+    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1] or players[2]
+    eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
+    return winner
+end
+```
+
+### One bisection level
+
+Each bisection narrows the disagreement to the single transition
+responsible for it, repeatedly asking both players for the state hash at
+the midpoint of an interval of cycles and keeping the half where they
+still disagree.
 
 ``` lua
 local function bisect_level(players, level, hi, state)
-	local lo, rounds = 0, {}
-	while math.ult(1, hi - lo) do
-		local mid = lo + ((hi - lo) >> 1)
-		local hash = wait_for_bisection(players, state.branch, level, mid)
-		if hash[1] == hash[2] then
-			lo, state.last_agreed_hash, state.branch = mid, hash[1], "agree"
-		else
-			hi, state.hash_after, state.branch = mid, hash[1], "disagree"
-		end
-		rounds[#rounds + 1] =
-			string.format("%s bisection round %d, interval of disagreement is [0x%x, 0x%x]", level, #rounds + 1, lo, hi)
-	end
-	state.lo = lo
-	event_trimmed(rounds, 3, 3)
+    phase("bisect_" .. level)
+    local lo, round = 0, 0
+    while math.ult(1, hi - lo) do
+        local mid = lo + ((hi - lo) >> 1)
+        local hash = wait_for_bisection(players, state.branch, level, mid)
+        if hash[1] == hash[2] then
+            lo, state.last_agreed_hash, state.branch = mid, hash[1], "agree"
+        else
+            hi, state.hash_after, state.branch = mid, hash[1], "disagree"
+        end
+        round = round + 1
+        eventf("%s bisection round %d, interval of disagreement is [0x%x, 0x%x]", level, round, lo, hi)
+    end
+    state.lo = lo
 end
 ```
 
@@ -8379,38 +8429,7 @@ without knowing in advance where either machine halts. A midpoint past a
 halt simply repeats the final hash, and the disagreement is still found
 at the cycle where the two computations diverge.
 
-The dispute is settled in two such bisections. The first ranges over
-`mcycle` and isolates the disputed main processor instruction, the
-second ranges over `uarch_cycle` and isolates the single
-microarchitecture step within it.
-
-``` lua
-local function adjudicate_dispute(players, initial_hash)
-	local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
-
-	-- Both levels bisect the emulator's full ceiling. Past its halt a machine is a fixed point,
-	-- so a hash asked there just repeats its final hash, and the disagreement still lands on the
-	-- diverging cycle wherever each halts.
-	bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, state)
-	bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
-
-	-- The converged uarch cycle says whether the disputed transition is a step or the terminal
-	-- reset, since the only transition out of UARCH_CYCLE_MAX-1 is the reset. The referee names it
-	-- to player 1, which logs the matching transition. Player 2 is not asked, only player 1 is
-	-- verified.
-	local is_reset = state.lo == cartesi.UARCH_CYCLE_MAX - 1
-	local log = wait_for_log(players[1], state.branch, state.lo)
-	event("Player 1 posted an access log for the disputed %s.", is_reset and "reset" or "step")
-
-	-- If player 1's log proves the before-hash advances to its committed after-hash, player 1
-	-- won, otherwise player 2 is the honest one.
-	local verify = is_reset and cartesi.machine.verify_reset_uarch or cartesi.machine.verify_step_uarch
-	local won = pcall(verify, cartesi.machine, state.last_agreed_hash, log, state.hash_after)
-	local winner = won and players[1] or players[2]
-	event("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
-	return winner
-end
-```
+### Verifying the state transition
 
 Once a single `uarch_cycle` is in dispute, the referee asks the player
 on the disagreeing side for the access log of the transition out of it,
@@ -8423,28 +8442,64 @@ transition out of `cartesi.UARCH_CYCLE_MAX - 1` is the reset, so the
 referee checks the log with `verify_reset_uarch` at that boundary and
 `verify_step_uarch` everywhere else. If the log proves that the agreed
 before-hash advances to the player’s committed after-hash, that player
-was honest, otherwise the other one was.
-
-Naming the winner settles which final state hash is the true one. The
-result of the computation is then whatever value verifies against that
-hash, by the same slicing operation shown earlier.
+was honest, otherwise the other one is assumed to be.
 
 ``` lua
-local function verify_output(dapp_contract, final_hash, output)
-	return output.proof.root_hash == final_hash
-		and output.proof.target_address == dapp_contract.output.start
-		and output.proof.log2_target_size == dapp_contract.output.log2_size
-		and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
-		and pcall(hash_tree.verify_slice, output.proof)
+local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
+    local pass
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        eventf("Verifying uarch reset log!")
+        pass = pcall(cartesi.machine.verify_reset_uarch, cartesi.machine, state_hash_before, log, state_hash_after)
+    else
+        eventf("Verifying uarch step log!")
+        pass = pcall(cartesi.machine.verify_step_uarch, cartesi.machine, state_hash_before, log, state_hash_after)
+    end
+    eventf("Log is %s!", pass and "valid" or "invalid")
+    return pass
 end
 ```
 
-A posted result is accepted only if its bytes hash to the proof’s
-target, the target sits at the output drive’s address, and the proof
-rolls up to the winner’s final hash. A result that does not, from the
-dishonest player or anyone else, is rejected. This keeps the result
-phase decoupled from the dispute, the parties who settle it are not the
-parties who later rely on the finalized hash to prove the result.
+### Verifying the result
+
+Naming the winner settles which final state hash is the true one. The
+referee asks both players for a result and accepts the first that
+verifies against that hash.
+
+``` lua
+local function wait_for_result(dapp_contract, players, final_hash)
+    phase("output")
+    while true do
+        local output = wait_for_output(players)
+        if verify_output(dapp_contract, output, final_hash) then
+            eventf("Result posted:\n%sAccepted!", output.target_value)
+            return
+        end
+        eventf("Result posted:\n%sRejected!", output.target_value)
+    end
+end
+```
+
+A posted result verifies, by the same slicing operation shown earlier,
+only if its bytes hash to the proof’s target, the target sits at the
+output drive’s address, and the proof rolls up to the winner’s final
+hash.
+
+``` lua
+local function verify_output(dapp_contract, output, final_hash)
+    return output.proof.root_hash == final_hash
+        and output.proof.target_address == dapp_contract.output.start
+        and output.proof.log2_target_size == dapp_contract.output.log2_size
+        and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
+        and pcall(hash_tree.verify_slice, output.proof)
+end
+```
+
+A result that does not, from the dishonest player or anyone else, is
+rejected. This keeps the result phase decoupled from the dispute, the
+parties who settle it are not the parties who later rely on the
+finalized hash to prove the result.
+
+### Running the game
 
 To run the whole game, start the referee, the server the players connect
 to:
@@ -8463,7 +8518,7 @@ and the dishonest player, which cheats at an early cycle into a
 different expression:
 
 ``` bash
-lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 0 "2+2"
+lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 7 "2+2"
 ```
 
 The referee narrates the dispute from start to finish:
@@ -8482,10 +8537,12 @@ uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x80000]
 uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x40000]
 uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x20000]
 ...
-uarch_cycle bisection round 18, interval of disagreement is [0x0, 0x4]
-uarch_cycle bisection round 19, interval of disagreement is [0x0, 0x2]
-uarch_cycle bisection round 20, interval of disagreement is [0x0, 0x1]
-Player 1 posted an access log for the disputed step.
+uarch_cycle bisection round 18, interval of disagreement is [0x4, 0x8]
+uarch_cycle bisection round 19, interval of disagreement is [0x6, 0x8]
+uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
+Player 1 posted log
+Verifying uarch step log!
+Log is valid!
 Player 1 wins! Final state hash is 0x82868c83....
 Result posted:
 4
@@ -8503,9 +8560,37 @@ The bisection converges on the cheat point, the disputed step verifies
 in the honest player’s favor, and the cheater’s result is rejected
 before the true one is accepted.
 
+That dispute resolved on an ordinary microarchitecture step, since the
+cheat point fell early in the disputed instruction’s microarchitecture
+cycles. Cheating instead at the last microarchitecture cycle,
+`cartesi.UARCH_CYCLE_MAX - 1`, moves the disagreement onto the terminal
+reset that begins the next instruction, the case the referee checks with
+`verify_reset_uarch`:
+
+``` bash
+lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
+```
+
+This time the microarchitecture bisection climbs to the reset boundary
+and the honest player’s reset log verifies just the same:
+
+``` text
+uarch_cycle bisection round 1, interval of disagreement is [0x80000, 0x100000]
+uarch_cycle bisection round 2, interval of disagreement is [0xc0000, 0x100000]
+uarch_cycle bisection round 3, interval of disagreement is [0xe0000, 0x100000]
+...
+uarch_cycle bisection round 18, interval of disagreement is [0xffffc, 0x100000]
+uarch_cycle bisection round 19, interval of disagreement is [0xffffe, 0x100000]
+uarch_cycle bisection round 20, interval of disagreement is [0xfffff, 0x100000]
+Player 1 posted log
+Verifying uarch reset log!
+Log is valid!
+Player 1 wins! Final state hash is 0x82868c83....
+```
+
 For simplicity this model uses only two players, but the same idea is
 the basis for efficient algorithms that resolve disputes among many
 players. Our implementation has since moved on to use our
 [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439).
-For an even better algorithm, see our
-[Dave](https://doi.org/10.1145/3734698).
+For an even better algorithm, see our [Dave: A Decentralized, Secure,
+and Lively Fraud-Proof Algorithm](https://doi.org/10.1145/3734698).
