@@ -269,4 +269,17 @@ function _M.ilog2(n)
     return r
 end
 
+-- Returns the drive in config[what] (e.g. "nvram" or "flash_drive") whose label matches, after
+-- filling in its log2_size from its length. Returns nil and an error message when there is no such
+-- drive, so a caller can simply wrap the call in assert().
+function _M.find_drive(config, what, label)
+    for _, drive in ipairs(config[what]) do
+        if drive.label == label then
+            drive.log2_size = _M.ilog2(drive.length)
+            return drive
+        end
+    end
+    return nil, string.format("missing %s %s", label, what)
+end
+
 return _M

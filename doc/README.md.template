@@ -2495,7 +2495,7 @@ As an example, consider the following script:
 
 The script loads `calculator_config` from its Lua module `./config-calculator.lua` and instantiates a Cartesi Machine from it.
 This is the configuration for using the `bc` program to evaluate an arithmetic expression.
-The pristine input and output NVRAMs are described in the configuration at `config.nvram[1]` and `config.nvram[2]`, respectively.
+It locates the pristine input and output NVRAMs with the `cartesi.util.find_drive(<config>, <kind>, <label>)` helper, which returns the `<kind>` drive (here an `nvram`) carrying the given `<label>`, with its `log2_size` filled in.
 The script concatenates its command-line arguments, line-terminates them, and writes them at the start of the input NVRAM.
 It then runs the machine until it halts or yields manual.
 Finally, it reads the output NVRAM contents, extracts the first null-terminated string from it, and prints the result.
@@ -2554,38 +2554,25 @@ The `sibling_hashes` array contains the hashes of the *siblings* of all nodes vi
 
 Using the data in a proof, it is possible to verify the claim that a Merkle tree with a given root hash contains a target node with a given hash and size at the position given by its address.
 The following script verifies the state value proof for the output NVRAM in the calculator example discussed above.
-It uses two helper functions from the `proof.lua` sample module shown below, to check the proof returned by `machine:get_proof()`.
-```{.lua key=proof_roll include=proof.lua/roll_hash_up_tree title="proof.lua (excerpt)"}
-```
-```{.lua key=proof_slice include=proof.lua/slice_assert title="proof.lua (excerpt)"}
-```
+It uses two helper functions from the `hash-tree.lua` sample module to check the proof returned by `machine:get_proof()`.
+These helpers are shown and explained under [Merkle tree operations](#merkle-tree-operations) in the Blockchain perspective.
 
-The calculator script requires this module and uses `slice_assert` to verify the output NVRAM proof.
+The `cartesi.keccak256(<string>)` function of the `cartesi` Lua module returns the hash of the byte string `<string>`.
+The `cartesi.keccak256(<hash1>, <hash2>)` overload returns the hash of the concatenation of `<hash1>` and `<hash2>`.
+The `cartesi.sha256(<string>)` and `cartesi.sha256(<hash1>, <hash2>)` behave analogously.
+
+The calculator script requires this module and uses `verify_slice` to verify the output NVRAM proof.
 ```{.lua key=run_calculator_with_proof include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
 ```
 
-The bulk of work happens in `roll_hash_up_tree(<proof>, <new_target_hash>)`.
-In the first iteration of the loop, the function uses the bit with value 2<sup>`proof.log2_target_size`</sup> in `proof.target_address` to determine if the sibling of the target node comes before or after it in the address space of the Cartesi Machine.
-It then computes the hash of the concatenation of the target node's hash and its sibling's hash (in the correct order).
-To do so, it uses the `cartesi.keccak256(<first-string>, <second-string>)` function.
-The result must be the hash of the parent node to the target and its sibling.
-The loop then goes up the `proof.sibling_hashes` array, and obtains the sibling of this parent node.
-This is again concatenated with the just-calculated hash of the parent node (in the correct order) to obtain what must be the hash of the grandparent node.
-This process is repeated until the hash of what must be the root node is found and returned.
-Function `slice_assert(<proof>)` then compares this to `proof.root_hash`.
-If they match, the proof passes.
-Otherwise, something is amiss.
-
-The single-argument form `cartesi.keccak256(<string>)` returns the hash of the byte string `<string>`.
-
-```{.lua key=proof_module include=proof.lua replace=null}
+```{.lua key=proof_module include=hash-tree.lua replace=null}
 ```
 
 Running the script with the command-line
 ```{.bash key=lua_calculator_with_proof vars=config->calc_run/config-calculator.lua/path depends=run_calculator_with_proof,proof_module replace=source}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-calculator-with-proof.lua" .
-ln -sf "$RECIPES_DIR/proof.lua" .
+ln -sf "$RECIPES_DIR/hash-tree.lua" .
 truncate -s 4K input.raw output.raw
 # docs:begin
 lua5.4 run-calculator-with-proof.lua 6*2^1024 + 3*2^512
@@ -2972,7 +2959,6 @@ lua5.4 verify-step.lua config-nothing-to-do "$cycles" "$ucycles" 'local a = log.
 ```
 
 In a nutshell, only valid state transitions are accepted by the `machine:verify_step_uarch()` method.
-
 
 # The guest perspective
 
@@ -4500,9 +4486,6 @@ The root hash can be obtained from the `machine:get_root_hash()` method.
 In the command-line, the options `--initial-hash` and `--final-hash` of the `cartesi-machine` utility cause it to output the root hash of the Merkle tree as it is before the emulator starts running and after it is done running, respectively.
 
 The machine can be configured to use the `"keccak256"` hash function (for use with the microarchitecture) or the `"sha256"` hash function (for use with ZK).
-The `cartesi.keccak256(<string>)` function of the `cartesi` Lua module returns the hash of the byte string `<string>`.
-The `cartesi.keccak256(<hash1>, <hash2>)` overload returns the hash of the concatenation of `<hash1>` and `<hash2>`.
-The `cartesi.sha256(<string>)` and `cartesi.sha256(<hash1>, <hash2>)` behave analogously.
 In theory, the Merkle tree of the entire machine state could be built from these primitives and [external state access](#external-state-access) to the machine instance.
 In practice, most of the state is unused and implicitly filled with zeros, and this allows the Merkle tree computation to skip large swaths of the state by using precomputed hashes for subtrees that span zeroed out regions of all power-of-2 sizes.
 The computation is also smart enough to only update the parts of the tree that changed between invocations.
@@ -4532,13 +4515,24 @@ In fact, due to the properties of cryptographic hashes, it is infeasible for the
 
 The data needed for the proofs can be produced by the `machine:get_proof(<address>, <log2_target_size>[, <log2_root_size>])` method of a Cartesi Machine instance.
 The contents of the proof returned are described in the [Lua interface](#state-value-proofs-1).
-The same section gives the source-code for a small `proof` module, whose three helpers are shown alongside the prose below.
+That section uses the same small `hash-tree` module, whose three helpers are shown alongside the prose below.
 
-The workhorse is `roll_hash_up_tree`, which rebuilds the path's labels bottom-up from the target node:
-```{.lua replace=proof_roll title="proof.lua (excerpt)"}
+The workhorse is `roll_hash_up_tree(<proof>, <new_target_hash>)`:
+```{.lua key=proof_roll include=hash-tree.lua/roll_hash_up_tree title="hash-tree.lua (excerpt)"}
 ```
-The slicing check `slice_assert` wires this walk into the proof structure returned by `machine:get_proof()`:
-```{.lua replace=proof_slice title="proof.lua (excerpt)"}
+In the first iteration of the loop, the function uses the bit with value 2<sup>`proof.log2_target_size`</sup> in `proof.target_address` to determine if the sibling of the target node comes before or after it in the address space of the Cartesi Machine.
+It then computes the hash of the concatenation of the target node's hash and its sibling's hash (in the correct order).
+To do so, it uses the `cartesi.keccak256(<hash1>, <hash2>)` function.
+The result must be the hash of the parent node to the target and its sibling.
+The loop then goes up the `proof.sibling_hashes` array, and obtains the sibling of this parent node.
+This is again concatenated with the just-calculated hash of the parent node (in the correct order) to obtain what must be the hash of the grandparent node.
+This process is repeated until the hash of what must be the root node is found and returned.
+Function `verify_slice(<proof>)` then compares this to `proof.root_hash`.
+If they match, the proof passes.
+Otherwise, something is amiss.
+
+The slicing check `verify_slice` wires this walk into the proof structure returned by `machine:get_proof()`:
+```{.lua key=proof_slice include=hash-tree.lua/verify_slice title="hash-tree.lua (excerpt)"}
 ```
 To verify a slicing operation, the code first checks the root hash *M* against the one found in the proof.
 Then, it uses `roll_hash_up_tree` to recompute the root hash from the path between the target node and root.
@@ -4550,8 +4544,8 @@ This ensures that the sibling hashes are correct.
 Then, it uses `roll_hash_up_tree` to compute the root hash from the path between the target node and root.
 Only this time it starts from the new target node hash.
 The resulting root hash is the hash of a tree with the old node replaced by the new.
-This is exactly what `splice_assert` does:
-```{.lua key=proof_splice include=proof.lua/splice_assert title="proof.lua (excerpt)"}
+This is exactly what `verify_splice` does:
+```{.lua key=proof_splice include=hash-tree.lua/verify_splice title="hash-tree.lua (excerpt)"}
 ```
 
 #### Template instantiation
@@ -4563,6 +4557,40 @@ Each replacement is the result of a splicing operation as described above.
 The splicing operation is particularly convenient if the input range length is a power of 2 and its start is aligned according to its length.
 This is why, by default, the `cartesi-machine` command-line utility positions flash drives and NVRAMs at multiples of 2<sup>[]{replace=ar_drive_formula/log2_drive_offset code=no}</sup>.
 
+The following script performs the same operation in two distinct ways, an off-chain way and a blockchain way, and checks that the two agree.
+Off-chain, it instantiates the `calculator-template` concretely, modifies its input NVRAM with the contents of a mathematical expression, and then asks for the state hash *M'* of the modified machine.
+```{.lua key=splice_calculator_with_new_drive include=splice-calculator-with-new-drive.lua title="splice-calculator-with-new-drive.lua"}
+```
+
+On chain, instantiating the machine like this would be impossible.
+Nevertheless, the script can obtain the same state hash *M'* using proofs.
+For this, it needs only the pristine input proof and the root hash of the modified input NVRAM.
+The splicing operation bubbles that root hash up the tree to recover the state hash, which the script then compares against the one obtained off-chain.
+
+Since the input NVRAM starts completely filled with zeros, only the mathematical expression is needed to describe its modified contents.
+Its root hash is computed by `hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
+```{.lua key=proof_root_hash include=hash-tree.lua/get_root_hash title="hash-tree.lua (excerpt)"}
+```
+The leaves are the []{replace=hash_tree_constants/word_size code=no}-byte words of `<data>`, each hashed with `cartesi.keccak256`, and a trailing partial word is zero-padded.
+Each inner node is the hash of its two children.
+Every node that `<data>` does not reach takes its level's pristine hash, the root of an all-zero subtree, obtained by hashing the previous level's pristine hash with itself.
+In this way, the function recovers the drive's root hash efficiently, without ever accessing its unmodified regions.
+
+Running the script with the command-line
+```{.bash key=lua_splice_calculator_with_new_drive vars=template->calc_template/calculator-template/path,proofs_pristine_run depends=splice_calculator_with_new_drive,proof_module replace=source}
+ln -sf "$template" .
+ln -sf "$proofs_pristine_run/pristine-input-proof.lua" .
+ln -sf "$RECIPES_DIR/splice-calculator-with-new-drive.lua" .
+ln -sf "$RECIPES_DIR/hash-tree.lua" .
+# docs:begin
+lua5.4 splice-calculator-with-new-drive.lua "6*2^1024 + 3*2^512"
+# docs:end
+```
+produces the output
+```{replace=lua_splice_calculator_with_new_drive}
+```
+
+
 #### Result extraction
 
 The most important use for the slicing operation is retrieving computation results.
@@ -4570,13 +4598,111 @@ In a typical scenario, a user posts the final state hash of an instantiated Cart
 When the other users agree with this final state hash, slicing operations can be used to convince the blockchain of the contents of the halted Cartesi Machine's state.
 This can be the value of a single word in an output flash drive or NVRAM, or it can be the Merkle tree root for its entire contents.
 
+The following script performs the same operation in two distinct ways, an off-chain way and a blockchain way, and checks that the two agree.
+Off-chain, it instantiates the `calculator-template` concretely, writes a mathematical expression into its input NVRAM, runs the machine until it halts, reads the result string from its output NVRAM, and saves the state hash *M'* of the halted machine.
+```{.lua key=slice_calculator_output include=slice-calculator-output.lua title="slice-calculator-output.lua"}
+```
+
+On chain, the blockchain wants to verify the result of the computation.
+This is possible when all interested parties agree on the final state hash *M'* of the Cartesi Machine they ran off-chain.
+Assuming this to be the case, and in possession of the output proof and the result, the blockchain reconstructs the root hash of the output NVRAM from the result with `hash_tree.get_root_hash`, the same function the previous example used for the input drive.
+It then passes the output proof, this reconstructed hash, and the agreed hash *M'* to `verify_splice`, which confirms that an output NVRAM with exactly this content sits in the machine whose state hash is *M'*.
+In other words, once everyone agrees on *M'*, the result really is there.
+```{.bash key=lua_slice_calculator_output vars=template->calc_template/calculator-template/path,output_raw_proof depends=slice_calculator_output,proof_module replace=source}
+ln -sf "$template" .
+ln -sf "$output_raw_proof/output-proof.lua" .
+ln -sf "$RECIPES_DIR/slice-calculator-output.lua" .
+ln -sf "$RECIPES_DIR/hash-tree.lua" .
+# docs:begin
+lua5.4 slice-calculator-output.lua "6*2^1024 + 3*2^512"
+# docs:end
+```
+produces the output
+```{replace=lua_slice_calculator_output}
+```
+
 
 ## Verification game
 
-::: {.danger}
-This section is still under construction.
-Meanwhile, for details on how the verification game works, please refer to our [technical paper](https://cartesi.io/cartesi_whitepaper.pdf).
-:::
+The question now becomes how the blockchain can identify the honest party when there are two opinions on the final state hash of a Cartesi Machine, for a computation the blockchain itself is unable to perform.
+This is the role of the verification game, an [established technique](https://doi.org/10.1016/j.ic.2013.03.003) on which our original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds.
+It rests on one assumption, that at least one of the two parties is honest.
+
+The `verification-game.lua` recipe is a self-contained model of it.
+A referee, standing in for the Cartesi contracts deployed on the blockchain, mediates a dispute between two players, each standing in for a Cartesi Node that ran the computation off-chain.
+The three are separate processes that communicate over the network, which here stands in for blockchain transactions.
+The referee never trusts a player.
+The two players run identical code and differ only in the machine they hold.
+One is honest, the other cheats past a chosen point by switching to a machine that ran a different expression.
+
+The game opens with each player committing the final state hash of its machine, obtained by running it until it halts.
+If the two hashes agree there is no dispute and the result can be extracted directly.
+When they disagree, the referee narrows the disagreement to the single transition responsible for it, by bisection, repeatedly asking both players for the state hash at the midpoint of an interval of cycles and keeping the half where they still disagree.
+```{.lua key=vg_bisect_level include=verification-game.lua/bisect_level title="verification-game.lua (excerpt)"}
+```
+The main processor has a fixed-point property once the machine halts.
+Running it for more `mcycle`s leaves the state, and therefore the hash, unchanged.
+Likewise, the microarchitecture has a fixed-point property once it halts.
+Running it for more `uarch_cycle`s leaves the state unchanged, until a reset begins the next main processor instruction.
+This is what lets each bisection range over the full cycle ceiling without knowing in advance where either machine halts.
+A midpoint past a halt simply repeats the final hash, and the disagreement is still found at the cycle where the two computations diverge.
+
+The dispute is settled in two such bisections.
+The first ranges over `mcycle` and isolates the disputed main processor instruction, the second ranges over `uarch_cycle` and isolates the single microarchitecture step within it.
+```{.lua key=vg_adjudicate include=verification-game.lua/adjudicate_dispute title="verification-game.lua (excerpt)"}
+```
+Once a single `uarch_cycle` is in dispute, the referee asks the player on the disagreeing side for the access log of the transition out of it, and verifies that log without ever instantiating a machine.
+This stands for a Cartesi contract that can verify such logs directly on the blockchain.
+The transition is either an ordinary microarchitecture step or the terminal reset that begins the next main processor instruction.
+Which one it is depends only on the agreed cycle, since the only transition out of `cartesi.UARCH_CYCLE_MAX - 1` is the reset, so the referee checks the log with `verify_reset_uarch` at that boundary and `verify_step_uarch` everywhere else.
+If the log proves that the agreed before-hash advances to the player's committed after-hash, that player was honest, otherwise the other one was.
+
+Naming the winner settles which final state hash is the true one.
+The result of the computation is then whatever value verifies against that hash, by the same slicing operation shown earlier.
+```{.lua key=vg_verify_output include=verification-game.lua/verify_output title="verification-game.lua (excerpt)"}
+```
+A posted result is accepted only if its bytes hash to the proof's target, the target sits at the output drive's address, and the proof rolls up to the winner's final hash.
+A result that does not, from the dishonest player or anyone else, is rejected.
+This keeps the result phase decoupled from the dispute, the parties who settle it are not the parties who later rely on the finalized hash to prove the result.
+
+To run the whole game, start the referee, the server the players connect to:
+```{.bash key=vg_run vars=template->calc_template/calculator-template/path outputs=referee replace=source/server}
+ln -sf "$template" calculator-template
+ln -sf "$RECIPES_DIR/verification-game.lua" .
+ln -sf "$RECIPES_DIR/dishonest.lua" .
+ln -sf "$RECIPES_DIR/hash-tree.lua" .
+{
+# docs:begin server
+lua5.4 verification-game.lua referee 127.0.0.1:8086 "6*2^1024 + 3*2^512"
+# docs:end server
+} > referee 2>&1 &
+while ! netstat -ntl 2>&1 | grep 8086 > /dev/null; do sleep 1; done
+{
+# docs:begin honest
+lua5.4 verification-game.lua honest 127.0.0.1:8086 "6*2^1024 + 3*2^512"
+# docs:end honest
+} > /dev/null 2>&1 &
+{
+# docs:begin dishonest
+lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 0 "2+2"
+# docs:end dishonest
+} > /dev/null 2>&1 &
+wait
+```
+then the honest player, which evaluates the public expression:
+```{.bash replace=vg_run/source/honest}
+```
+and the dishonest player, which cheats at an early cycle into a different expression:
+```{.bash replace=vg_run/source/dishonest}
+```
+The referee narrates the dispute from start to finish:
+```{replace=vg_run/referee}
+```
+The bisection converges on the cheat point, the disputed step verifies in the honest player's favor, and the cheater's result is rejected before the true one is accepted.
+
+For simplicity this model uses only two players, but the same idea is the basis for efficient algorithms that resolve disputes among many players.
+Our implementation has since moved on to use our [Permissionless Refereed Tournaments](https://arxiv.org/abs/2212.12439).
+For an even better algorithm, see our [Dave](https://doi.org/10.1145/3734698).
 
 [modeline]: # ( vim: set filetype=markdown spell spelllang=en: )
 

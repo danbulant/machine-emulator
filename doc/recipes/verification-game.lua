@@ -20,25 +20,10 @@ local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local util = require("cartesi.util")
 local socket = require("socket")
-local proof = require("proof")
+local hash_tree = require("hash-tree")
 local dishonest = require("dishonest")
 
 local TEMPLATE = "calculator-template"
-
--- Finds a configured drive by its label, filling in its log2_size. Each role locates the input
--- and output NVRAMs in the config of the machine it holds, rather than hardcoding addresses.
-local function find_drive(config, what, label)
-	for _, drive in ipairs(config[what]) do
-		if drive.label == label then
-			drive.log2_size = util.ilog2(drive.length)
-			return drive
-		end
-	end
-end
-
--- Tree leaves are words, the smallest proof target.
-local WORD_LOG2_SIZE = cartesi.HASH_TREE_LOG2_WORD_SIZE
-local WORD_LENGTH = 1 << WORD_LOG2_SIZE
 
 --------------------------------------------------------------------------------
 -- Small utilities
@@ -55,33 +40,32 @@ local function trace_wire(player, direction, line)
 	end
 end
 
--- Computes the Merkle tree root of a byte string laid at the base of a tree covering
--- 2^log2_root_size bytes. The data need not fill the tree or be a power of two long. Leaves
--- are word-size keccak256 hashes, a trailing partial word zero-padded, and inner nodes hash
--- their two children. Every node the data does not reach takes its level's pristine hash, the
--- root of an all-zero subtree, which doubles each level climbed. Overflow is rejected.
-local function tree_hash(data, log2_root_size)
-	assert(#data <= (1 << log2_root_size), "data does not fit in the tree")
-	-- Level zero is one hash per word, a trailing partial word zero-padded after the loop.
-	local level = {}
-	local full = #data - #data % WORD_LENGTH
-	for i = 1, full, WORD_LENGTH do
-		level[#level + 1] = cartesi.keccak256(data:sub(i, i + WORD_LENGTH - 1))
-	end
-	if full < #data then
-		local word = data:sub(full + 1)
-		level[#level + 1] = cartesi.keccak256(word .. string.rep("\0", WORD_LENGTH - #word))
-	end
-	-- Pair upward to the root, the pristine hash standing in for every node the data misses.
-	local pristine = cartesi.keccak256(string.rep("\0", WORD_LENGTH))
-	for _ = WORD_LOG2_SIZE, log2_root_size - 1 do
-		local parents = {}
-		for i = 1, #level, 2 do
-			parents[#parents + 1] = cartesi.keccak256(level[i], level[i + 1] or pristine)
+-- The referee narrates the game to stdout, kept apart from the wire trace on stderr so the run
+-- reads as a story whether or not tracing is on. A hash is shown by its first four bytes.
+local function short_hash(hash)
+	return "0x" .. util.hexhash(hash):sub(1, 8) .. "..."
+end
+
+local function event(fmt, ...)
+	io.write(string.format(fmt, ...), "\n")
+end
+
+-- Emits the first and last few of a list of preformatted events, eliding the middle, so a long
+-- bisection still reads at a glance.
+local function event_trimmed(lines, head, tail)
+	if #lines <= head + tail then
+		for _, line in ipairs(lines) do
+			event("%s", line)
 		end
-		level, pristine = parents, cartesi.keccak256(pristine, pristine)
+		return
 	end
-	return level[1]
+	for i = 1, head do
+		event("%s", lines[i])
+	end
+	event("...")
+	for i = #lines - tail + 1, #lines do
+		event("%s", lines[i])
+	end
 end
 
 --------------------------------------------------------------------------------
@@ -109,10 +93,12 @@ local SCHEMA_DICT = {
 	LogCommitment = "AccessLog",
 }
 
+-- Encodes a value and writes it as one line. Returns the truthy byte count on success, or nil and
+-- an error on a closed connection, so the caller decides whether a failed send is fatal.
 local function send(player, value, schema)
 	local line = cartesi.tojson(value, -1, schema, SCHEMA_DICT)
 	trace_wire(player, "to", line)
-	assert(player.connection:send(line .. "\n"))
+	return player.connection:send(line .. "\n")
 end
 
 -- Reads and decodes one full line from a player, blocking until it is in and resuming from any
@@ -154,6 +140,9 @@ local function receive_any(players, conns, schema)
 					player.last_request_code, player.last_request_schema, player.partial = nil, nil, nil
 					return player, cartesi.fromjson(line, schema, SCHEMA_DICT)
 				end
+			elseif status == "closed" then
+				player.dead = true
+				table.remove(conns, player.index)
 			else
 				assert(status == "timeout", status)
 				player.partial = partial
@@ -176,7 +165,7 @@ local function new_remote_machine(expr)
 	local server = assert(cartesi_jsonrpc.spawn_server("127.0.0.1:0"))
 	server:set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
 	local machine = server(TEMPLATE)
-	local input = assert(find_drive(machine:get_initial_config(), "nvram", "input"), "missing input NVRAM")
+	local input = assert(util.find_drive(machine:get_initial_config(), "nvram", "input"))
 	-- bc reads a line at a time, so the expression needs a trailing newline. The rest of the
 	-- pristine NVRAM stays zero.
 	machine:write_memory(input.start, expr .. "\n")
@@ -220,7 +209,7 @@ end
 -- It runs at commitment time, when the agreed machine is still the clean mcycle-0 machine.
 local function commit_final_hash(player)
 	local machine = assert(player.agreed_lo_machine:fork_server())
-	local output_nvram = assert(find_drive(machine:get_initial_config(), "nvram", "output"), "missing output NVRAM")
+	local output_nvram = assert(util.find_drive(machine:get_initial_config(), "nvram", "output"))
 	machine:run(math.maxinteger)
 	player.output_result = {
 		target_value = (string.unpack("z", machine:read_memory(output_nvram.start, output_nvram.length))),
@@ -263,30 +252,32 @@ local function commit_log(player, branch, cycle)
 	return agreed:log_step_uarch()
 end
 
--- The output captured during commit_final_hash, the result bytes and the output drive's
--- subtree proof. Only those bytes travel, the referee pads the rest when it hashes.
+-- The output captured during commit_final_hash, the result bytes and the output drive's subtree
+-- proof. Only those bytes travel, the referee pads the rest when it hashes. Posting the result is
+-- a player's last act, so it marks itself done and its serve loop exits right after this reply.
+-- The send_result_delay is a demo-ordering device, not protocol: the honest player holds its reply
+-- back so the loser's invalid result arrives, and is rejected, first.
 local function prove_output(player)
+	socket.sleep(player.send_result_delay)
+	player.done = true
 	return player.output_result
 end
 
 -- Connects to the referee and serves its requests, loading each code snippet, running it in the
--- player's scope, and sending the value back, until the game ends. Then shuts down every machine
--- and fork it still holds.
+-- player's scope, and sending the value back. The last request is always for the result, whose
+-- handler marks the player done, so the loop exits after that reply. Then it shuts down every
+-- machine and fork it still holds.
 local function run(player)
 	local address = assert(arg[2], "missing referee address")
 	local host, port = address:match("^(.-):(%d+)$")
 	player.connection = assert(socket.connect(host, tonumber(port)))
-	while true do
+	repeat
 		local request = receive(player)
-		if request.finish then
-			break
-		end
 		-- The trusted referee's snippet runs with the player as its environment, reaching the
-		-- player and its operations by name.
+		-- player and its operations by name. The referee names the schema its reply is encoded under.
 		local chunk = assert(load(request.code, "=referee", "t", player))
-		-- The referee names the schema its reply should be encoded under.
-		send(player, chunk(), request.schema)
-	end
+		assert(send(player, chunk(), request.schema))
+	until player.done
 	player.connection:close()
 	if player.tentative_mid_machine then
 		player.tentative_mid_machine:shutdown_server()
@@ -298,11 +289,12 @@ end
 -- bisection at the lower bound, the tentative machine it forks while bisecting, and the operations
 -- above as fields the referee invokes by name. It also carries a reference to itself under
 -- `player`, since it is the environment the referee's snippets run in.
-local function new_player(machine)
+local function new_player(machine, send_result_delay)
 	local player = {
 		agreed_lo_machine = machine,
 		tentative_mid_machine = nil,
 		stale_requests_pending = 0,
+		send_result_delay = send_result_delay or 0,
 		commit_final_hash = commit_final_hash,
 		commit_bisection = commit_bisection,
 		commit_log = commit_log,
@@ -321,15 +313,22 @@ end
 -- request it is handling, cleared once the reply is read. If it is already handling this exact
 -- request, its in-flight reply answers it and nothing is sent. If it is handling a superseded
 -- one, the new request is sent and the stale reply counted to be dropped. A player handling
--- nothing is simply asked.
+-- nothing is simply asked. A player that has posted its result has exited and closed, so the send
+-- fails; it is marked dead and skipped from then on.
 local function request(player, schema, code)
+	if player.dead then
+		return
+	end
 	if player.last_request_code == code and player.last_request_schema == schema then
 		return
 	end
 	if player.last_request_code ~= nil then
 		player.stale_requests_pending = player.stale_requests_pending + 1
 	end
-	send(player, { code = code, schema = schema })
+	if not send(player, { code = code, schema = schema }) then
+		player.dead = true
+		return
+	end
 	player.last_request_code, player.last_request_schema = code, schema
 end
 
@@ -358,13 +357,16 @@ local function wait_for_all(players, schema, code, ...)
 end
 
 -- Broadcasts the request and returns the first reply to arrive, leaving the rest. It shares the
--- request discipline above and does not judge the reply, the caller does.
+-- request discipline above and does not judge the reply, the caller does. A player that died
+-- (exited after posting its result) is skipped, so its closed connection is never polled.
 local function wait_for_any(players, schema, code, ...)
 	code = string.format(code, ...)
 	local conns = {}
 	for _, player in ipairs(players) do
 		request(player, schema, code)
-		conns[#conns + 1] = player.connection
+		if not player.dead then
+			conns[#conns + 1] = player.connection
+		end
 	end
 	local _, reply = receive_any(players, conns, schema)
 	return reply
@@ -393,30 +395,27 @@ local function wait_for_output(players)
 	return wait_for_any(players, "StateValueProof", "return player:prove_output()")
 end
 
--- Tells a player the game is over and to stop. No reply is expected, the player breaks its serve
--- loop on this message and closes its connection.
-local function finish(player)
-	send(player, { finish = true })
-end
-
 -- Checks an output submission against a verified final hash. The bytes must hash to the proof's
 -- target, the target must sit at the output drive address, and the proof must roll up to the
 -- final hash. Returns whether it holds.
+-- docs:begin verify_output
 local function verify_output(dapp_contract, final_hash, output)
 	return output.proof.root_hash == final_hash
 		and output.proof.target_address == dapp_contract.output.start
 		and output.proof.log2_target_size == dapp_contract.output.log2_size
-		and tree_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
-		and pcall(proof.slice_assert, output.proof)
+		and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash
+		and pcall(hash_tree.verify_slice, output.proof)
 end
+-- docs:end verify_output
 
 -- Bisects one level over [0, hi], updating `state` in place. Each round it sends the running
 -- branch and writes back the agreed lower-end hash, player 1's after-hash, the branch, and the
 -- converged lower bound `lo`. Bounds are compared and halved as unsigned 64-bit (math.ult and
 -- >>), so the mcycle level can use the full MCYCLE_MAX ceiling (-1 as a signed Lua integer),
 -- and the small uarch bounds reduce to ordinary arithmetic.
+-- docs:begin bisect_level
 local function bisect_level(players, level, hi, state)
-	local lo = 0
+	local lo, rounds = 0, {}
 	while math.ult(1, hi - lo) do
 		local mid = lo + ((hi - lo) >> 1)
 		local hash = wait_for_bisection(players, state.branch, level, mid)
@@ -425,15 +424,20 @@ local function bisect_level(players, level, hi, state)
 		else
 			hi, state.hash_after, state.branch = mid, hash[1], "disagree"
 		end
+		rounds[#rounds + 1] =
+			string.format("%s bisection round %d, interval of disagreement is [0x%x, 0x%x]", level, #rounds + 1, lo, hi)
 	end
 	state.lo = lo
+	event_trimmed(rounds, 3, 3)
 end
+-- docs:end bisect_level
 
 -- Drives the interactive dispute and returns the winner. It shrinks the interval of
 -- disagreement, first an mcycle range to the disputed instruction, then a uarch_cycle range to
 -- the disputed step, tracking the agreed lower-end hash and player 1's after-hash in `state`. At
 -- the disputed step it verifies player 1's log standalone against the agreed before-hash and its
 -- committed after-hash. If it proves, player 1 won, otherwise player 2 is the honest one.
+-- docs:begin adjudicate_dispute
 local function adjudicate_dispute(players, initial_hash)
 	local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
 
@@ -449,31 +453,28 @@ local function adjudicate_dispute(players, initial_hash)
 	-- verified.
 	local is_reset = state.lo == cartesi.UARCH_CYCLE_MAX - 1
 	local log = wait_for_log(players[1], state.branch, state.lo)
+	event("Player 1 posted an access log for the disputed %s.", is_reset and "reset" or "step")
 
 	-- If player 1's log proves the before-hash advances to its committed after-hash, player 1
 	-- won, otherwise player 2 is the honest one.
 	local verify = is_reset and cartesi.machine.verify_reset_uarch or cartesi.machine.verify_step_uarch
 	local won = pcall(verify, cartesi.machine, state.last_agreed_hash, log, state.hash_after)
-	return won and players[1] or players[2]
+	local winner = won and players[1] or players[2]
+	event("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
+	return winner
 end
+-- docs:end adjudicate_dispute
 
 -- Waits for both players to connect and collects their commitments. It binds the listen address,
 -- accepts the two players in turn, numbering them by connection order, and asks both for their
 -- final state hash at once so the run-to-halt commitments overlap. The hash needs no checking
--- here, since a wrong hash can win neither the dispute nor the output phase. The returned table
--- carries a __close metamethod that finishes every player on the way out.
+-- here, since a wrong hash can win neither the dispute nor the output phase.
 local function wait_for_commitments()
 	local address = assert(arg[2], "missing listen address")
 	local host, port = address:match("^(.-):(%d+)$")
 	local listener = assert(socket.bind(host, tonumber(port)))
 	-- The connection-to-index map lets receive_any link each ready connection back to its player.
-	local players = setmetatable({ index_of = {} }, {
-		__close = function(self)
-			for _, player in ipairs(self) do
-				finish(player)
-			end
-		end,
-	})
+	local players = { index_of = {} }
 	for index = 1, 2 do
 		local connection = assert(listener:accept())
 		players[index] = { index = index, connection = connection, stale_requests_pending = 0 }
@@ -495,8 +496,8 @@ local function deploy()
 	local template = cartesi.machine(TEMPLATE)
 	local config = template:get_initial_config()
 	local dapp_contract = {
-		input = assert(find_drive(config, "nvram", "input"), "missing input NVRAM"),
-		output = assert(find_drive(config, "nvram", "output"), "missing output NVRAM"),
+		input = assert(util.find_drive(config, "nvram", "input")),
+		output = assert(util.find_drive(config, "nvram", "output")),
 	}
 	dapp_contract.input_proof = template:get_proof(dapp_contract.input.start, dapp_contract.input.log2_size)
 	return dapp_contract
@@ -505,8 +506,10 @@ end
 -- Runs the whole game, collecting the two commitments, settling any dispute to name the honest
 -- winner, then extracting the verified result against that winner's hash.
 local function run_referee(referee, dapp_contract)
-	-- The players are finished automatically when this scope exits, by any path.
-	local players <close> = wait_for_commitments()
+	local players = wait_for_commitments()
+	for _, player in ipairs(players) do
+		event("Player %d posted final state hash %s.", player.index, short_hash(player.final_hash))
+	end
 
 	-- The dispute names the honest winner, whose final hash the output must match. With
 	-- no dispute the two players agree, so either's final hash will do.
@@ -517,23 +520,28 @@ local function run_referee(referee, dapp_contract)
 
 	-- The result comes from whichever player first returns an output proof that verifies against
 	-- the winner's hash. Asking the loser is harmless, its output cannot match. A slow or bad
-	-- reply cannot sink the game, the referee keeps asking until a valid proof arrives.
+	-- reply cannot sink the game, the referee keeps asking until a valid proof arrives. The honest
+	-- player holds its reply back so the loser's invalid result is seen and rejected first.
 	while true do
 		local output = wait_for_output(players)
+		-- The result is a multiline bc number, so it goes on its own line after the colon. Its own
+		-- trailing newline separates it from the verdict.
 		if verify_output(dapp_contract, winner.final_hash, output) then
+			event("Result posted:\n%sAccepted!", output.target_value)
 			break
 		end
+		event("Result posted:\n%sRejected!", output.target_value)
 	end
 end
 
 -- Builds a referee for a public expression against a deployed dapp contract. The agreed initial
 -- hash depends on the expression, so it is computed here and kept on the referee. Rolling the
 -- hash of the input NVRAM holding the expression up the pristine input proof gives the root hash
--- of the template instantiated with it, with tree_hash padding the rest to match the honest
+-- of the template instantiated with it, with hash_tree.get_root_hash padding the rest to match the honest
 -- player's NVRAM. Honest play starts from exactly this state, never a player-declared one.
 local function new_referee(dapp_contract, expr)
 	local initial_hash =
-		proof.roll_hash_up_tree(dapp_contract.input_proof, tree_hash(expr .. "\n", dapp_contract.input.log2_size))
+		hash_tree.roll_hash_up_tree(dapp_contract.input_proof, hash_tree.get_root_hash(expr .. "\n", dapp_contract.input.log2_size))
 	return { initial_hash = initial_hash, run = run_referee }
 end
 
@@ -548,7 +556,9 @@ if role == "referee" then
 	local referee = new_referee(dapp_contract, assert(arg[3], "missing public expression"))
 	referee:run(dapp_contract)
 elseif role == "honest" then
-	local player = new_player(new_remote_machine(assert(arg[3], "missing expression")))
+	-- The one-second delay is the demo-ordering device from prove_output: it holds the honest
+	-- result back so the dishonest player's invalid result is rejected first in the referee's log.
+	local player = new_player(new_remote_machine(assert(arg[3], "missing expression")), 1)
 	player:run()
 elseif role == "dishonest" then
 	local player = new_player(
