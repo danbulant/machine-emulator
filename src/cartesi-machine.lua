@@ -143,8 +143,14 @@ where options are:
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
-        when omitted, drives start at 1 << 55 and are spaced by 1 << 52.
-        if any start offset is set, all of them must be set.
+        when omitted, flash drives' starts are computed automatically as follows:
+        assume the lengths of RAM and of all flash drives are powers of two (otherwise,
+        round them up to the next power of two for the purposes of this description).
+        each flash drive starts at the lowest address that is aligned to its length and
+        is past the end of the previous flash drive (or past the end of RAM, in the case
+        of the first flash drive).
+        flash drives with explicit starts are ignored by this computation, and overlaps
+        with them are rejected when the machine is created.
 
         length (optional)
         gives the length of the flash drive in bytes (must be multiple of 4Ki).
@@ -232,8 +238,16 @@ where options are:
 
         start (optional)
         sets the starting physical memory offset for the NVRAM in bytes.
-        when omitted, NVRAMs are placed in the same 1 << 55 / 1 << 52-stride
-        pool as flash drives, using the next free slot after all flash drives.
+        when omitted, NVRAMs' starts are computed automatically as follows:
+        assume the lengths of RAM and of all NVRAMs and flash drives are powers of two
+        (otherwise, round them up to the next power of two for the purposes of this
+        description).
+        each NVRAM starts at the lowest address that is aligned to its length and is
+        past the end of the previous NVRAM (in the case of the first NVRAM, past the
+        end of the last automatically placed flash drive, or past the end of RAM if
+        there is none).
+        NVRAMs with explicit starts are ignored by this computation, and overlaps
+        with them are rejected when the machine is created.
 
         length (optional)
         gives the length of the NVRAM in bytes (must be multiple of 4Ki).
