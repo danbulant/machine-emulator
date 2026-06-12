@@ -1884,17 +1884,26 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
 }
 
-void machine::check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason) const {
-    // Only advance-state responses are checked. They are the input boundary of the rollups
-    // flow, whose revert-on-reject scheme depends on the preconditions below. Inspect-state
-    // queries and GIO responses are not checked at all.
+void machine::check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason,
+    uint64_t length) const {
+    // The core send_cmio_response cannot fail. It turns detected failures into no-ops, so the
+    // honest party can always log and prove the resulting state transition. The host-facing
+    // send refuses these no-ops upfront instead. The checks run before any state changes, so
+    // a failed call leaves the machine unchanged.
+    if (read_reg(reg::iflags_Y) == 0) {
+        throw std::invalid_argument{"iflags.Y is not set"};
+    }
+    if (length > AR_CMIO_RX_BUFFER_LENGTH) {
+        throw std::invalid_argument{"CMIO response data is too large"};
+    }
+    // Only advance-state responses are checked further. They are the input boundary of the
+    // rollups flow, whose revert-on-reject scheme depends on the preconditions below.
+    // Inspect-state queries and GIO responses get no further checks.
     if (reason != HTIF_YIELD_REASON_ADVANCE_STATE) {
         return;
     }
-    // These checks run before any state changes, so a failed call leaves the machine unchanged.
     // The machine must be waiting for an input on an rx-accepted manual yield.
-    if (read_reg(reg::iflags_Y) == 0 || read_reg(reg::htif_tohost_dev) != HTIF_DEV_YIELD ||
-        read_reg(reg::htif_tohost_cmd) != HTIF_YIELD_CMD_MANUAL ||
+    if (read_reg(reg::htif_tohost_dev) != HTIF_DEV_YIELD || read_reg(reg::htif_tohost_cmd) != HTIF_YIELD_CMD_MANUAL ||
         read_reg(reg::htif_tohost_reason) != HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED) {
         throw std::invalid_argument{"machine is not waiting on an rx-accepted manual yield"};
     }
@@ -1907,7 +1916,7 @@ void machine::check_pending_cmio_request(const_machine_hash_view revert_root_has
 
 void machine::send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
     uint64_t length) {
-    check_pending_cmio_request(revert_root_hash, reason);
+    check_pending_cmio_request(revert_root_hash, reason, length);
     const state_access a(*this);
     cartesi::send_cmio_response(a, revert_root_hash, reason, data, length);
 }

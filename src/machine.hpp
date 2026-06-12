@@ -129,11 +129,12 @@ private:
     /// \brief Checks that the machine can receive a cmio response with the given revert root hash.
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
     /// \param reason Reason for sending the response.
-    /// \details For advance-state responses, throws when the machine is not waiting on an rx-accepted
-    /// manual yield or when \p revert_root_hash differs from the machine root hash. Other responses
-    /// (inspect-state queries and GIO responses) are not checked. Called by send_cmio_response
-    /// before any state changes.
-    void check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason) const;
+    /// \param length Length of response data.
+    /// \details Throws when the machine is not waiting on a manual yield or when the response data
+    /// does not fit in the rx buffer. For advance-state responses, also throws when the machine is
+    /// not waiting on an rx-accepted manual yield or when \p revert_root_hash differs from the
+    /// machine root hash. Called by send_cmio_response before any state changes.
+    void check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason, uint64_t length) const;
 
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
@@ -687,9 +688,11 @@ public:
     /// \param length Length of response data.
     /// \param log_type Type of access log to generate.
     /// \return The state access log.
-    /// \details An advance-state response sent to a machine that yielded manual with a reason other
-    /// than rx-accepted (e.g., it rejected an input or threw an exception) is logged as a no-op that
-    /// leaves the state unchanged.
+    /// \details The logged operation cannot fail, so the honest party can always prove the resulting
+    /// state transition. It is a no-op that leaves the state unchanged when the machine is not waiting
+    /// on a manual yield, when an advance-state response finds the machine yielded with a reason other
+    /// than rx-accepted (e.g., it rejected an input or threw an exception), or when the response data
+    /// does not fit in the rx buffer.
     access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
         const unsigned char *data, uint64_t length, const access_log::type &log_type);
 

@@ -32,8 +32,11 @@ namespace cartesi {
 
 template <typename STATE_ACCESS>
 void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, bytes data, uint32 dataLength) {
+    // This function cannot fail. When a failure is detected, the operation is a no-op instead,
+    // so the honest party can always log and prove the resulting state transition.
+    // A response to a machine that is not waiting on a manual yield is a no-op.
     if (!readIflagsY(a)) {
-        throwRuntimeError(a, "iflags.Y is not set");
+        return;
     }
     if (reason == HTIF_YIELD_REASON_ADVANCE_STATE) {
         // Advance-state responses are the input boundary of the rollups flow. They only apply to a
@@ -44,21 +47,25 @@ void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, b
             return;
         }
     }
-    // Record the machine root hash to revert to in case the response is eventually rejected
-    writeRevertRootHash(a, revertRootHash);
     // A zero length data is a valid response. We just skip writing to the rx buffer.
+    uint32 writeLengthLog2Size = 0;
     if (dataLength > 0) {
         // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
-        uint32 writeLengthLog2Size = uint32Log2(dataLength);
+        writeLengthLog2Size = uint32Log2(dataLength);
         if (writeLengthLog2Size < HASH_TREE_LOG2_WORD_SIZE) {
             writeLengthLog2Size = HASH_TREE_LOG2_WORD_SIZE; // minimum write size is the tree leaf size
         }
         if (uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
             writeLengthLog2Size += 1;
         }
+        // A response with data that does not fit in the rx buffer is a no-op
         if (writeLengthLog2Size > AR_CMIO_RX_BUFFER_LOG2_SIZE) {
-            throwRuntimeError(a, "CMIO response data is too large");
+            return;
         }
+    }
+    // Record the machine root hash to revert to in case the response is eventually rejected
+    writeRevertRootHash(a, revertRootHash);
+    if (dataLength > 0) {
         writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
     }
     // Write data length and reason to fromhost
