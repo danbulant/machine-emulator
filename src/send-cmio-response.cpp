@@ -21,6 +21,7 @@
 
 #include "address-range-constants.hpp"
 #include "hash-tree-constants.hpp"
+#include "htif-constants.hpp"
 #include "record-send-cmio-state-access.hpp" // IWYU pragma: keep
 #include "replay-send-cmio-state-access.hpp" // IWYU pragma: keep
 #include "state-access.hpp"                  // IWYU pragma: keep
@@ -33,6 +34,15 @@ template <typename STATE_ACCESS>
 void send_cmio_response(STATE_ACCESS a, bytes32 revertRootHash, uint16 reason, bytes data, uint32 dataLength) {
     if (!readIflagsY(a)) {
         throwRuntimeError(a, "iflags.Y is not set");
+    }
+    if (reason == HTIF_YIELD_REASON_ADVANCE_STATE) {
+        // Advance-state responses are the input boundary of the rollups flow. They only apply to a
+        // machine waiting for an input on an rx-accepted manual yield. Sending one to a machine that
+        // yielded manual with any other reason (e.g., rejected an input or threw an exception) is a no-op.
+        uint64 tohost = readHtifTohost(a);
+        if (!isYieldedManualWith(tohost, HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)) {
+            return;
+        }
     }
     // Record the machine root hash to revert to in case the response is eventually rejected
     writeRevertRootHash(a, revertRootHash);

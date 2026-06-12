@@ -38,10 +38,7 @@ void uarch_reset_state(UarchState &a) {
     uint64 iflagsY = readWord(a, IFLAGS_Y_ADDRESS);
     if (iflagsY != 0) {
         uint64 tohost = readWord(a, HTIF_TOHOST_ADDRESS);
-        uint64 dev = uint64ShiftRight(tohost & HTIF_DEV_MASK, HTIF_DEV_SHIFT);
-        uint64 cmd = uint64ShiftRight(tohost & HTIF_CMD_MASK, HTIF_CMD_SHIFT);
-        uint64 reason = uint64ShiftRight(tohost & HTIF_REASON_MASK, HTIF_REASON_SHIFT);
-        if (dev == HTIF_DEV_YIELD && cmd == HTIF_YIELD_CMD_MANUAL && reason == HTIF_YIELD_MANUAL_REASON_RX_REJECTED) {
+        if (isYieldedManualWith(tohost, HTIF_YIELD_MANUAL_REASON_RX_REJECTED)) {
             revertState(a);
         }
     }

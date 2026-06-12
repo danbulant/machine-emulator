@@ -127,30 +127,23 @@ private:
         static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
             "Hash tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
-            // This is never reached by coverage because replay only uses check_read to check iflags_Y
+            // This is never reached by coverage because replay only uses check_read on word-aligned registers
             // LCOV_EXCL_START
             throw std::invalid_argument{"address not aligned to word size"};
             // LCOV_EXCL_STOP
         }
         if (m_context.next_access >= m_context.accesses.size()) {
-            // This is never reached by coverage because replay checks one read and its the first access
-            // If we truncate before the read, there will be zero accesses and another error triggers first
-            // LCOV_EXCL_START
             throw std::invalid_argument{"too few accesses in log"};
-            // LCOV_EXCL_STOP
         }
         const auto &access = m_context.accesses[m_context.next_access];
         if (access.get_type() != access_type::read) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read " + text};
         }
         if (access.get_address() != paligned) {
-            // This is never reached by coverage because we only use check_read to check iflags_Y
-            // LCOV_EXCL_START
             std::ostringstream err;
             err << "expected " << access_to_report() << " to read " << text << " address 0x" << std::hex << paligned
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
-            // LCOV_EXCL_STOP
         }
         if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +
@@ -367,6 +360,10 @@ private:
 
     void do_write_htif_fromhost(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
+    }
+
+    uint64_t do_read_htif_tohost() const {
+        return check_read(machine_reg_address(machine_reg::htif_tohost), "htif.tohost");
     }
 
     void do_write_revert_root_hash(const_machine_hash_view hash) const {

@@ -574,6 +574,35 @@ local function create_json_send_cmio_response_log()
     return ctx
 end
 
+local function create_json_send_cmio_response_noop_log()
+    local machine <close> = build_machine()
+    local test_name = "send-cmio-response-noop"
+    local response_data = "This is a test cmio response"
+    local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    -- the machine yielded manual, but rejected the previous input, so the
+    -- advance-state response is logged as a no-op
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+    local initial_root_hash = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(initial_root_hash, reason, response_data)
+    local out = create_json_log_file(test_name .. "-steps")
+    write_log_to_file(log, out, 0, true)
+    out:close()
+    local ctx = {
+        initial_root_hash = initial_root_hash,
+        final_root_hash = machine:get_root_hash(),
+        ram_image = "",
+        test_name = test_name,
+        expected_cycles = 1,
+        step_count = 1,
+        failed = false,
+        accesses_count = #log.accesses,
+    }
+    return ctx
+end
+
 local function json_step_logs(tests)
     assert(output_dir, "output-dir is required for json-logs")
     -- filter out tests that intentionally produce runtime errors
@@ -614,6 +643,7 @@ local function json_step_logs(tests)
     if create_send_cmio_response_log then
         local ctx = create_json_send_cmio_response_log()
         contexts[#contexts + 1] = ctx
+        contexts[#contexts + 1] = create_json_send_cmio_response_noop_log()
     end
 
     -- build catalog

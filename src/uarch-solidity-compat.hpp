@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "assert-printf.hpp"
+#include "htif-constants.hpp"
 #include "machine-hash.hpp"
 #include "shadow-tlb.hpp"
 
@@ -120,6 +121,11 @@ static inline void writeIflagsY(State &a, uint64 val) {
 template <typename State>
 static inline void writeHtifFromhost(State &a, uint64 val) {
     a.write_htif_fromhost(val);
+}
+
+template <typename State>
+static inline uint64 readHtifTohost(State &a) {
+    return a.read_htif_tohost();
 }
 
 template <typename State>
@@ -228,6 +234,13 @@ static inline uint64 int8ToUint64(int8 v) {
 
 static inline uint32 uint32Log2(uint32 v) {
     return 31 - __builtin_clz(v);
+}
+
+static inline bool isYieldedManualWith(uint64 tohost, uint64 yieldReason) {
+    const uint64 dev = uint64ShiftRight(tohost & HTIF_DEV_MASK, HTIF_DEV_SHIFT);
+    const uint64 cmd = uint64ShiftRight(tohost & HTIF_CMD_MASK, HTIF_CMD_SHIFT);
+    const uint64 reason = uint64ShiftRight(tohost & HTIF_REASON_MASK, HTIF_REASON_SHIFT);
+    return dev == HTIF_DEV_YIELD && cmd == HTIF_YIELD_CMD_MANUAL && reason == yieldReason;
 }
 
 template <typename T1, typename T2>

@@ -970,9 +970,7 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 /// \brief Sends a cmio response logging all accesses to the state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-/// For advance-state responses, it must be the root hash of the machine itself, and the machine must be
-/// waiting on an rx-accepted manual yield, both checked before any state changes. Other responses
-/// (inspect-state queries and GIO responses) are not checked.
+/// Unlike cm_send_cmio_response, it is not checked against the machine root hash.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
@@ -980,6 +978,9 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
+/// \details An advance-state response sent to a machine that yielded manual with a reason other
+/// than rx-accepted (e.g., it rejected an input or threw an exception) is logged as a no-op that
+/// leaves the state unchanged.
 CM_API cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
     const uint8_t *data, uint64_t length, int32_t log_type, const char **log);
 

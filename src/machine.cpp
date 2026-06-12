@@ -1918,7 +1918,6 @@ access_log machine::log_send_cmio_response(const_machine_hash_view revert_root_h
         throw std::runtime_error{
             "access logs can only be used with hash tree configured with Keccak-256 hash function"};
     }
-    check_pending_cmio_request(revert_root_hash, reason);
     auto root_hash_before = get_root_hash();
     access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor

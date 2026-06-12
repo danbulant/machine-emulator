@@ -272,6 +272,11 @@ private:
             m_m.get_state().shadow.registers.htif.fromhost, val, "htif.fromhost");
     }
 
+    uint64_t do_read_htif_tohost() const {
+        log_read(machine_reg_address(machine_reg::htif_tohost), "htif.tohost");
+        return m_m.get_state().shadow.registers.htif.tohost;
+    }
+
     void do_write_revert_root_hash(const_machine_hash_view hash) const {
         log_write_memory_with_padding(AR_SHADOW_REVERT_ROOT_HASH_START, hash.data(), hash.size(),
             HASH_TREE_LOG2_WORD_SIZE, "revert root hash");

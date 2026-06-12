@@ -1539,19 +1539,94 @@ do_test("send_cmio_response should check the machine state for advance-state res
     -- a revert root hash other than the machine root hash is refused
     local _, err = pcall(machine.send_cmio_response, machine, wrong_revert_root_hash, advance_reason, data)
     check_error_find(err, "revert root hash does not match the machine root hash")
-    _, err = pcall(machine.log_send_cmio_response, machine, wrong_revert_root_hash, advance_reason, data)
-    check_error_find(err, "revert root hash does not match the machine root hash")
-    -- the failed calls did not change the machine state
+    -- the failed call did not change the machine state
     assert(machine:get_root_hash() == root_hash_before)
     -- a machine that is not waiting on an rx-accepted manual yield refuses the input
     machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
-    _, err = pcall(machine.send_cmio_response, machine, machine:get_root_hash(), advance_reason, data)
+    root_hash_before = machine:get_root_hash()
+    _, err = pcall(machine.send_cmio_response, machine, root_hash_before, advance_reason, data)
     check_error_find(err, "machine is not waiting on an rx-accepted manual yield")
-    _, err = pcall(machine.log_send_cmio_response, machine, machine:get_root_hash(), advance_reason, data)
-    check_error_find(err, "machine is not waiting on an rx-accepted manual yield")
+    assert(machine:get_root_hash() == root_hash_before)
     -- other response reasons are not checked at all
     machine:send_cmio_response(wrong_revert_root_hash, cartesi.HTIF_YIELD_REASON_INSPECT_STATE, data)
     assert(machine:read_reg("iflags_Y") == 0)
+end)
+
+do_test("advance-state response without an rx-accepted manual yield logs as a no-op", function(machine)
+    local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local data = "0123456789"
+    -- the machine yielded manual, but rejected the previous input
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+    local root_hash_before = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(root_hash_before, advance_reason, data)
+    -- the log contains only the reads that conclude the operation is a no-op
+    assert(#log.accesses == 2, "no-op log should have 2 accesses")
+    assert_access(log.accesses, 1, { type = "read", address = machine:get_reg_address("iflags_Y") })
+    assert_access(log.accesses, 2, { type = "read", address = machine:get_reg_address("htif_tohost") })
+    -- the machine state is unchanged
+    assert(machine:read_reg("iflags_Y") == 1)
+    assert(machine:get_root_hash() == root_hash_before)
+    -- the no-op log verifies with equal root hashes before and after
+    machine:verify_send_cmio_response(root_hash_before, advance_reason, data, root_hash_before, log, root_hash_before)
+end)
+
+do_test("log_send_cmio_response happy path for an advance-state response", function(machine)
+    local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local data = "0123456789"
+    -- put the machine in the state that waits for an advance-state input
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    local root_hash_before = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(root_hash_before, advance_reason, data)
+    -- the reads that check the machine state, followed by the writes of the response
+    assert(#log.accesses == 6, "advance-state log should have 6 accesses")
+    assert_access(log.accesses, 1, { type = "read", address = machine:get_reg_address("iflags_Y") })
+    assert_access(log.accesses, 2, { type = "read", address = machine:get_reg_address("htif_tohost") })
+    assert_access(log.accesses, 3, { type = "write", address = cartesi.AR_SHADOW_REVERT_ROOT_HASH_START })
+    assert(machine:read_reg("iflags_Y") == 0)
+    local root_hash_after = machine:get_root_hash()
+    machine:verify_send_cmio_response(root_hash_before, advance_reason, data, root_hash_before, log, root_hash_after)
+end)
+
+do_test("Test unhappy paths of verify_send_cmio_response", function(machine)
+    local advance_reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+    local data = "0123456789"
+    local function assert_error(expected_error, callback)
+        -- put the machine back in the state that waits for an advance-state input
+        machine:write_reg("iflags_Y", 1)
+        machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+        machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+        machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+        local root_hash_before = machine:get_root_hash()
+        local log = machine:log_send_cmio_response(root_hash_before, advance_reason, data)
+        local root_hash_after = machine:get_root_hash()
+        callback(log)
+        local _, err = pcall(
+            machine.verify_send_cmio_response,
+            machine,
+            root_hash_before,
+            advance_reason,
+            data,
+            root_hash_before,
+            log,
+            root_hash_after
+        )
+        check_error_find(err, expected_error)
+    end
+    assert_error("too few accesses in log", function(log)
+        log.accesses = { log.accesses[1] }
+    end)
+    assert_error("expected 2nd access to read htif.tohost address", function(log)
+        log.accesses[2].address = 0
+    end)
+    assert_error("expected 1st access to read iflags.Y", function(log)
+        table.remove(log.accesses, 1)
+    end)
 end)
 
 do_test("send_cmio_response with different data sizes", function(machine)

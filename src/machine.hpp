@@ -131,7 +131,7 @@ private:
     /// \param reason Reason for sending the response.
     /// \details For advance-state responses, throws when the machine is not waiting on an rx-accepted
     /// manual yield or when \p revert_root_hash differs from the machine root hash. Other responses
-    /// (inspect-state queries and GIO responses) are not checked. Called by the host send variants
+    /// (inspect-state queries and GIO responses) are not checked. Called by send_cmio_response
     /// before any state changes.
     void check_pending_cmio_request(const_machine_hash_view revert_root_hash, uint16_t reason) const;
 
@@ -681,14 +681,15 @@ public:
 
     /// \brief Sends cmio response and returns an access log
     /// \param revert_root_hash Machine root hash to revert to in case the response is eventually rejected.
-    /// For advance-state responses, it must be the root hash of the machine itself, and the machine must be
-    /// waiting on an rx-accepted manual yield, both checked before any state changes. Other responses
-    /// (inspect-state queries and GIO responses) are not checked.
+    /// Unlike send_cmio_response, it is not checked against the machine root hash.
     /// \param reason Reason for sending response.
     /// \param data Response data.
     /// \param length Length of response data.
     /// \param log_type Type of access log to generate.
     /// \return The state access log.
+    /// \details An advance-state response sent to a machine that yielded manual with a reason other
+    /// than rx-accepted (e.g., it rejected an input or threw an exception) is logged as a no-op that
+    /// leaves the state unchanged.
     access_log log_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
         const unsigned char *data, uint64_t length, const access_log::type &log_type);
 
