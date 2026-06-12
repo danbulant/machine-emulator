@@ -707,6 +707,25 @@ jobs:
       - name: Check rootfs-docs.ext2 is up to date
         run: make -C doc check-rootfs-docs
 
+      - name: Ensure doc/recipes/rootfs-docs.licenses.md is tracked
+        run: |
+          if ! git ls-files --error-unmatch doc/recipes/rootfs-docs.licenses.md >/dev/null 2>&1; then
+            echo "::error::doc/recipes/rootfs-docs.licenses.md is not tracked in git. The sync check requires a committed baseline to diff against. Generate it with 'make -C doc build-rootfs-docs-license' and commit the result."
+            exit 1
+          fi
+
+      - name: Build rootfs-docs license report
+        run: make -C doc build-rootfs-docs-license
+
+      - name: Check rootfs-docs.licenses.md matches committed version
+        run: |
+          if git diff --quiet doc/recipes/rootfs-docs.licenses.md; then
+            exit 0
+          fi
+          git --no-pager diff doc/recipes/rootfs-docs.licenses.md
+          echo "::error::doc/recipes/rootfs-docs.licenses.md is out of sync with the generator. The diff above is what 'make -C doc build-rootfs-docs-license' produces vs the committed file. Check if changes were intended and, if so, regenerate locally and commit the result."
+          exit 1
+
       - name: Login to Docker Hub
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
@@ -748,14 +767,6 @@ jobs:
 
       - name: Build documentation
         run: make -C doc README.md
-
-      - name: Upload rootfs-docs.ext2 artifact
-        if: always()
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: rootfs-docs
-          path: doc/recipes/rootfs-docs.ext2
-          if-no-files-found: ignore
 
       - name: Check README.md matches committed version
         run: |

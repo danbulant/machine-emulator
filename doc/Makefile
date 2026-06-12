@@ -76,6 +76,18 @@ check-rootfs-docs: $(ROOTFS_DOCS_KEY)
 	    exit 1; \
 	}
 
+ROOTFS_DOCS_LICENSES := $(RECIPES_DIR)/rootfs-docs.licenses.md
+
+# Package and license report for the committed image. It is derived from the
+# ext2 itself rather than from a rebuild, and committed alongside it so a
+# checkout carries the license information with the binary. Like the targets
+# above, freshness is judged by content rather than timestamps, so this always
+# regenerates the report. CI then diffs it against the committed version, as
+# it does for README.md.
+.PHONY: build-rootfs-docs-license
+build-rootfs-docs-license: | ensure-rootfs-docs
+	cd $(RECIPES_DIR) && ./build-rootfs-docs-license.sh > $(ROOTFS_DOCS_LICENSES)
+
 # Local convenience used before the docs image is built. Fetch the image from
 # LFS if absent or still an unsmudged pointer, rebuild it locally if the embedded
 # fingerprint no longer matches the recipe inputs.
