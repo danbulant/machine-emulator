@@ -2023,14 +2023,9 @@ Licenses: (parsed from: `/usr/share/doc/libsystemd0/copyright`, `/usr/share/doc/
 - `LGPL-2.1+`
 - `public-domain`
 
-Source:
+**WARNING:** unable to find source (`apt-get source` failed or returned no results)!  
+This is *usually* due to a new package version being released and the old version being removed.
 
-```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260529T000000Z source -qq --print-uris systemd=255.4-1ubuntu8.15
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/s/systemd/systemd_255.4.orig.tar.gz' systemd_255.4.orig.tar.gz 14952427 SHA256:96e75bd08c57ad401677456fb88ef54a9f05bb1695693013bc6ecce839640fd5
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/s/systemd/systemd_255.4-1ubuntu8.15.debian.tar.xz' systemd_255.4-1ubuntu8.15.debian.tar.xz 264648 SHA256:0e63b049e745afdeec38be8ea086c1969c568ef704df48bf6ffebaeba5a7d618
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/s/systemd/systemd_255.4-1ubuntu8.15.dsc' systemd_255.4-1ubuntu8.15.dsc 7324 SHA256:0037037654eaf11e527954282b92daad1285140313da25abdb4507bcebebe087
-```
 
 ### `dpkg` source package: `sysvinit=3.08-6ubuntu3`
 
@@ -2265,14 +2260,9 @@ Licenses: (parsed from: `/usr/share/doc/liblzma5/copyright`)
 - `permissive-nowarranty`
 - `probably-PD`
 
-Source:
+**WARNING:** unable to find source (`apt-get source` failed or returned no results)!  
+This is *usually* due to a new package version being released and the old version being removed.
 
-```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260529T000000Z source -qq --print-uris xz-utils=5.6.1+really5.4.5-1ubuntu0.2
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/x/xz-utils/xz-utils_5.6.1%2breally5.4.5.orig.tar.xz' xz-utils_5.6.1+really5.4.5.orig.tar.xz 1680520 SHA256:da9dec6c12cf2ecf269c31ab65b5de18e8e52b96f35d5bcd08c12b43e6878803
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/x/xz-utils/xz-utils_5.6.1%2breally5.4.5-1ubuntu0.2.debian.tar.xz' xz-utils_5.6.1+really5.4.5-1ubuntu0.2.debian.tar.xz 30776 SHA256:fcf6b1a987c3c82a4382b2f17a194aa9fbb1a05f307a00baf253307b10bf5ca8
-'https://snapshot.ubuntu.com/ubuntu/20260529T000000Z/pool/main/x/xz-utils/xz-utils_5.6.1%2breally5.4.5-1ubuntu0.2.dsc' xz-utils_5.6.1+really5.4.5-1ubuntu0.2.dsc 2639 SHA256:72f961b40534c1254edf0950e1826635c1aaae72f2aaa588423d833374307396
-```
 
 ### `dpkg` source package: `zlib=1:1.3.dfsg-3.1ubuntu2.1`
 

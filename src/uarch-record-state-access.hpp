@@ -72,12 +72,12 @@ public:
     }
 
 private:
-    static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
+    static std::pair<uint64_t, int> adjust_access(uint64_t &paddr, int log2_size) {
         static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
             "Hash tree word size must not be smaller than machine word size");
-        if (((paddr >> log2_size) << log2_size) != paddr) {
-            throw std::invalid_argument{"misaligned access"};
-        }
+        // Unilaterally align the access down to its natural size, so that even a buggy
+        // misaligned access can still be logged and verified instead of aborting.
+        paddr = (paddr >> log2_size) << log2_size;
         const auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
         const auto log2_access_size = std::max(log2_size, log2_word_size);
         const auto access_paddr = (paddr >> log2_access_size) << log2_access_size;
