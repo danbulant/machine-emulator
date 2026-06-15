@@ -550,6 +550,34 @@ local function create_json_reset_rejected_log()
     return ctx
 end
 
+local function create_json_reset_accepted_log()
+    local machine <close> = build_machine()
+    local test_name = "reset-uarch-accepted"
+    machine:write_reg("uarch_halt_flag", 1)
+    -- pretend an input was fed and later accepted, so the reset must not revert
+    machine:write_reg("iflags_Y", 1)
+    machine:write_reg("htif_tohost_dev", cartesi.HTIF_DEV_YIELD)
+    machine:write_reg("htif_tohost_cmd", cartesi.HTIF_YIELD_CMD_MANUAL)
+    machine:write_reg("htif_tohost_reason", cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+    local initial_root_hash = machine:get_root_hash()
+    local log = machine:log_reset_uarch()
+    local out = create_json_log_file(test_name .. "-steps")
+    write_log_to_file(log, out, 0, true)
+    out:close()
+    local ctx = {
+        initial_root_hash = initial_root_hash,
+        -- no revert: the canonical state is the post-reset state
+        final_root_hash = machine:get_root_hash(),
+        ram_image = "",
+        test_name = test_name,
+        expected_cycles = 1,
+        step_count = 1,
+        failed = false,
+        accesses_count = #log.accesses,
+    }
+    return ctx
+end
+
 local function create_json_send_cmio_response_log()
     local machine <close> = build_machine()
     local test_name = "send-cmio-response"
@@ -639,6 +667,7 @@ local function json_step_logs(tests)
         local ctx = create_json_reset_log()
         contexts[#contexts + 1] = ctx
         contexts[#contexts + 1] = create_json_reset_rejected_log()
+        contexts[#contexts + 1] = create_json_reset_accepted_log()
     end
     if create_send_cmio_response_log then
         local ctx = create_json_send_cmio_response_log()
