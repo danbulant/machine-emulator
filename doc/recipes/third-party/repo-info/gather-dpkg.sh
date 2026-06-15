@@ -153,8 +153,40 @@ for src in "${sortedSources[@]}"; do
 	sourcesUrl="https://sources.debian.net/src/${src//=//}/"
 	snapshotUrl="http://snapshot.debian.org/package/${src//=//}/"
 
+	# A binary that came from a repository must have a resolvable source. A
+	# binary installed from a local .deb (e.g. machine-guest-tools) has no
+	# archive source, so a missing source is expected only in that case. Tell
+	# the two apart by asking apt whether any of this source's binaries is
+	# available from a repository at all.
+	fromRepo=
+	for bin in ${packages[$src]}; do
+		binPkg="${bin%%=*}"
+		binPkgOnly="${binPkg%%:*}"
+		if [ -n "$(apt-cache "${apt_arch_opt[@]}" madison "$binPkgOnly" 2>/dev/null)" ]; then
+			fromRepo=1
+			break
+		fi
+	done
+
 	aptSourceArgs=( apt-get "${apt_arch_opt[@]}" "${apt_snapshot_opt[@]}" source -qq --print-uris "$src" )
-	if aptSource="$("${aptSourceArgs[@]}" 2>/dev/null)" && [ -n "$aptSource" ]; then
+	aptSource=
+	if [ -n "$fromRepo" ]; then
+		# Repository package: the source must resolve. Retry to ride out
+		# transient archive hiccups, then fail hard rather than emit a report
+		# that silently differs from the committed one. A persistent failure
+		# means the pinned snapshot's source index has not converged for this
+		# version; move the snapshot pin back to a converged date.
+		tries=5
+		while ! aptSource="$("${aptSourceArgs[@]}" 2>/dev/null)" || [ -z "$aptSource" ]; do
+			(( --tries )) || :
+			if [ "$tries" -le 0 ]; then
+				echo >&2 "error: no source for repository package '$src' (snapshot index not converged or archive unreachable)"
+				exit 1
+			fi
+		done
+	fi
+
+	if [ -n "$aptSource" ]; then
 		echo
 		echo 'Source:'
 		echo
@@ -175,14 +207,7 @@ for src in "${sortedSources[@]}"; do
 		esac
 	else
 		echo
-		echo '**WARNING:** unable to find source (`apt-get source` failed or returned no results)!  '
-		echo 'This is *usually* due to a new package version being released and the old version being removed.'
+		echo '**WARNING:** no archive source (package was installed from a local `.deb`, not a repository).'
 		echo
-		if wget --quiet --spider -O /dev/null -o /dev/null "$snapshotUrl"; then
-			echo 'The source package *may* still be available for download from:'
-			echo
-			echo "- $snapshotUrl"
-			echo
-		fi
 	fi
 done

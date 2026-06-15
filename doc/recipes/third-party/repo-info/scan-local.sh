@@ -57,4 +57,4 @@ docker inspect -f '
 {{ end }}- Environment:{{ range .Config.Env }}{{ "\n" }}  - `{{ . }}`{{ end }}{{ if .Config.Labels }}
 - Labels:{{ range $k, $v := .Config.Labels }}{{ "\n" }}  - `{{ $k }}={{ $v }}`{{ end }}{{ end }}' "$image" 2>/dev/null || :
 
-docker run --rm --volumes-from "$name-data" -v /etc/ssl -e DPKG_ARCH="$arch" -e APT_SNAPSHOT repo-info:local-dpkg || :
+docker run --rm --volumes-from "$name-data" -v /etc/ssl -e DPKG_ARCH="$arch" -e APT_SNAPSHOT repo-info:local-dpkg

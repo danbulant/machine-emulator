@@ -35,7 +35,11 @@ docker run --rm -v "$PWD/rootfs-docs.ext2:/rootfs.ext2:ro" repo-info:local-dpkg 
 # drops the whole Docker Metadata section, restoring the blank line the
 # failed template would have left, so the report comes out the same in
 # both cases.
-(cd third-party/repo-info && ./scan-local.sh $image linux/riscv64) |
+# Capture the scan before filtering so a scanner failure (e.g. an
+# unresolvable repository source, see gather-dpkg.sh) aborts under set -e
+# instead of being masked by the awk at the tail of a pipeline.
+report=$(cd third-party/repo-info && ./scan-local.sh $image linux/riscv64)
+printf '%s\n' "$report" |
     awk '
         /^## Docker Metadata$/ { skip = 1; next }
         skip && /^## / { skip = 0; print "" }
