@@ -16,23 +16,11 @@
 
 local _M = {}
 
--- Recover the human-readable flag name from a Lua pattern. Strips ^/$, the
--- %- escape, the value tail starting at %= (or raw =), and capture parens.
-local function flag_from_pattern(pattern)
-    return (
-        pattern
-            :gsub("^%^", "")
-            :gsub("%$$", "")
-            :gsub("%%%-", "-")
-            :gsub("%%=.*$", "")
-            :gsub("=.*$", "")
-            :gsub("[%(%)%?]", "")
-    )
-end
+-- The option name is a plain string; a trailing "=" marks a value-taking
+-- option. Strip it to get the bare flag name.
+local function flag_name(name) return (name:gsub("=$", "")) end
 
-local function pattern_takes_value(pattern) return pattern:find("%%=") ~= nil or pattern:find("=") ~= nil end
-
-local function pattern_value_optional(pattern) return pattern:find("%%=%?") ~= nil or pattern:find("=%?") ~= nil end
+local function name_takes_value(name) return name:sub(-1) == "=" end
 
 -- Sentinels for subkey value kinds that bash completes specially.
 local SUBKEY_KIND_SENTINEL = {
@@ -46,14 +34,16 @@ local SUBKEY_KIND_SENTINEL = {
 
 -- Reduce one options-table entry to a completion descriptor.
 local function describe_option(entry)
-    local pattern, hint = entry[1], entry[3]
-    local flag = flag_from_pattern(pattern)
+    local name, hint = entry[1], entry[3]
+    local flag = flag_name(name)
     if flag == "" or not flag:match("^%-") then return nil end
-    local has_value = pattern_takes_value(pattern)
+    local has_value = name_takes_value(name)
+    -- A plain name cannot encode an optional value; optional-value options are
+    -- two entries (flag + value) merged below, which sets optional there.
     local desc = {
         flag = flag,
         kind = has_value and "string" or "bare",
-        optional = pattern_value_optional(pattern),
+        optional = false,
     }
     if type(hint) == "string" then
         if hint:sub(-1) == "?" then
@@ -66,19 +56,25 @@ local function describe_option(entry)
         desc.kind = "compound"
         desc.subkeys = {}
         desc.subkey_values = {}
+        -- The array part (hint[1]) names the positional sub-key; record its kind
+        -- so a bare value can be completed as a file/dir.
+        if hint[1] then desc.positional_kind = hint[hint[1]] end
         for k, v in pairs(hint) do
-            desc.subkeys[#desc.subkeys + 1] = k
-            if type(v) == "table" then
-                local vals = {}
-                for ek in pairs(v) do
-                    vals[#vals + 1] = ek
+            -- skip the array part (the positional sub-key name, handled above)
+            if type(k) == "string" then
+                desc.subkeys[#desc.subkeys + 1] = k
+                if type(v) == "table" then
+                    local vals = {}
+                    for ek in pairs(v) do
+                        vals[#vals + 1] = ek
+                    end
+                    table.sort(vals)
+                    desc.subkey_values[k] = vals
+                elseif v == "boolean" then
+                    desc.subkey_values[k] = { "true", "false" }
+                else
+                    desc.subkey_values[k] = SUBKEY_KIND_SENTINEL[v] or "__string__"
                 end
-                table.sort(vals)
-                desc.subkey_values[k] = vals
-            elseif v == "boolean" then
-                desc.subkey_values[k] = { "true", "false" }
-            else
-                desc.subkey_values[k] = SUBKEY_KIND_SENTINEL[v] or "__string__"
             end
         end
         table.sort(desc.subkeys)
@@ -154,6 +150,11 @@ _cartesi_complete() {
                     matched[$i]="${prefix}${matched[$i]}:"
                 done
                 COMPREPLY=("${matched[@]}")
+                # a bare value (no subkey:) may be the positional; offer files/dirs
+                case "${_cm_positional_kind[$flag]:-}" in
+                    file) COMPREPLY+=( $(compgen -f -- "$partial") ) ;;
+                    dir)  COMPREPLY+=( $(compgen -d -- "$partial") ) ;;
+                esac
                 compopt -o nospace 2>/dev/null
             fi
             ;;
@@ -173,6 +174,7 @@ function _M.dump_bash_completion(options, program_names)
             if prev then
                 if prev.kind == "bare" and d.kind ~= "bare" then
                     prev.kind, prev.subkeys, prev.subkey_values = d.kind, d.subkeys, d.subkey_values
+                    prev.positional_kind = d.positional_kind
                     prev.optional = true
                 elseif d.kind == "bare" and prev.kind ~= "bare" then
                     prev.optional = true
@@ -195,10 +197,14 @@ function _M.dump_bash_completion(options, program_names)
     w("declare -gA _cm_flag_optional=()")
     w("declare -gA _cm_compound_keys=()")
     w("declare -gA _cm_subkey_values=()")
+    w("declare -gA _cm_positional_kind=()")
     for _, flag in ipairs(ordered) do
         local d = flags[flag]
         w(string.format("_cm_flag_kind[%s]=%s", bash_quote(flag), bash_quote(d.kind)))
         if d.optional then w(string.format("_cm_flag_optional[%s]=1", bash_quote(flag))) end
+        if d.positional_kind then
+            w(string.format("_cm_positional_kind[%s]=%s", bash_quote(flag), bash_quote(d.positional_kind)))
+        end
         if d.subkeys then
             w(string.format("_cm_compound_keys[%s]=%s", bash_quote(flag), bash_quote(table.concat(d.subkeys, " "))))
             for _, k in ipairs(d.subkeys) do

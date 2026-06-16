@@ -68,7 +68,7 @@ $(STEP_LOG):
 	$(CARTESI_MACHINE) \
 		--hash-tree=hash_function:sha256 \
 		--max-mcycle=0 \
-		--log-step=1,$@
+		--log-step=$@,count:1
 
 $(RECEIPT): $(STEP_LOG)
 	@echo "--- Proving step log ---"

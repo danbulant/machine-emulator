@@ -908,7 +908,8 @@ To generate a proof concerning the state as it is before the machine starts runn
 The label form of the option searches for a flash drive or NVRAM with that label, from which it automatically obtains the corresponding `address` and `log2_size`.
 For proofs concerning the state after the emulator is done, use `--final-proof` instead.
 The proofs are output as Lua tables that can be loaded with the `require` function.
-To output JSON objects instead, use `--initial-json-proof` and `--final-json-proof` instead.
+To output JSON objects instead, add the `format:json` sub-key, as in `--initial-proof=label:<label>,filename:<filename>,format:json`.
+When `format:` is omitted, the format is inferred from the filename extension (`.json` or `.lua`), defaulting to Lua.
 In either case, the filename field is optional.
 When provided, the proof will be written to the corresponding file.
 Otherwise, the contents will be displayed on screen.
@@ -1677,7 +1678,7 @@ equivalent to running the command
 cartesi-machine \
     --no-init-splash \
     --max-mcycle=0 \
-    --store-json-config | \
+    --store-config=format:json | \
         jq -r '.dtb.bootargs'
 ```
 ```{.bash key=no_bootargs_equiv replace=source vars=bootargs->default_bootargs/stdout}
@@ -1687,8 +1688,8 @@ cartesi-machine \
     --append-bootargs="$bootargs"
 ```
 
-The command-line option `--periodic-hashes=<number-period>[,<number-start>]` causes the command-line utility to periodically obtain and print the state hash.
-The `<number-period>` argument gives the distance between hashes in cycles. The optional `<number-start>` argument gives the starting cycle for the periodic hashes. (Both `--initial-hash` and `--final-hash` are implied by this option.)
+The command-line option `--periodic-hashes=<period>[,start:<mcycle>]` causes the command-line utility to periodically obtain and print the state hash.
+The `<period>` argument gives the distance between hashes in cycles. The optional `start:<mcycle>` sub-key gives the starting cycle for the periodic hashes. (Both `--initial-hash` and `--final-hash` are implied by this option.)
 
 For example, to see the last 10 state hashes from the calculator machine computation, run the command
 
@@ -1706,7 +1707,7 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --periodic-hashes=1,$initial_cycle
+    --periodic-hashes=1,start:$initial_cycle
 # docs:end
 ```
 The output is
@@ -1724,7 +1725,7 @@ The command-line options `--store-config` and `--load-config` store or load a Lu
 The format of these configuration files is explained in detail under the [Lua interface](#lua-interface) to Cartesi Machines.
 In particular, the `--store-config` option, without arguments, dumps to screen all the options used to define the Cartesi Machine.
 This information can be very useful when debugging problems.
-JSON counterparts `--store-json-config` and `--load-json-config` are also available.
+Both options accept a `format:<lua|json>` sub-key to select between Lua and JSON. When `format:` is omitted, the format is inferred from the filename extension (`.json` or `.lua`), defaulting to Lua.
 
 The remaining options in the command-line utility `cartesi-machine` are mostly useful for low-level tests and debugging.
 As such, they require some context.
@@ -3990,7 +3991,7 @@ cartesi-machine \
     --quiet \
     --user=root \
 # docs:begin null
-	--store-json-config=config.json \
+	--store-config=config.json \
 # docs:end null
     -- "dtc -I dtb -O dts /sys/firmware/fdt"
 # docs:end

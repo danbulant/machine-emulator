@@ -203,11 +203,11 @@ describe("cartesi-machine CLI", function()
     --       run_fail() for a version mismatch to confirm the non-zero exit path.
     -- -------------------------------------------------------------------------
     it("early exit options", function()
-        local rc, stdout = run({ "-h" })
-        expect.equal(rc, 0)
-        expect.truthy(stdout:find("cartesi%-machine"))
+        -- -h is no longer help; it is the docker-style hostname short option.
+        -- A bare -h is rejected with a hint pointing at --help.
+        run_fail({ "-h" }, "did you mean %-%-help")
 
-        rc, stdout = run({ "--help" })
+        local rc, stdout = run({ "--help" })
         expect.equal(rc, 0)
         expect.truthy(stdout:find("cartesi%-machine"))
 
@@ -350,6 +350,18 @@ describe("cartesi-machine CLI", function()
         expect.equal(found_data.start, 0x80000020000000)
         expect.equal(found_data.length, 0x10000)
         expect.equal(found_data.read_only, true)
+
+        -- positional filename: --flash-drive=<file> equals data_filename:<file>
+        cfg = config_for({ "--flash-drive=label:pos," .. flash_tmp })
+        local found_pos
+        for _, fd in ipairs(cfg.flash_drive) do
+            if fd.label == "pos" then
+                found_pos = fd
+                break
+            end
+        end
+        expect.truthy(found_pos)
+        expect.equal(found_pos.backing_store.data_filename, flash_tmp)
 
         -- --no-root-flash-drive + replacement
         cfg = config_for({
@@ -655,8 +667,8 @@ describe("cartesi-machine CLI", function()
     --       Mac OS where that device type is not supported.
     -- -------------------------------------------------------------------------
     it("virtio network options", function()
-        -- --virtio-9p
-        local cfg = config_for({ "--virtio-9p=mytag:/tmp" })
+        -- --virtio-9p (key:value long form)
+        local cfg = config_for({ "--virtio-9p=tag:mytag,host_directory:/tmp" })
         expect.truthy(cfg.virtio and #cfg.virtio > 0)
         local found_p9fs
         for _, v in ipairs(cfg.virtio) do
@@ -702,8 +714,8 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(found_net)
 
-        -- --port-forward (requires --virtio-net=user or --network)
-        cfg = config_for({ "--network", "--port-forward=18080:80" })
+        -- -p docker short form (attached value), requires --network
+        cfg = config_for({ "--network", "-p=18080:80" })
         local net_entry
         for _, v in ipairs(cfg.virtio) do
             if v.type == "net-user" then
@@ -715,8 +727,8 @@ describe("cartesi-machine CLI", function()
         expect.equal(net_entry.hostfwd[1].host_port, 18080)
         expect.equal(net_entry.hostfwd[1].guest_port, 80)
 
-        -- --volume (implies p9fs + sync-init-date + iunrep)
-        cfg = config_for({ "--volume=/tmp:/mnt" })
+        -- -v docker short form (attached value): implies p9fs + iunrep
+        cfg = config_for({ "-v=/tmp:/mnt" })
         found_p9fs = false
         for _, v in ipairs(cfg.virtio) do
             if v.type == "p9fs" then
@@ -739,10 +751,11 @@ describe("cartesi-machine CLI", function()
         expect.truthy(found_console)
         expect.equal(cfg.processor.registers.iunrep, 1)
 
-        -- --port-forward with explicit IPv4 host/guest addresses and UDP protocol
+        -- --port-forward long key:value form with explicit IPv4 host/guest
+        -- addresses ([ip:]port values) and UDP protocol
         cfg = config_for({
             "--network",
-            "--port-forward=127.0.0.1:10.0.2.15:18081:81:udp",
+            "--port-forward=host_address:127.0.0.1:18081,guest_address:10.0.2.15:81,protocol:udp",
         })
         local net_entry2
         for _, v in ipairs(cfg.virtio) do
@@ -847,8 +860,8 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Hashing and proof options
     --
-    -- What: --initial-hash, --final-hash, --periodic-hashes (two-arg and
-    --       single-arg forms), --initial-proof, --final-proof,
+    -- What: --initial-hash, --final-hash, --periodic-hashes (positional period
+    --       with and without a start: sub-key), --initial-proof, --final-proof,
     --       --dense-uarch-hashes, and --dump-address-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
@@ -867,7 +880,7 @@ describe("cartesi-machine CLI", function()
         expect.truthy(hash_count >= 2)
 
         -- --periodic-hashes
-        _, err = run_ok({ "--periodic-hashes=1,0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
+        _, err = run_ok({ "--periodic-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
             if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
@@ -876,12 +889,12 @@ describe("cartesi-machine CLI", function()
         end
         expect.truthy(hash_count >= 1)
 
-        -- --periodic-hashes=N single-argument form (no start offset, implies start=N)
+        -- --periodic-hashes=<period> bare positional form (start defaults to 0)
         run_ok({ "--periodic-hashes=10", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --periodic-hashes=<period>,<start> with start > 0: exercises the
+        -- --periodic-hashes=<period>,start:<n> with start > 0: exercises the
         -- next_hash_mcycle = periodic_hashes_start branch.
-        run_ok({ "--periodic-hashes=10,5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({ "--periodic-hashes=10,start:5", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
         -- --dense-uarch-hashes=N single-argument form
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
@@ -907,11 +920,11 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Proof dump options
     --
-    -- What: --initial-proof / --final-proof now emit a Lua table (loadable
-    --       with load/dofile) and --initial-json-proof / --final-json-proof
-    --       emit JSON validated against the "Proof" schema.  Each of the four
-    --       options is exercised both writing to a file (filename:<path>) and
-    --       writing to stdout (no filename:).
+    -- What: --initial-proof / --final-proof emit a Lua table (loadable with
+    --       load/dofile) by default, or JSON validated against the "Proof"
+    --       schema when format:json is given.  Each option is exercised both
+    --       writing to a file (filename:<path>) and writing to stdout (no
+    --       filename:), in both formats.
     -- How:  For Lua proofs, load() the emitted text and assert the proof shape;
     --       for JSON proofs, round-trip through cartesi.fromjson(s, "Proof")
     --       (which re-validates against the schema) and assert the same shape.
@@ -954,12 +967,12 @@ describe("cartesi-machine CLI", function()
         })
         check_proof(assert(load(stdout))())
 
-        -- --initial-json-proof / --final-json-proof to a file: valid JSON that
-        -- round-trips through the "Proof" schema.
-        for _, opt in ipairs({ "--initial-json-proof", "--final-json-proof" }) do
+        -- --initial-proof / --final-proof with format:json to a file: valid JSON
+        -- that round-trips through the "Proof" schema.
+        for _, opt in ipairs({ "--initial-proof", "--final-proof" }) do
             local _ <close>, json_file = scope_temp_pathname()
             run_ok({
-                opt .. "=address:" .. ADDR .. ",log2_size:" .. LOG2 .. ",filename:" .. json_file,
+                opt .. "=address:" .. ADDR .. ",log2_size:" .. LOG2 .. ",filename:" .. json_file .. ",format:json",
                 "--max-mcycle=0",
                 "--no-init-splash",
                 "--quiet",
@@ -967,9 +980,9 @@ describe("cartesi-machine CLI", function()
             check_proof(cartesi.fromjson(filesystem.read_file(json_file), "Proof"))
         end
 
-        -- --final-json-proof to stdout: same JSON, parsed against the schema.
+        -- --final-proof with format:json to stdout: same JSON, parsed against the schema.
         stdout = run_ok({
-            "--final-json-proof=address:" .. ADDR .. ",log2_size:" .. LOG2,
+            "--final-proof=address:" .. ADDR .. ",log2_size:" .. LOG2 .. ",format:json",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1014,14 +1027,14 @@ describe("cartesi-machine CLI", function()
         expect.equal(p.target_address, FLASH_START)
         expect.equal(p.log2_target_size, 16)
 
-        -- NVRAM, JSON format: --final-json-proof=label:<nvram> falls through to
-        -- the nvram lookup and resolves the same way.
+        -- NVRAM, JSON format: --final-proof=label:<nvram>,format:json falls
+        -- through to the nvram lookup and resolves the same way.
         stdout = run_ok({
             "--nvram=label:pnv,start:" .. string.format("0x%x", NVRAM_START) .. ",length:" .. string.format(
                 "0x%x",
                 NVRAM_LEN
             ),
-            "--final-json-proof=label:pnv",
+            "--final-proof=label:pnv,format:json",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1043,8 +1056,8 @@ describe("cartesi-machine CLI", function()
     -- -------------------------------------------------------------------------
     -- Persistence round-trip options
     --
-    -- What: --store-config / --load-config, --store-json-config /
-    --       --load-json-config (including bare to-stdout forms), --store,
+    -- What: --store-config / --load-config (Lua and JSON via format: sub-key or
+    --       .json extension, including bare to-stdout forms), --store,
     --       --load, --store=<dir>/%h (hash-substituted path), --create,
     --       --store sharing:all, --load sharing:all, and --load clone:<src>.
     -- How:  Each store flag is run, then the produced file or directory is
@@ -1071,26 +1084,45 @@ describe("cartesi-machine CLI", function()
         expect.equal(cfg2.hash_tree.hash_function, "sha256")
         expect.equal(cfg2.ram.length, (64 * 1024 * 1024))
 
-        -- --store-json-config to file and --load-json-config round-trip
+        -- JSON via explicit format: sub-key; --load-config reads it back with
+        -- the matching format: sub-key. The filename here has no extension, so
+        -- format: is what selects JSON.
         local _ <close>, json_file = scope_temp_pathname()
         run_ok({
             "--hash-tree=hash_function:sha256",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-            "--store-json-config=" .. json_file,
+            "--store-config=" .. json_file .. ",format:json",
         })
         expect.truthy(filesystem.read_file(json_file):find('"sha256"'))
 
-        local cfg3 = config_for({ "--load-json-config=" .. json_file })
+        local cfg3 = config_for({ "--load-config=" .. json_file .. ",format:json" })
         expect.equal(cfg3.hash_tree.hash_function, "sha256")
 
-        -- --store-config to stdout (bare form)
+        -- JSON via .json filename extension (no explicit format:), round-tripped
+        -- by --load-config which also infers JSON from the extension.
+        local json_ext_file = filesystem.temp_pathname() .. ".json"
+        local _ <close> = utils.scope_exit(function()
+            os.remove(json_ext_file)
+        end)
+        run_ok({
+            "--hash-tree=hash_function:sha256",
+            "--max-mcycle=0",
+            "--no-init-splash",
+            "--quiet",
+            "--store-config=" .. json_ext_file,
+        })
+        expect.truthy(filesystem.read_file(json_ext_file):find('"sha256"'))
+        local cfg_ext = config_for({ "--load-config=" .. json_ext_file })
+        expect.equal(cfg_ext.hash_tree.hash_function, "sha256")
+
+        -- --store-config to stdout (bare form): Lua
         local stdout = run_ok({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-config" })
         expect.truthy(stdout:find("return"))
 
-        -- --store-json-config to stdout (bare form)
-        stdout = run_ok({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-json-config" })
+        -- --store-config to stdout in JSON via format: sub-key (no filename)
+        stdout = run_ok({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-config=format:json" })
         expect.truthy(stdout:find('"ram"'))
 
         -- --store=<dir>: machine stored at that path
@@ -1521,14 +1553,14 @@ describe("cartesi-machine CLI", function()
             "--max-mcycle=0",
         }, min_msg)
         run_fail({
-            "--initial-json-proof=address:0x80000000,log2_size:" .. too_small,
+            "--initial-proof=address:0x80000000,log2_size:" .. too_small .. ",format:json",
             "--max-mcycle=0",
         }, min_msg)
 
         -- --gdb conflicts with --periodic-hashes
         run_fail({
             "--gdb=127.0.0.1:19234",
-            "--periodic-hashes=100,0",
+            "--periodic-hashes=100,start:0",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1537,23 +1569,20 @@ describe("cartesi-machine CLI", function()
         -- --assert-rolling-template: exits non-zero when machine is not a rolling template
         run_fail({ "--assert-rolling-template", "--max-mcycle=0", "--no-init-splash", "--quiet" }, nil)
 
-        -- --port-forward with a 3-octet value: matches the pattern [0-9:.]+
-        -- but is not a valid IP, port number, or protocol, so handle_port_forward_option
-        -- reaches the error() at line 1036.
-        -- --virtio-net=user must precede it to satisfy the virtio_net_user_config assert.
+        -- --port-forward with a bare 3-octet value: not a key:value sub-option,
+        -- so it is rejected as an unknown option.
         run_fail({
             "--virtio-net=user",
             "--port-forward=1.2.3",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
-        }, "malformed")
+        }, "unknown option")
 
-        -- Malformed suffixes of options with optional '=' values: the handler
-        -- returns false, the catchall rejects "unrecognized option".
+        -- Malformed suffixes of options with optional values: no entry matches
+        -- the suffixed name, so the catch-all rejects "unrecognized option".
         run_fail({ "--remote-forkXXX" }, nil)
         run_fail({ "--store-configXXX" }, nil)
-        run_fail({ "--store-json-configXXX" }, nil)
 
         -- --gdb= (empty value) is rejected; bare --gdb combined with --periodic-hashes
         -- exercises the default-address branch and trips the "not supported when
@@ -1561,7 +1590,7 @@ describe("cartesi-machine CLI", function()
         run_fail({ "--gdb=" }, nil)
         run_fail({
             "--gdb",
-            "--periodic-hashes=100,0",
+            "--periodic-hashes=100,start:0",
             "--max-mcycle=0",
             "--no-init-splash",
             "--quiet",
@@ -1591,16 +1620,17 @@ describe("cartesi-machine CLI", function()
     -- Step-logging and uarch options
     --
     -- What: --log-step, --log-step-uarch, --log-reset-uarch, --max-uarch-cycle,
-    --       --auto-reset-uarch, and --dense-uarch-hashes=len,start.
+    --       --auto-reset-uarch, and --dense-uarch-hashes (positional count with
+    --       a start: sub-key).
     -- How:  run_ok() each flag; for --log-step also open the output file and
     --       assert it is non-empty to confirm the log was written.
     -- -------------------------------------------------------------------------
     it("log step options", function()
         local _ <close>, log_file = scope_temp_pathname()
 
-        -- --log-step=N,<file>
+        -- --log-step=<file>,count:N
         run_ok({
-            "--log-step=1," .. log_file,
+            "--log-step=" .. log_file .. ",count:1",
             "--max-mcycle=1",
             "--no-init-splash",
             "--quiet",
@@ -1633,8 +1663,8 @@ describe("cartesi-machine CLI", function()
         -- --auto-reset-uarch
         run_ok({ "--auto-reset-uarch", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dense-uarch-hashes=<length>,<start>
-        run_ok({ "--dense-uarch-hashes=1,0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        -- --dense-uarch-hashes=<count>,start:<n>
+        run_ok({ "--dense-uarch-hashes=1,start:0", "--max-mcycle=0", "--no-init-splash", "--quiet" })
     end)
 
     -- -------------------------------------------------------------------------
@@ -1667,6 +1697,49 @@ describe("cartesi-machine CLI", function()
 
         -- -it: virtio console; use from_null to avoid TTY requirement
         run_ok({ "--console-io=input_source:from_null", "-it", "--max-mcycle=1", "--no-init-splash", "--quiet" })
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Short-option value forms and option dispatch
+    --
+    -- What: A value-taking short option accepts both -x=value and the docker
+    --       space form -x value; a long value option does not consume the next
+    --       argument (it requires =).
+    -- How:  Build a config with --store-config so positionals are not relocated,
+    --       comparing the space and attached forms of -v; run_fail() the bare
+    --       long form to confirm it is rejected.
+    -- -------------------------------------------------------------------------
+    it("short-option value forms", function()
+        -- Build a config from literal args (no positional relocation), so the
+        -- "-v <value>" space form survives intact.
+        local function config_from(flags)
+            local _ <close>, tmp = scope_temp_pathname()
+            local all = {}
+            for _, f in ipairs(flags) do
+                all[#all + 1] = f
+            end
+            for _, f in ipairs({ "--max-mcycle=0", "--no-init-splash", "--quiet", "--store-config=" .. tmp }) do
+                all[#all + 1] = f
+            end
+            run_ok(all)
+            return dofile(tmp)
+        end
+        local function has_p9fs(cfg)
+            for _, v in ipairs(cfg.virtio or {}) do
+                if v.type == "p9fs" then
+                    return true
+                end
+            end
+            return false
+        end
+
+        -- -v space form and -v= attached form both add the p9fs volume.
+        expect.truthy(has_p9fs(config_from({ "-v", "/tmp:/mnt" })))
+        expect.truthy(has_p9fs(config_from({ "-v=/tmp:/mnt" })))
+
+        -- A long value option requires '='; the bare form does not swallow the
+        -- next argument, so it is rejected as unrecognized.
+        run_fail({ "--ram-length", "64Mi" }, "unrecognized option")
     end)
 
     -- -------------------------------------------------------------------------

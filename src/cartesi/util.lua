@@ -111,7 +111,12 @@ local string_kinds = {
 }
 _M.string_kinds = string_kinds
 
+-- The array part of "keys" (keys[1], optional) names the key that receives a
+-- bare value: a comma item with no colon that is not itself a declared key. At
+-- most one such positional is allowed. A colon inside a positional value must be
+-- escaped, since an unescaped colon always means key:value (so typos still error).
 function _M.parse_options(keys, all, opts)
+    local positional_key = keys[1]
     local function escape(v)
         -- replace escaped \, :, and , with something "safe"
         v = string.gsub(v, "%\\%\\", "\0")
@@ -125,16 +130,24 @@ function _M.parse_options(keys, all, opts)
     end
     -- split at commas and validate key
     local options = {}
+    local positional_seen = false
     string.gsub(escape(opts) .. ",", "(.-)%,", function(o)
         local k, v = string.match(o, "(.-):(.*)")
         if k and v then
             k = unescape(k)
             v = unescape(v)
-        else
+            assert(keys[k], string.format("unknown option %q in '%s'", k, all))
+        elseif keys[unescape(o)] ~= nil then
             k = unescape(o)
             v = nil
+        else
+            -- not a declared key: treat as the positional value
+            k = unescape(o)
+            assert(positional_key, string.format("unknown option %q in '%s'", k, all))
+            assert(not positional_seen, string.format("only one positional value allowed in '%s'", all))
+            positional_seen = true
+            v, k = k, positional_key
         end
-        assert(keys[k], string.format("unknown option %q in '%s'", k, all))
         if keys[k] == "array" then
             options[k] = options[k] or {}
             table.insert(options[k], v)

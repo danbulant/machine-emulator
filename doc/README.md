@@ -1365,10 +1365,12 @@ which it automatically obtains the corresponding `address` and
 `log2_size`. For proofs concerning the state after the emulator is done,
 use `--final-proof` instead. The proofs are output as Lua tables that
 can be loaded with the `require` function. To output JSON objects
-instead, use `--initial-json-proof` and `--final-json-proof` instead. In
-either case, the filename field is optional. When provided, the proof
-will be written to the corresponding file. Otherwise, the contents will
-be displayed on screen.
+instead, add the `format:json` sub-key, as in
+`--initial-proof=label:<label>,filename:<filename>,format:json`. When
+`format:` is omitted, the format is inferred from the filename extension
+(`.json` or `.lua`), defaulting to Lua. In either case, the filename
+field is optional. When provided, the proof will be written to the
+corresponding file. Otherwise, the contents will be displayed on screen.
 
 For example, to generate a proof that the Cartesi Machine template above
 indeed contains a pristine input drive, use the command line
@@ -2508,11 +2510,10 @@ cartesi-machine \
     --append-bootargs="quiet earlycon=sbi console=hvc0 uio_pdrv_genirq.of_id=generic-uio root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 ```
 
-The command-line option
-`--periodic-hashes=<number-period>[,<number-start>]` causes the
-command-line utility to periodically obtain and print the state hash.
-The `<number-period>` argument gives the distance between hashes in
-cycles. The optional `<number-start>` argument gives the starting cycle
+The command-line option `--periodic-hashes=<period>[,start:<mcycle>]`
+causes the command-line utility to periodically obtain and print the
+state hash. The `<period>` argument gives the distance between hashes in
+cycles. The optional `start:<mcycle>` sub-key gives the starting cycle
 for the periodic hashes. (Both `--initial-hash` and `--final-hash` are
 implied by this option.)
 
@@ -2526,7 +2527,7 @@ cartesi-machine \
     --no-init-splash \
     --load="calculator-template" \
     --replace-memory-range="label:input,data_filename:input.raw" \
-    --periodic-hashes=1,62993893
+    --periodic-hashes=1,start:62993893
 ```
 
 The output is
@@ -2565,9 +2566,10 @@ utility will use. The format of these configuration files is explained
 in detail under the [Lua interface](#lua-interface) to Cartesi Machines.
 In particular, the `--store-config` option, without arguments, dumps to
 screen all the options used to define the Cartesi Machine. This
-information can be very useful when debugging problems. JSON
-counterparts `--store-json-config` and `--load-json-config` are also
-available.
+information can be very useful when debugging problems. Both options
+accept a `format:<lua|json>` sub-key to select between Lua and JSON.
+When `format:` is omitted, the format is inferred from the filename
+extension (`.json` or `.lua`), defaulting to Lua.
 
 The remaining options in the command-line utility `cartesi-machine` are
 mostly useful for low-level tests and debugging. As such, they require

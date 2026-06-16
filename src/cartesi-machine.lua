@@ -497,7 +497,7 @@ where options are:
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  --virtio-9p=<tag>:<directory>
+  --virtio-9p=tag:<tag>,host_directory:<directory>
     add a VirtIO Plan9 filesystem device for sharing a host directory
     in the guest.
     the filesystem will have a tag that can be used to mount the host directory
@@ -507,7 +507,8 @@ where options are:
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  -v or --volume=<host_directory>:<guest_directory>
+  --volume=host_directory:<directory>,guest_directory:<directory>
+  -v <host-directory>:<guest-directory>
     like --virtio-9p, but also appends init commands to auto mount the
     host directory in the guest directory.
     mount tags are incrementally set to "vfs0", "vfs1", ...
@@ -581,14 +582,19 @@ where options are:
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  -p=... or --port-forward=[hostip:]hostport[:guestip][:guestport][/protocol]
+  --port-forward=host_address:[hostip:]hostport,guest_address:[guestip:]guestport,protocol:<tcp|udp>
+  -p [hostip:]hostport:guestport[/protocol]
     redirect incoming TCP or UDP connections.
     bind the host hostip:hostport to the guest guestip:guestport.
-    protocol can be "tcp" or "udp".
+    each address is "[ip:]port", and protocol can be "tcp" or "udp".
     if host ip is absent, it's set to "127.0.0.1".
     if guest ip is absent, it's set to "10.0.2.15".
     if guest port is absent, it's set to the same as host port.
     if protocol is absent, it's set to "tcp".
+    the short -p form is docker-compatible. it requires both ports, has no
+    guest ip field, and takes an optional "/tcp" or "/udp" suffix protocol
+    defaulting to tcp.
+    use the long form to set a guest ip.
     you can pass this option multiple times.
     this option requires --network or --virtio-net=user option.
 
@@ -673,15 +679,15 @@ where options are:
   --final-hash
     print final state hash when done.
 
-  --periodic-hashes=<number-period>[,<number-start>]
-    prints root hash every <number-period> cycles.
-    if <number-start> is given, the periodic hashing will start at that mcycle.
+  --periodic-hashes=<period>[,start:<mcycle>]
+    prints root hash every <period> cycles.
+    if start: is given, the periodic hashing will start at that mcycle.
     this option implies --initial-hash and --final-hash.
     (default: none)
 
-  --dense-uarch-hashes=<number-length>[,<number-start>]
-    prints root hash every uarch cycle for <number-length> mcycles.
-    if <number-start> is given, the dense hashing will start at that mcycle.
+  --dense-uarch-hashes=<count>[,start:<mcycle>]
+    prints root hash every uarch cycle for <count> mcycles.
+    if start: is given, the dense hashing will start at that mcycle.
 
   --initial-proof=<key>:<value>[,<key>:<value>[,...]...]
     print a Merkle proof for a target region of the initial machine state.
@@ -704,18 +710,16 @@ where options are:
         redirects the proof to a file. when omitted, the proof is printed
         to stdout.
 
-    the proof is printed as a Lua table.
+        format:<lua|json> (optional)
+        selects the output format. when omitted, it is inferred from the
+        filename extension (.json/.lua), defaulting to Lua.
+
+    the proof is printed as a Lua table unless format:json is given.
 
   --final-proof=<key>:<value>[,<key>:<value>[,...]...]
     like --initial-proof, but for the final machine state.
 
-  --initial-json-proof=<key>:<value>[,<key>:<value>[,...]...]
-    like --initial-proof, but the proof is printed as a JSON object.
-
-  --final-json-proof=<key>:<value>[,<key>:<value>[,...]...]
-    like --final-proof, but the proof is printed as a JSON object.
-
-  --log-step=<mcycle-count>,<filename>
+  --log-step=<filename>,count:<mcycle-count>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
   --log-step-uarch
@@ -727,23 +731,18 @@ where options are:
   --auto-reset-uarch
     reset uarch automatically after halt.
 
-  --store-config[=<filename>]
-    store initial machine config as Lua script to <filename>.
+  --store-config[=<filename>][,format:<lua|json>]
+    store initial machine config to <filename>.
     If <filename> is omitted, print the initial machine config to stdout.
+    the format is taken from format: if given, else the filename extension
+    (.json/.lua), defaulting to Lua.
 
-  --store-json-config[=<filename>]
-    store initial machine config as JSON to <filename>.
-    If <filename> is omitted, print the initial machine config to stdout.
-
-  --load-config=<filename>
-    load initial machine config from Lua script <filename>. If a field is omitted on
+  --load-config=<filename>[,format:<lua|json>]
+    load initial machine config from <filename>. If a field is omitted on
     the config table, it will fall back into the respective command-line
     argument or into the default value.
-
-  --load-json-config=<filename>
-    load initial machine config from JSON <filename>. If a field is omitted on
-    the config table, it will fall back into the respective command-line
-    argument or into the default value.
+    the format is taken from format: if given, else the filename extension
+    (.json/.lua), defaulting to Lua.
 
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
@@ -763,17 +762,17 @@ where options are:
   --no-init-splash
     don't show cartesi machine splash on boot.
 
-  -u=<name> or --user=<name>
+  -u <name> or --user=<name>
     appends to init the user who should execute the entrypoint command.
     when omitted, the user is set to "dapp" by rootfs init script.
 
-  -e=<name>=<value> or --env=<name>=<value>
+  -e <name>=<value> or --env=<name>=<value>
     appends to init an environment variable export.
 
-  -w=<dir> or --workdir=<dir>
+  -w <dir> or --workdir=<dir>
     appends to init the entrypoint working directory.
 
-  -h=<name> or --hostname=<name>
+  -h <name> or --hostname=<name>
     appends to init a machine hostname change.
 
   --append-init=<string>
@@ -932,9 +931,9 @@ local load_sharing
 local store_sharing
 local cmdline_opts_finished = false
 local store_config = false
-local store_json_config = false
+local store_config_format
 local load_config = false
-local load_json_config = false
+local load_config_format
 local gdb_address
 local exec_arguments = {}
 local assert_rolling_template = false
@@ -966,6 +965,26 @@ local function parse_memory_range(keys, all, opts)
     f.create = nil
     f.truncate = nil
     return f
+end
+
+-- Map a sharing sub-option ("none"/"config"/"all") to its constant. The map is
+-- populated once cartesi is required, since the options table that calls
+-- to_sharing is built before that.
+local to_sharing_map
+local function to_sharing(s)
+    if not s then return nil end
+    return assert(to_sharing_map[s])
+end
+
+-- Resolve the serialization format for a dump/load: an explicit format sub-key
+-- wins, else the filename extension (.json/.lua), else Lua (the default).
+local function resolve_format(format, filename)
+    if format then return format end
+    if filename then
+        local ext = filename:match("%.([^.]+)$")
+        if ext == "json" or ext == "lua" then return ext end
+    end
+    return "lua"
 end
 
 -- Override existing boolean with a new one
@@ -1052,22 +1071,24 @@ local function handle_htif_console_getchar()
     return true
 end
 
-local function handle_user(user)
+local function handle_user(_, _, user)
     append_init = append_init .. "USER=" .. user .. "\n"
     return true
 end
 
-local function handle_env(name, value)
+local function handle_env(_, _, opts)
+    local name, value = opts:match("^([%w_]+)=(.+)$")
+    assertf(name and value, "invalid env %s, expected NAME=VALUE", opts)
     append_init = append_init .. "export " .. name .. "=" .. value .. "\n"
     return true
 end
 
-local function handle_workdir(value)
+local function handle_workdir(_, _, value)
     append_init = append_init .. "WORKDIR=" .. value .. "\n"
     return true
 end
 
-local function handle_hostname(name)
+local function handle_hostname(_, _, name)
     append_init = append_init .. "busybox hostname " .. name .. "\n"
     return true
 end
@@ -1079,47 +1100,30 @@ local function parse_ipv4(s)
     return (a << 24) | (b << 18) | (c << 8) | d
 end
 
-local function handle_port_forward_option(opts)
-    if not opts then return false end
+-- Parse a port-forward address "[ip:]port" into (ip-or-nil, port).
+local function parse_port_forward_address(s, all)
+    local ip, port = s:match("^(%d+%.%d+%.%d+%.%d+):(%d+)$")
+    if ip then return parse_ipv4(ip), tonumber(port) end
+    port = s:match("^(%d+)$")
+    assertf(port, "invalid address %q in %s", s, all)
+    return nil, tonumber(port)
+end
+
+local function add_port_forward(host_ip, host_port, guest_ip, guest_port, is_udp)
     assert(virtio_net_user_config, "--port-forward option requires --network or --virtio-net=user option")
-    local host_ip, guest_ip, host_port, guest_port, proto
-    for s in opts:gmatch("[%w.]+") do
-        if (not host_port or not guest_port) and s:find("^[0-9]+$") then
-            if not host_port then
-                host_port = tonumber(s)
-            else
-                guest_port = tonumber(s)
-            end
-        elseif (not host_ip or not guest_ip) and s:find("^[0-9]+%.[0-9]+%.[0-9]+%.[0-9]+$") then
-            if not host_ip then
-                host_ip = parse_ipv4(s)
-            else
-                guest_ip = parse_ipv4(s)
-            end
-        elseif proto == nil and (s == "tcp" or s == "udp") then
-            proto = s
-        else
-            error("malformed --port-forward option")
-        end
-    end
-    host_ip = host_ip or parse_ipv4("127.0.0.1")
-    guest_ip = guest_ip or parse_ipv4("10.0.2.15")
-    assert(host_port, "malformed --port-forward option")
-    guest_port = guest_port or host_port
-    local is_udp = proto == "udp"
+    assert(host_port, "missing host port in port forward")
     virtio_net_user_config.hostfwd = virtio_net_user_config.hostfwd or {}
     table.insert(virtio_net_user_config.hostfwd, {
         is_udp = is_udp,
-        host_ip = host_ip,
-        guest_ip = guest_ip,
+        host_ip = host_ip or parse_ipv4("127.0.0.1"),
+        guest_ip = guest_ip or parse_ipv4("10.0.2.15"),
         host_port = host_port,
-        guest_port = guest_port,
+        guest_port = guest_port or host_port,
     })
     return true
 end
 
-local function handle_virtio_net(mode, opts)
-    if not mode then return false end
+local function handle_virtio_net(mode)
     processor.registers.iunrep = 1
     if mode == "user" then
         if not virtio_net_user_config then
@@ -1127,13 +1131,12 @@ local function handle_virtio_net(mode, opts)
             table.insert(virtio, virtio_net_user_config)
         end
     else
-        table.insert(virtio, { type = "net-tuntap", iface = opts })
+        table.insert(virtio, { type = "net-tuntap", iface = mode })
     end
     return true
 end
 
-local function handle_network_option(opts)
-    if not opts then return false end
+local function handle_network_option()
     if has_network then return true end
     handle_virtio_net("user")
     has_network = true
@@ -1200,7 +1203,7 @@ end
 --     leading argument (callbacks that ignore the hint declare `_`).
 options = {
     {
-        "^%-h$",
+        "--help",
         function()
             print_help()
             os.exit()
@@ -1208,19 +1211,11 @@ options = {
         end,
     },
     {
-        "^%-%-help$",
-        function()
-            print_help()
-            os.exit()
-            -- return true
-        end,
-    },
-    {
-        "^%-%-bash%-completion$",
+        "--bash-completion",
         handle_bash_completion,
     },
     {
-        "^%-%-version$",
+        "--version",
         function()
             print(string.format("cartesi-machine %s", cartesi.VERSION))
             if cartesi.GIT_COMMIT then print(string.format("git commit: %s", cartesi.GIT_COMMIT)) end
@@ -1233,7 +1228,7 @@ options = {
         end,
     },
     {
-        "^%-%-version%-json$",
+        "--version-json",
         function()
             print("{")
             print(string.format('  "version": "%s",', cartesi.VERSION))
@@ -1253,8 +1248,10 @@ options = {
         end,
     },
     {
-        "^%-%-assert%-version%=(%d+)%.(%d+)%.?(%d*)$",
-        function(major, minor, patch)
+        "--assert-version=",
+        function(_, all, v)
+            local major, minor, patch = v:match("^(%d+)%.(%d+)%.?(%d*)$")
+            assertf(major, "invalid option %s", all)
             major, minor, patch = tonumber(major), tonumber(minor), tonumber(patch)
             if
                 major ~= cartesi.VERSION_MAJOR
@@ -1275,8 +1272,8 @@ options = {
         end,
     },
     {
-        "^%-%-dtb%-image%=(.+)$",
-        function(_, opts)
+        "--dtb-image=",
+        function(_, _, opts)
             dtb.backing_store = dtb.backing_store or {}
             dtb.backing_store.data_filename = opts
             return true
@@ -1284,15 +1281,15 @@ options = {
         "file",
     },
     {
-        "^%-%-no%-bootargs$",
+        "--no-bootargs",
         function()
             dtb.bootargs = ""
             return true
         end,
     },
     {
-        "^%-%-append%-bootargs%=(.+)$",
-        function(opts)
+        "--append-bootargs=",
+        function(_, _, opts)
             if #append_bootargs == 0 then
                 append_bootargs = opts
             else
@@ -1302,7 +1299,7 @@ options = {
         end,
     },
     {
-        "^(%-%-dtb%=(.+))$",
+        "--dtb=",
         function(keys, all, opts)
             dtb.backing_store = parse_backing_store(keys, all, opts, dtb.backing_store)
             return true
@@ -1310,7 +1307,7 @@ options = {
         backing_store_keys,
     },
     {
-        "^(%-%-processor%=(.+))$",
+        "--processor=",
         function(keys, all, opts)
             processor.backing_store = parse_backing_store(keys, all, opts, processor.backing_store)
             return true
@@ -1318,7 +1315,7 @@ options = {
         backing_store_keys,
     },
     {
-        "^(%-%-uarch%-processor%=(.+))$",
+        "--uarch-processor=",
         function(keys, all, opts)
             uarch.processor.backing_store = parse_backing_store(keys, all, opts, uarch.processor.backing_store)
             return true
@@ -1326,29 +1323,29 @@ options = {
         backing_store_keys,
     },
     {
-        "^%-%-ram%-length%=(.+)$",
-        function(n)
+        "--ram-length=",
+        function(_, _, n)
             ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
             return true
         end,
     },
     {
-        "^%-%-ram%-image%=(.+)$",
-        function(_, opts)
+        "--ram-image=",
+        function(_, _, opts)
             ram.backing_store.data_filename = opts
             return true
         end,
         "file",
     },
     {
-        "^%-%-no%-ram%-image$",
+        "--no-ram-image",
         function()
             ram.backing_store.data_filename = ""
             return true
         end,
     },
     {
-        "^(%-%-ram%=(.+))$",
+        "--ram=",
         function(keys, all, opts)
             ram.backing_store = parse_backing_store(keys, all, opts, ram.backing_store)
             return true
@@ -1356,7 +1353,7 @@ options = {
         backing_store_keys,
     },
     {
-        "^(%-%-pmas%=(.+))$",
+        "--pmas=",
         function(keys, all, opts)
             pmas.backing_store = parse_backing_store(keys, all, opts, pmas.backing_store)
             return true
@@ -1364,15 +1361,15 @@ options = {
         backing_store_keys,
     },
     {
-        "^%-%-uarch%-ram%-image%=(.+)$",
-        function(_, opts)
+        "--uarch-ram-image=",
+        function(_, _, opts)
             uarch.ram.backing_store.data_filename = opts
             return true
         end,
         "file",
     },
     {
-        "^(%-%-uarch%-ram%=(.+))$",
+        "--uarch-ram=",
         function(keys, all, opts)
             uarch.ram.backing_store = parse_backing_store(keys, all, opts, uarch.ram.backing_store)
             return true
@@ -1380,7 +1377,7 @@ options = {
         backing_store_keys,
     },
     {
-        "^(%-%-hash%-tree%=(.+))$",
+        "--hash-tree=",
         function(keys, all, opts)
             local h = util.parse_options(keys, all, opts)
             h.sht_filename = h.sht_filename or ""
@@ -1400,66 +1397,112 @@ options = {
         },
     },
     {
-        "^%-%-unreproducible$",
+        "--unreproducible",
         function()
             processor.registers.iunrep = 1
             return true
         end,
     },
     {
-        "^%-%-sync%-init%-date$",
+        "--sync-init-date",
         handle_sync_init_date,
     },
     {
-        "^%-%-virtio%-9p%=([%w_-]+):(.*)$",
-        handle_virtio_9p,
+        "--virtio-9p=",
+        function(keys, all, opts)
+            local p = util.parse_options(keys, all, opts)
+            assertf(p.tag and p.host_directory, "need tag and host_directory in %s", all)
+            return handle_virtio_9p(p.tag, p.host_directory)
+        end,
+        { tag = "string", host_directory = "dir" },
     },
     {
-        "^%-v%=([^:]+):(.*)$",
-        handle_volume_option,
+        "--volume=",
+        function(keys, all, opts)
+            local v = util.parse_options(keys, all, opts)
+            assertf(v.host_directory and v.guest_directory, "need host_directory and guest_directory in %s", all)
+            return handle_volume_option(v.host_directory, v.guest_directory)
+        end,
+        { host_directory = "dir", guest_directory = "dir" },
     },
     {
-        "^%-%-volume%=([^:]+):(.*)$",
-        handle_volume_option,
+        -- docker bind-mount short form: -v <host_dir>:<guest_dir>
+        "-v=",
+        function(_, all, value)
+            local host_dir, guest_dir = value:match("^([^:]+):(.+)$")
+            assertf(host_dir, "invalid option %s", all)
+            return handle_volume_option(host_dir, guest_dir)
+        end,
+        "dir",
     },
     {
-        "^%-%-virtio%-console$",
+        "--virtio-console",
         handle_virtio_console,
     },
     {
-        "^%-%-virtio%-net%=([%w+]+),?([%w:,]*)$",
-        handle_virtio_net,
+        "--virtio-net=",
+        function(_, _, value) return handle_virtio_net(value) end,
     },
     {
-        "^%-%-network=?([%w:,]*)$",
+        "--network",
         handle_network_option,
     },
     {
-        "^%-n=?([%w:,]*)$",
+        "-n",
         handle_network_option,
     },
     {
-        "^%-%-port%-forward=([0-9:.]+/?[udptcp]*)$",
-        handle_port_forward_option,
+        "--port-forward=",
+        function(keys, all, opts)
+            local p = util.parse_options(keys, all, opts)
+            assertf(p.host_address, "need host_address in %s", all)
+            local host_ip, host_port = parse_port_forward_address(p.host_address, all)
+            local guest_ip, guest_port
+            if p.guest_address then
+                guest_ip, guest_port = parse_port_forward_address(p.guest_address, all)
+            end
+            return add_port_forward(host_ip, host_port, guest_ip, guest_port, p.protocol == "udp")
+        end,
+        { host_address = "string", guest_address = "string", protocol = { tcp = "tcp", udp = "udp" } },
     },
     {
-        "^%-p=([0-9:.]+/?[udptcp]*)$",
-        handle_port_forward_option,
+        -- docker publish short form: -p [hostip:]hostport:guestport[/protocol]
+        "-p=",
+        function(_, all, value)
+            local body, protocol = value:match("^(.-)/([a-z]+)$")
+            if not body then
+                body, protocol = value, "tcp"
+            end
+            assertf(protocol == "tcp" or protocol == "udp", "invalid protocol in %s", all)
+            local host_ip, host_port, guest_port = body:match("^(%d+%.%d+%.%d+%.%d+):(%d+):(%d+)$")
+            if host_ip then
+                return add_port_forward(
+                    parse_ipv4(host_ip),
+                    tonumber(host_port),
+                    nil,
+                    tonumber(guest_port),
+                    protocol == "udp"
+                )
+            end
+            host_port, guest_port = body:match("^(%d+):(%d+)$")
+            assertf(host_port, "invalid option %s", all)
+            return add_port_forward(nil, tonumber(host_port), nil, tonumber(guest_port), protocol == "udp")
+        end,
     },
     {
-        "^%-%-htif%-console%-getchar$",
+        "--htif-console-getchar",
         handle_htif_console_getchar,
     },
     {
-        "^%-i$",
+        "-i",
         handle_htif_console_getchar,
     },
     {
-        "^%-it$",
+        "-it",
         handle_interactive,
     },
     {
-        "^(%-%-console%-io%=(.+))$",
+        "--console-io=",
         function(keys, all, opts)
             local c = util.parse_options(keys, all, opts)
             if c.output_fd then
@@ -1532,23 +1575,21 @@ options = {
         },
     },
     {
-        "^%-%-no%-htif%-yield%-manual$",
-        function(all)
-            if not all then return false end
+        "--no-htif-yield-manual",
+        function()
             processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_MANUAL_MASK
             return true
         end,
     },
     {
-        "^%-%-no%-htif%-yield%-automatic$",
-        function(all)
-            if not all then return false end
+        "--no-htif-yield-automatic",
+        function()
             processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
             return true
         end,
     },
     {
-        "^(%-%-flash%-drive%=(.+))$",
+        "--flash-drive=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
             if f.label and flash_label_to_index[f.label] then
@@ -1564,6 +1605,7 @@ options = {
             return true
         end,
         {
+            "data_filename", -- positional: --flash-drive=foo.ext2
             label = "string",
             data_filename = "file",
             dht_filename = "file",
@@ -1580,7 +1622,7 @@ options = {
         },
     },
     {
-        "^(%-%-nvram%=(.+))$",
+        "--nvram=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
             if f.label and nvram_label_to_index[f.label] then
@@ -1594,6 +1636,7 @@ options = {
             return true
         end,
         {
+            "data_filename", -- positional: --nvram=foo.bin
             label = "string",
             data_filename = "file",
             dht_filename = "file",
@@ -1608,7 +1651,7 @@ options = {
         },
     },
     {
-        "^(%-%-replace%-memory%-range%=(.+))$",
+        "--replace-memory-range=",
         function(keys, all, opts)
             local f = parse_memory_range(keys, all, opts)
             memory_range_replace[#memory_range_replace + 1] = f
@@ -1626,7 +1669,7 @@ options = {
         },
     },
     {
-        "^(%-%-cmio%-advance%-state%=(.+))$",
+        "--cmio-advance-state=",
         function(keys, all, opts)
             local r = util.parse_options(keys, all, opts)
             r.input = r.input or "input-%i.bin"
@@ -1650,7 +1693,7 @@ options = {
         },
     },
     {
-        "^(%-%-cmio%-inspect%-state%=(.+))$",
+        "--cmio-inspect-state=",
         function(keys, all, opts)
             local r = util.parse_options(keys, all, opts)
             r.query = r.query or "query.bin"
@@ -1665,9 +1708,8 @@ options = {
         },
     },
     {
-        "^%-%-cmio%-inspect%-state$",
-        function(all)
-            if not all then return false end
+        "--cmio-inspect-state",
+        function()
             cmio_inspect = {
                 query = "query.bin",
                 report = "query-report-%o.bin",
@@ -1676,7 +1718,7 @@ options = {
         end,
     },
     {
-        "^(%-%-concurrency%=(.+))$",
+        "--concurrency=",
         function(keys, all, opts)
             local c = util.parse_options(keys, all, opts)
             c.update_hash_tree = assertf(c.update_hash_tree, "invalid update_hash_tree number in %s", all)
@@ -1686,28 +1728,26 @@ options = {
         { update_hash_tree = "number" },
     },
     {
-        "^%-%-skip%-version%-check$",
-        function(all)
-            if not all then return false end
+        "--skip-version-check",
+        function()
             skip_version_check = true
             return true
         end,
     },
     {
-        "^%-%-no%-reserve$",
-        function(all)
-            if not all then return false end
+        "--no-reserve",
+        function()
             no_reserve = true
             return true
         end,
     },
     {
-        "^(%-%-initial%-proof%=(.+))$",
+        "--initial-proof=",
         function(keys, all, opts)
             local p = util.parse_options(keys, all, opts)
             assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
-            p.format = "lua"
+            p.format = resolve_format(p.format, p.filename)
             initial_proof[#initial_proof + 1] = p
             return true
         end,
@@ -1716,16 +1756,16 @@ options = {
             address = "number",
             log2_size = "number",
             filename = "file",
+            format = { lua = "lua", json = "json" },
         },
     },
     {
-        "^(%-%-final%-proof%=(.+))$",
+        "--final-proof=",
         function(keys, all, opts)
-            if not opts then return false end
             local p = util.parse_options(keys, all, opts)
             assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
             p.cmdline = all
-            p.format = "lua"
+            p.format = resolve_format(p.format, p.filename)
             final_proof[#final_proof + 1] = p
             return true
         end,
@@ -1734,47 +1774,12 @@ options = {
             address = "number",
             log2_size = "number",
             filename = "file",
+            format = { lua = "lua", json = "json" },
         },
     },
     {
-        "^(%-%-initial%-json%-proof%=(.+))$",
-        function(keys, all, opts)
-            local p = util.parse_options(keys, all, opts)
-            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
-            p.cmdline = all
-            p.format = "json"
-            initial_proof[#initial_proof + 1] = p
-            return true
-        end,
-        {
-            label = "string",
-            address = "number",
-            log2_size = "number",
-            filename = "file",
-        },
-    },
-    {
-        "^(%-%-final%-json%-proof%=(.+))$",
-        function(keys, all, opts)
-            if not opts then return false end
-            local p = util.parse_options(keys, all, opts)
-            assertf(p.address and p.log2_size or p.label, "need address and log2_size or label in %s", all)
-            p.format = "json"
-            p.cmdline = all
-            final_proof[#final_proof + 1] = p
-            return true
-        end,
-        {
-            label = "string",
-            address = "number",
-            log2_size = "number",
-            filename = "file",
-        },
-    },
-    {
-        "^%-%-no%-root%-flash%-drive$",
-        function(all)
-            if not all then return false end
+        "--no-root-flash-drive",
+        function()
             assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
             flash_drives[1] = nil
             flash_label_to_index.root = nil
@@ -1784,89 +1789,87 @@ options = {
         end,
     },
     {
-        "^%-%-dump%-address%-ranges(%=?)(%g*)$",
-        function(_, opts, v)
-            if not opts then return false end
-            if opts == "=" then
-                if not v or #v < 1 then return false end
-                dump_address_ranges_dir = v
-            elseif #v ~= 0 then
-                return false
-            else
-                dump_address_ranges_dir = true
-            end
+        "--dump-address-ranges",
+        function()
+            dump_address_ranges_dir = true
             return true
         end,
-        "dir?",
     },
     {
-        "^%-%-assert%-rolling%-template$",
-        function(all)
-            if not all then return false end
+        "--dump-address-ranges=",
+        function(_, _, v)
+            dump_address_ranges_dir = v
+            return true
+        end,
+        "dir",
+    },
+    {
+        "--assert-rolling-template",
+        function()
             assert_rolling_template = true
             return true
         end,
     },
     {
-        "^%-%-quiet$",
-        function(all)
-            if not all then return false end
+        "--quiet",
+        function()
             stderr = function() end
             return true
         end,
     },
     {
-        "^%-%-log%-step%=(.*),(.*)$",
-        function(count, filename)
-            if (not count) or not filename then return false end
-            log_step_mcycle_count = assertf(util.parse_number(count), "invalid steps %s", count)
-            log_step_filename = filename
+        "--log-step=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename and o.count, "need filename and count in %s", all)
+            log_step_mcycle_count = o.count
+            log_step_filename = o.filename
             return true
         end,
+        {
+            "filename",
+            filename = "file",
+            count = "number",
+        },
     },
     {
-        "^%-%-log%-step%-uarch$",
-        function(all)
-            if not all then return false end
+        "--log-step-uarch",
+        function()
             log_step_uarch = true
             return true
         end,
     },
     {
-        "^%-%-log%-reset%-uarch$",
-        function(all)
-            if not all then return false end
+        "--log-reset-uarch",
+        function()
             log_reset_uarch = true
             return true
         end,
     },
     {
-        "^(%-%-max%-mcycle%=(.*))$",
-        function(all, n)
-            if not n then return false end
+        "--max-mcycle=",
+        function(_, all, n)
             max_mcycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
     {
-        "^(%-%-max%-uarch%-cycle%=(.*))$",
-        function(all, n)
-            if not n then return false end
+        "--max-uarch-cycle=",
+        function(_, all, n)
             max_uarch_cycle = assertf(util.parse_number(n), "invalid option %s", all)
             return true
         end,
     },
     {
-        "^%-%-auto%-reset%-uarch$",
-        function(all)
-            if not all then return false end
+        "--auto-reset-uarch",
+        function()
             auto_reset_uarch = true
             return true
         end,
     },
     {
-        "^%-%-create%=(.*)$",
-        function(_, opts)
+        "--create=",
+        function(_, _, opts)
             if not opts or #opts < 1 then return false end
             create_dir = opts
             return true
@@ -1874,218 +1877,189 @@ options = {
         "dir",
     },
     {
-        "^%-%-load%=(([^,]+),?(.*))$",
-        function(all, dir, opts)
-            if not all or not dir then return false end
-            if #opts > 0 then
-                local o = util.parse_options({
-                    clone = "dir",
-                    sharing = {
-                        none = cartesi.SHARING_NONE,
-                        config = cartesi.SHARING_CONFIG,
-                        all = cartesi.SHARING_ALL,
-                    },
-                }, all, opts)
-                clone_dir = o.clone
-                load_sharing = o.sharing
-                if clone_dir and not load_sharing then load_sharing = cartesi.SHARING_ALL end
-            end
-            load_dir = dir
+        "--load=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.directory, "need directory in %s", all)
+            clone_dir = o.clone
+            load_sharing = to_sharing(o.sharing)
+            if clone_dir and not load_sharing then load_sharing = cartesi.SHARING_ALL end
+            load_dir = o.directory
             return true
         end,
+        {
+            "directory",
+            directory = "dir",
+            clone = "dir",
+            sharing = { none = "none", config = "config", all = "all" },
+        },
     },
     {
-        "^%-%-store%=(([^,]+),?(.*))$",
-        function(all, dir, opts)
-            if not all or not dir then return false end
-            if #opts > 0 then
-                local o = util.parse_options({
-                    sharing = {
-                        none = cartesi.SHARING_NONE,
-                        config = cartesi.SHARING_CONFIG,
-                        all = cartesi.SHARING_ALL,
-                    },
-                }, all, opts)
-                store_sharing = o.sharing
-            end
-            store_dir = dir
+        "--store=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.directory, "need directory in %s", all)
+            store_sharing = to_sharing(o.sharing)
+            store_dir = o.directory
             return true
         end,
+        {
+            "directory",
+            directory = "dir",
+            sharing = { none = "none", config = "config", all = "all" },
+        },
     },
     {
-        "^%-%-remote%-spawn$",
-        function(opts)
-            if not opts then return false end
+        "--remote-spawn",
+        function()
             remote_spawn = true
             return true
         end,
     },
     {
-        "^%-%-remote%-address%=(.*)$",
-        function(opts)
+        "--remote-address=",
+        function(_, _, opts)
             if not opts or #opts < 1 then return false end
             remote_address = opts
             return true
         end,
     },
     {
-        "^%-%-remote%-fork(%=?)(.*)$",
-        function(_, opts, v)
-            if not opts then return false end
-            if opts == "=" then
-                if not v or #v < 1 then return false end
-                remote_fork = v
-            elseif #v ~= 0 then
-                return false
-            else
-                remote_fork = true
-            end
+        "--remote-fork",
+        function()
+            remote_fork = true
             return true
         end,
-        "hostport?",
     },
     {
-        "^%-%-remote%-health%-check$",
-        function(opts)
-            if not opts then return false end
+        "--remote-fork=",
+        function(_, _, v)
+            remote_fork = v
+            return true
+        end,
+        "hostport",
+    },
+    {
+        "--remote-health-check",
+        function()
             remote_health_check = true
             return true
         end,
     },
     {
-        "^%-%-remote%-shutdown$",
-        function(opts)
-            if not opts then return false end
+        "--remote-shutdown",
+        function()
             remote_shutdown = true
             return true
         end,
     },
     {
-        "^%-%-no%-remote%-create$",
-        function(opts)
-            if not opts then return false end
+        "--no-remote-create",
+        function()
             remote_create = false
             return true
         end,
     },
     {
-        "^%-%-no%-remote%-destroy$",
-        function(opts)
-            if not opts then return false end
+        "--no-remote-destroy",
+        function()
             remote_destroy = false
             return true
         end,
     },
     {
-        "^%-%-no%-rollback$",
-        function(opts)
-            if not opts then return false end
+        "--no-rollback",
+        function()
             perform_rollbacks = false
             return true
         end,
     },
     {
-        "^%-%-initial%-hash$",
-        function(all)
-            if not all then return false end
+        "--initial-hash",
+        function()
             initial_hash = true
             return true
         end,
     },
     {
-        "^%-%-final%-hash$",
-        function(all)
-            if not all then return false end
+        "--final-hash",
+        function()
             final_hash = true
             return true
         end,
     },
     {
-        "^(%-%-periodic%-hashes%=(.*))$",
-        function(all, v)
-            if not v then return false end
-            string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
-                periodic_hashes_period = assertf(util.parse_number(p), "invalid period %s", all)
-                periodic_hashes_start = assertf(util.parse_number(s), "invalid start %s", all)
-            end)
-            if periodic_hashes_period == math.maxinteger then
-                periodic_hashes_period = assertf(util.parse_number(v), "invalid period %s", all)
-                periodic_hashes_start = 0
-            end
+        "--periodic-hashes=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            periodic_hashes_period = assertf(o.period, "need period in %s", all)
+            periodic_hashes_start = o.start or 0
             initial_hash = true
             final_hash = true
             return true
         end,
+        {
+            "period",
+            period = "number",
+            start = "number",
+        },
     },
     {
-        "^(%-%-dense%-uarch%-hashes%=(.*))$",
-        function(all, v)
-            if not v then return false end
-            string.gsub(v, "^([^%,]+),(.+)$", function(l, s)
-                dense_uarch_hashes_start = assertf(util.parse_number(s), "invalid start %s", all)
-                dense_uarch_hashes_end = dense_uarch_hashes_start
-                    + assertf(util.parse_number(l), "invalid length %s", all)
-            end)
-            if not dense_uarch_hashes_start then
-                dense_uarch_hashes_start = 0
-                dense_uarch_hashes_end = dense_uarch_hashes_start
-                    + assertf(util.parse_number(v), "invalid length %s", all)
-            end
+        "--dense-uarch-hashes=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.count, "need count in %s", all)
+            dense_uarch_hashes_start = o.start or 0
+            dense_uarch_hashes_end = dense_uarch_hashes_start + o.count
+            return true
+        end,
+        {
+            "count",
+            count = "number",
+            start = "number",
+        },
+    },
+    {
+        -- bare: dump config to stdout in Lua
+        "--store-config",
+        function()
+            store_config = true
+            store_config_format = resolve_format(nil, nil)
             return true
         end,
     },
     {
-        "^%-%-store%-config(%=?)(%g*)$",
-        function(_, opts, v)
-            if not opts then return false end
-            if opts == "=" then
-                if not v or #v < 1 then return false end
-                store_config = v
-            elseif #v ~= 0 then
-                return false
-            else
-                store_config = true
-            end
+        -- value: a positional filename and/or a format sub-key
+        "--store-config=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            store_config = o.filename or true
+            store_config_format = resolve_format(o.format, o.filename)
             return true
         end,
-        "file?",
+        {
+            "filename",
+            filename = "file",
+            format = { lua = "lua", json = "json" },
+        },
     },
     {
-        "^%-%-store%-json%-config(%=?)(%g*)$",
-        function(_, opts, v)
-            if not opts then return false end
-            if opts == "=" then
-                if not v or #v < 1 then return false end
-                store_json_config = v
-            elseif #v ~= 0 then
-                return false
-            else
-                store_json_config = true
-            end
+        "--load-config=",
+        function(keys, all, opts)
+            local o = util.parse_options(keys, all, opts)
+            assertf(o.filename, "need filename in %s", all)
+            load_config = o.filename
+            load_config_format = resolve_format(o.format, o.filename)
             return true
         end,
-        "file?",
+        {
+            "filename",
+            filename = "file",
+            format = { lua = "lua", json = "json" },
+        },
     },
     {
-        "^%-%-load%-config%=(%g*)$",
-        function(_, opts)
-            if not opts or #opts < 1 then return false end
-            load_config = opts
-            return true
-        end,
-        "file",
-    },
-    {
-        "^%-%-load%-json%-config%=(%g*)$",
-        function(_, opts)
-            if not opts or #opts < 1 then return false end
-            load_json_config = opts
-            return true
-        end,
-        "file",
-    },
-    {
-        "^(%-%-cmio%-rx%-buffer%=(.+))$",
+        "--cmio-rx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
             cmio.rx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.rx_buffer.backing_store)
@@ -2094,7 +2068,7 @@ options = {
         backing_store_keys,
     },
     {
-        "^(%-%-cmio%-tx%-buffer%=(.+))$",
+        "--cmio-tx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
             cmio.tx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.tx_buffer.backing_store)
@@ -2103,55 +2077,54 @@ options = {
         backing_store_keys,
     },
     {
-        "^%-%-no%-init%-splash$",
-        function(all)
-            if not all then return false end
+        "--no-init-splash",
+        function()
             init_splash = false
             return true
         end,
     },
     {
-        "^%-u%=(.+)$",
+        "-u=",
         handle_user,
     },
     {
-        "^%-%-user%=(.+)$",
+        "--user=",
         handle_user,
     },
     {
-        "^%-e%=([%w_]+)%=(.+)$",
+        "-e=",
         handle_env,
     },
     {
-        "^%-%-env%=([%w_]+)%=(.+)$",
+        "--env=",
         handle_env,
     },
     {
-        "^%-w%=(.+)$",
+        "-w=",
         handle_workdir,
     },
     {
-        "^%-%-workdir%=(.+)$",
+        "--workdir=",
         handle_workdir,
     },
     {
-        "^%-h%=(.+)$",
+        "-h=",
         handle_hostname,
     },
     {
-        "^%-%-hostname%=(.+)$",
+        "--hostname=",
         handle_hostname,
     },
     {
-        "^%-%-append%-init%=(.+)$",
-        function(opts)
+        "--append-init=",
+        function(_, _, opts)
             append_init = append_init .. opts .. "\n"
             return true
         end,
     },
     {
-        "^%-%-append%-init%-file%=(.+)$",
-        function(_, opts)
+        "--append-init-file=",
+        function(_, _, opts)
             local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
@@ -2161,15 +2134,15 @@ options = {
         "file",
     },
     {
-        "^%-%-append%-entrypoint%=(.+)$",
-        function(opts)
+        "--append-entrypoint=",
+        function(_, _, opts)
             append_entrypoint = append_entrypoint .. opts .. "\n"
             return true
         end,
     },
     {
-        "^%-%-append%-entrypoint%-file%=(.+)$",
-        function(_, opts)
+        "--append-entrypoint-file=",
+        function(_, _, opts)
             local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
@@ -2179,35 +2152,57 @@ options = {
         "file",
     },
     {
-        "^%-%-gdb(%=?)(.*)$",
-        function(_, eq, address)
-            if eq == "=" and address ~= "" then
-                gdb_address = address
-                return true
-            elseif eq == "" and address == "" then
-                gdb_address = "127.0.0.1:1234"
-                return true
-            end
-            return false
-        end,
-        "hostport?",
-    },
-    {
-        ".*",
-        function(all)
-            local not_option = all:sub(1, 1) ~= "-"
-            assertf(not_option or all == "--", "unrecognized option %s", all)
-            cmdline_opts_finished = true
-            if not_option then exec_arguments = { all } end
+        "--gdb",
+        function()
+            gdb_address = "127.0.0.1:1234"
             return true
         end,
     },
+    {
+        "--gdb=",
+        function(_, _, address)
+            gdb_address = address
+            return true
+        end,
+        "hostport",
+    },
 }
 
-local function tryoption(handler, hint, ...)
-    if select(1, ...) == nil then return false end
-    if hint == nil then return handler(...) end
-    return handler(hint, ...)
+-- Dispatch for a plain-string option name. A trailing "=" marks a
+-- value-taking option; otherwise the entry is a flag. The handler is always
+-- called as handler(hint, all, value), with value == nil for flags and "all"
+-- the option as typed (reconstructed as name=value for the short space form).
+-- A hint table may name a positional sub-key in its array part (hint[1]); that
+-- is read by parse_options, so it needs no separate threading here.
+-- Returns whether the entry matched and whether it consumed the next argument.
+local function try_named_option(option, a, nextarg)
+    local name, handler, hint = option[1], option[2], option[3]
+    if name:sub(-1) == "=" then
+        local bare = name:sub(1, #name - 1)
+        if a:sub(1, #name) == name then -- attached: --foo=value or -x=value
+            local value = a:sub(#name + 1)
+            assertf(#value > 0, "missing value for option %s", bare)
+            handler(hint, a, value)
+            return true, false
+        elseif a == bare and bare:sub(1, 2) ~= "--" then -- bare short name
+            -- short value options additionally take the value from the next argument
+            if nextarg ~= nil and nextarg:sub(1, 1) ~= "-" then
+                handler(hint, bare .. "=" .. nextarg, nextarg)
+                return true, true
+            end
+            if bare == "-h" then error("did you mean --help?") end
+            errorf("missing value for option %s", bare)
+        end
+        -- A bare long value option ("--foo" with no "=value") is left unmatched:
+        -- an optional-value sibling flag entry ("--foo") matches it, otherwise the
+        -- catch-all reports an unrecognized option (as it does today).
+        return false, false
+    end
+    if a == name then -- flag
+        handler(hint, a, nil)
+        return true, false
+    end
+    return false, false
 end
 
 if #arg == 1 and arg[1] == "--bash-completion" then handle_bash_completion() end
@@ -2224,15 +2219,35 @@ processor.registers.htif = {
     iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
     iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
 }
+to_sharing_map = {
+    none = cartesi.SHARING_NONE,
+    config = cartesi.SHARING_CONFIG,
+    all = cartesi.SHARING_ALL,
+}
 
 -- Process command line options
-for _, a in ipairs(arg) do
-    if not cmdline_opts_finished then
-        for _, option in ipairs(options) do
-            if tryoption(option[2], option[3], a:match(option[1])) then break end
-        end
-    else
+local argi = 1
+while argi <= #arg do
+    local a = arg[argi]
+    if cmdline_opts_finished then
         exec_arguments[#exec_arguments + 1] = a
+        argi = argi + 1
+    else
+        local nextarg = arg[argi + 1]
+        local matched, consumed = false, false
+        for _, option in ipairs(options) do
+            matched, consumed = try_named_option(option, a, nextarg)
+            if matched then break end
+        end
+        if not matched then
+            -- not a recognized option: "--" or a non-option argument ends
+            -- option processing; a leftover "-..." is an error.
+            local not_option = a:sub(1, 1) ~= "-"
+            assertf(not_option or a == "--", "unrecognized option %s", a)
+            cmdline_opts_finished = true
+            if not_option then exec_arguments = { a } end
+        end
+        argi = argi + (consumed and 2 or 1)
     end
 end
 
@@ -2454,7 +2469,10 @@ echo "
     if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
     if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end
 
-    if load_config then
+    if load_config and load_config_format == "json" then
+        local f <close> = assert(io.open(load_config, "rb"))
+        config = setmetatable(cartesi.fromjson(f:read("a")), { __index = config })
+    elseif load_config then
         local env = {}
         local chunk, err = loadfile(load_config, "t", env)
         if not chunk then
@@ -2467,9 +2485,6 @@ echo "
             error(ret)
         end
         config = setmetatable(ret, { __index = config })
-    elseif load_json_config then
-        local f <close> = assert(io.open(load_json_config, "rb"))
-        config = setmetatable(cartesi.fromjson(f:read("a")), { __index = config })
     end
 
     main_machine = main_machine:create(config, runtime_config, create_dir)
@@ -2495,16 +2510,9 @@ end
 
 if type(store_config) == "string" then
     local f <close> = assert(io.open(store_config, "w"))
-    serialize_config(f, main_config, "lua")
+    serialize_config(f, main_config, store_config_format)
 elseif store_config then
-    serialize_config(io.stdout, main_config, "lua")
-end
-
-if type(store_json_config) == "string" then
-    local f <close> = assert(io.open(store_json_config, "w"))
-    serialize_config(f, main_config, "json")
-elseif store_json_config then
-    serialize_config(io.stdout, main_config, "json")
+    serialize_config(io.stdout, main_config, store_config_format)
 end
 
 local cmio_yield_automatic_reason = {

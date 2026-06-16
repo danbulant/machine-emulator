@@ -20,7 +20,7 @@ Command line interface for the Cartesi Machine RISC0 zkVM prover.
 Pipeline:
 
 1) Generate a step log from the Cartesi Machine.
-   cartesi-machine --max-mcycle=0 --log-step=1,/tmp/step.log
+   cartesi-machine --max-mcycle=0 --log-step=/tmp/step.log,count:1
 
 2) Prove the step log (produces a STARK receipt).
    cartesi-risc0-cli prove <hash_before> /tmp/step.log 1 <hash_after> /tmp/receipt.bin
