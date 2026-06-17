@@ -851,60 +851,67 @@ local flash_drive_count = 1
 local nvram_label_to_index = {}
 local nvrams = {}
 local nvram_count = 0
-local virtio = {}
 local virtio_net_user_config
 local virtio_volume_count = 0
 local has_virtio_console = false
 local has_network = false
 local has_sync_init_date = false
 local memory_range_replace = {}
-local ram = {
-    length = 128 << 20, -- 128MB
-    backing_store = {
-        data_filename = images_path .. "linux.bin",
-        dht_filename = "",
-        dpt_filename = "",
-    },
-}
 local init_splash = true
 local append_bootargs = ""
 local append_init = ""
 local append_entrypoint = ""
-local dtb = {
-    init = "",
-    entrypoint = "",
-}
-local tlb = {}
-local cmio = {
-    rx_buffer = {},
-    tx_buffer = {},
-}
 local cmio_advance
 local cmio_inspect
-local processor = {
-    registers = {
-        iunrep = 0,
-    },
-}
-local uarch = {
+-- The machine configuration, assembled in place by the option handlers below and passed to
+-- machine:create. It is the requested ("command line") config; after creation, the machine's
+-- actual config is read back into initial_config.
+local cmdline_config = {
     processor = {
-        registers = {},
-        backing_store = {
-            data_filename = "",
-            dht_filename = "",
-            dpt_filename = "",
+        registers = {
+            iunrep = 0,
         },
     },
     ram = {
+        length = 128 << 20, -- 128MB
         backing_store = {
-            data_filename = "",
+            data_filename = images_path .. "linux.bin",
             dht_filename = "",
             dpt_filename = "",
         },
     },
+    dtb = {
+        init = "",
+        entrypoint = "",
+    },
+    flash_drive = {},
+    nvram = {},
+    tlb = {},
+    virtio = {},
+    cmio = {
+        rx_buffer = {},
+        tx_buffer = {},
+    },
+    pmas = {},
+    uarch = {
+        processor = {
+            registers = {},
+            backing_store = {
+                data_filename = "",
+                dht_filename = "",
+                dpt_filename = "",
+            },
+        },
+        ram = {
+            backing_store = {
+                data_filename = "",
+                dht_filename = "",
+                dpt_filename = "",
+            },
+        },
+    },
+    hash_tree = {},
 }
-local pmas = {}
-local hash_tree = {}
 local console = {}
 local concurrency_update_hash_tree = 0
 local skip_version_check = false
@@ -1037,7 +1044,7 @@ end
 
 local function handle_sync_init_date()
     if has_sync_init_date then return true end
-    processor.registers.iunrep = 1
+    cmdline_config.processor.registers.iunrep = 1
     has_sync_init_date = true
     -- round up time by 1, to decrease chance of guest time being in the past
     local seconds = os.time() + 1
@@ -1046,16 +1053,16 @@ local function handle_sync_init_date()
 end
 
 local function handle_virtio_9p(tag, host_directory)
-    processor.registers.iunrep = 1
-    table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    cmdline_config.processor.registers.iunrep = 1
+    table.insert(cmdline_config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     return true
 end
 
 local function handle_volume_option(host_directory, guest_directory)
-    processor.registers.iunrep = 1
+    cmdline_config.processor.registers.iunrep = 1
     local tag = "vfs" .. virtio_volume_count
     virtio_volume_count = virtio_volume_count + 1
-    table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    table.insert(cmdline_config.virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     append_init = append_init .. "busybox mkdir -p " .. guest_directory .. " && "
     append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
     -- sync guest date with host date, otherwise file system updates will have wrong dates
@@ -1064,8 +1071,9 @@ local function handle_volume_option(host_directory, guest_directory)
 end
 
 local function handle_htif_console_getchar()
-    processor.registers.htif.iconsole = processor.registers.htif.iconsole | cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK
-    processor.registers.iunrep = 1
+    cmdline_config.processor.registers.htif.iconsole = cmdline_config.processor.registers.htif.iconsole
+        | cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK
+    cmdline_config.processor.registers.iunrep = 1
     console.input_source = console.input_source or "from_stdin"
     console.output_flush_mode = console.output_flush_mode or "every_char"
     return true
@@ -1124,14 +1132,14 @@ local function add_port_forward(host_ip, host_port, guest_ip, guest_port, is_udp
 end
 
 local function handle_virtio_net(mode)
-    processor.registers.iunrep = 1
+    cmdline_config.processor.registers.iunrep = 1
     if mode == "user" then
         if not virtio_net_user_config then
             virtio_net_user_config = { type = "net-user" }
-            table.insert(virtio, virtio_net_user_config)
+            table.insert(cmdline_config.virtio, virtio_net_user_config)
         end
     else
-        table.insert(virtio, { type = "net-tuntap", iface = mode })
+        table.insert(cmdline_config.virtio, { type = "net-tuntap", iface = mode })
     end
     return true
 end
@@ -1155,13 +1163,13 @@ end
 
 local function handle_virtio_console()
     if has_virtio_console then return true end
-    processor.registers.iunrep = 1
+    cmdline_config.processor.registers.iunrep = 1
     console.input_source = console.input_source or "from_stdin"
     console.output_flush_mode = console.output_flush_mode or "every_char"
     has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
-    dtb.bootargs = dtb.bootargs:gsub("console=hvc0", "console=hvc1")
-    table.insert(virtio, 1, { type = "console" })
+    cmdline_config.dtb.bootargs = cmdline_config.dtb.bootargs:gsub("console=hvc0", "console=hvc1")
+    table.insert(cmdline_config.virtio, 1, { type = "console" })
     return true
 end
 
@@ -1274,8 +1282,8 @@ options = {
     {
         "--dtb-image=",
         function(_, _, opts)
-            dtb.backing_store = dtb.backing_store or {}
-            dtb.backing_store.data_filename = opts
+            cmdline_config.dtb.backing_store = cmdline_config.dtb.backing_store or {}
+            cmdline_config.dtb.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1283,7 +1291,7 @@ options = {
     {
         "--no-bootargs",
         function()
-            dtb.bootargs = ""
+            cmdline_config.dtb.bootargs = ""
             return true
         end,
     },
@@ -1301,7 +1309,7 @@ options = {
     {
         "--dtb=",
         function(keys, all, opts)
-            dtb.backing_store = parse_backing_store(keys, all, opts, dtb.backing_store)
+            cmdline_config.dtb.backing_store = parse_backing_store(keys, all, opts, cmdline_config.dtb.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1309,7 +1317,8 @@ options = {
     {
         "--processor=",
         function(keys, all, opts)
-            processor.backing_store = parse_backing_store(keys, all, opts, processor.backing_store)
+            cmdline_config.processor.backing_store =
+                parse_backing_store(keys, all, opts, cmdline_config.processor.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1317,7 +1326,8 @@ options = {
     {
         "--uarch-processor=",
         function(keys, all, opts)
-            uarch.processor.backing_store = parse_backing_store(keys, all, opts, uarch.processor.backing_store)
+            cmdline_config.uarch.processor.backing_store =
+                parse_backing_store(keys, all, opts, cmdline_config.uarch.processor.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1325,14 +1335,14 @@ options = {
     {
         "--ram-length=",
         function(_, _, n)
-            ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
+            cmdline_config.ram.length = assertf(util.parse_number(n), "invalid RAM length %s", n)
             return true
         end,
     },
     {
         "--ram-image=",
         function(_, _, opts)
-            ram.backing_store.data_filename = opts
+            cmdline_config.ram.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1340,14 +1350,14 @@ options = {
     {
         "--no-ram-image",
         function()
-            ram.backing_store.data_filename = ""
+            cmdline_config.ram.backing_store.data_filename = ""
             return true
         end,
     },
     {
         "--ram=",
         function(keys, all, opts)
-            ram.backing_store = parse_backing_store(keys, all, opts, ram.backing_store)
+            cmdline_config.ram.backing_store = parse_backing_store(keys, all, opts, cmdline_config.ram.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1355,7 +1365,7 @@ options = {
     {
         "--pmas=",
         function(keys, all, opts)
-            pmas.backing_store = parse_backing_store(keys, all, opts, pmas.backing_store)
+            cmdline_config.pmas.backing_store = parse_backing_store(keys, all, opts, cmdline_config.pmas.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1363,7 +1373,7 @@ options = {
     {
         "--uarch-ram-image=",
         function(_, _, opts)
-            uarch.ram.backing_store.data_filename = opts
+            cmdline_config.uarch.ram.backing_store.data_filename = opts
             return true
         end,
         "file",
@@ -1371,7 +1381,8 @@ options = {
     {
         "--uarch-ram=",
         function(keys, all, opts)
-            uarch.ram.backing_store = parse_backing_store(keys, all, opts, uarch.ram.backing_store)
+            cmdline_config.uarch.ram.backing_store =
+                parse_backing_store(keys, all, opts, cmdline_config.uarch.ram.backing_store)
             return true
         end,
         backing_store_keys,
@@ -1384,7 +1395,7 @@ options = {
             h.phtc_filename = h.phtc_filename or ""
             h.hash_function = h.hash_function or "keccak256"
             for i, v in pairs(h) do
-                hash_tree[i] = v
+                cmdline_config.hash_tree[i] = v
             end
             return true
         end,
@@ -1399,7 +1410,7 @@ options = {
     {
         "--unreproducible",
         function()
-            processor.registers.iunrep = 1
+            cmdline_config.processor.registers.iunrep = 1
             return true
         end,
     },
@@ -1577,14 +1588,16 @@ options = {
     {
         "--no-htif-yield-manual",
         function()
-            processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_MANUAL_MASK
+            cmdline_config.processor.registers.htif.iyield = cmdline_config.processor.registers.htif.iyield
+                & ~cartesi.HTIF_YIELD_CMD_MANUAL_MASK
             return true
         end,
     },
     {
         "--no-htif-yield-automatic",
         function()
-            processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
+            cmdline_config.processor.registers.htif.iyield = cmdline_config.processor.registers.htif.iyield
+                & ~cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
             return true
         end,
     },
@@ -1783,8 +1796,10 @@ options = {
             assert(flash_drives[1] and flash_drives[1].label == "root", "no root flash drive to remove")
             flash_drives[1] = nil
             flash_label_to_index.root = nil
-            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT_PART:gsub("[^%w]", "%%%1"), "")
-            dtb.bootargs = dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_INIT_PART:gsub("[^%w]", "%%%1"), "")
+            cmdline_config.dtb.bootargs =
+                cmdline_config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_ROOT_PART:gsub("[^%w]", "%%%1"), "")
+            cmdline_config.dtb.bootargs =
+                cmdline_config.dtb.bootargs:gsub(cartesi.DTB_BOOTARGS_INIT_PART:gsub("[^%w]", "%%%1"), "")
             return true
         end,
     },
@@ -2062,7 +2077,8 @@ options = {
         "--cmio-rx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
-            cmio.rx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.rx_buffer.backing_store)
+            cmdline_config.cmio.rx_buffer.backing_store =
+                parse_backing_store(keys, all, opts, cmdline_config.cmio.rx_buffer.backing_store)
             return true
         end,
         backing_store_keys,
@@ -2071,7 +2087,8 @@ options = {
         "--cmio-tx-buffer=",
         function(keys, all, opts)
             if not opts then return false end
-            cmio.tx_buffer.backing_store = parse_backing_store(keys, all, opts, cmio.tx_buffer.backing_store)
+            cmdline_config.cmio.tx_buffer.backing_store =
+                parse_backing_store(keys, all, opts, cmdline_config.cmio.tx_buffer.backing_store)
             return true
         end,
         backing_store_keys,
@@ -2213,9 +2230,9 @@ util = require("cartesi.util")
 
 -- And perform the dependant initializations
 local default_config = cartesi.machine:get_default_config()
-dtb.bootargs = default_config.dtb.bootargs
-hash_tree.hash_function = default_config.hash_tree.hash_function
-processor.registers.htif = {
+cmdline_config.dtb.bootargs = default_config.dtb.bootargs
+cmdline_config.hash_tree.hash_function = default_config.hash_tree.hash_function
+cmdline_config.processor.registers.htif = {
     iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
     iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
 }
@@ -2357,20 +2374,8 @@ if load_dir then
     if clone_dir then main_machine:clone_stored(clone_dir, load_dir) end
     main_machine = main_machine:load(load_dir, runtime_config, load_sharing)
 elseif not (remote_address and not remote_create) then
-    -- Build machine config
-    local config = {
-        processor = processor,
-        ram = ram,
-        dtb = dtb,
-        flash_drive = {},
-        nvram = {},
-        tlb = tlb,
-        virtio = virtio,
-        cmio = cmio,
-        pmas = pmas,
-        uarch = uarch,
-        hash_tree = hash_tree,
-    }
+    -- Use the command-line config (a --load-config file may still override it below).
+    local config = cmdline_config
 
     -- show splash on init
     if init_splash then
@@ -2418,7 +2423,7 @@ echo "
                 entry.mount = false
             end
             if entry.label == "root" and entry.read_only then -- Mount root filesystem as read-only
-                dtb.bootargs = dtb.bootargs:gsub("%f[^%s%z]rw%f[%s%z]", "ro")
+                config.dtb.bootargs = config.dtb.bootargs:gsub("%f[^%s%z]rw%f[%s%z]", "ro")
             end
             config.flash_drive[#config.flash_drive + 1] = entry
             if entry.label ~= "root" and (entry.mke2fs or entry.mount or entry.user) then
@@ -2501,7 +2506,7 @@ local function serialize_config(out, config, format)
 end
 
 -- obtain config from instantiated machine
-local main_config = main_machine:get_initial_config()
+local initial_config = main_machine:get_initial_config()
 
 for _, r in ipairs(memory_range_replace) do
     set_empty_omitted_filenames(r)
@@ -2510,9 +2515,9 @@ end
 
 if type(store_config) == "string" then
     local f <close> = assert(io.open(store_config, "w"))
-    serialize_config(f, main_config, store_config_format)
+    serialize_config(f, initial_config, store_config_format)
 elseif store_config then
-    serialize_config(io.stdout, main_config, store_config_format)
+    serialize_config(io.stdout, initial_config, store_config_format)
 end
 
 local cmio_yield_automatic_reason = {
@@ -2638,7 +2643,6 @@ local function dump_address_ranges(machine, dir)
 end
 
 local machine = main_machine
-local config = main_config
 local gdb_stub
 if gdb_address then
     assert(
@@ -2650,16 +2654,16 @@ if gdb_address then
     assert(address and port, "invalid address for GDB")
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
-if config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
+if initial_config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if cmio_advance or cmio_inspect then
-    check_cmio_htif_config(config.processor.registers.htif)
+    check_cmio_htif_config(initial_config.processor.registers.htif)
     assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
 end
 if initial_hash then
-    assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
+    assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
-dump_value_proofs(machine, initial_proof, config)
+dump_value_proofs(machine, initial_proof, initial_config)
 local exit_code = 0
 local next_hash_mcycle
 if periodic_hashes_start ~= 0 then
@@ -2775,7 +2779,7 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_reg("iflags_Y") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, config.processor.registers.htif)
+        local _, reason, data = get_and_print_yield(machine, initial_config.processor.registers.htif)
         -- there was an exception
         if reason == cartesi.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
             stderr("cmio exception with payload: %q\n", data)
@@ -2839,7 +2843,7 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
         end
     -- deal with yield automatic
     elseif machine:read_reg("iflags_X") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, config.processor.registers.htif)
+        local _, reason, data = get_and_print_yield(machine, initial_config.processor.registers.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
@@ -2895,7 +2899,7 @@ if max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if log_step_uarch then
-    assert(config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
+    assert(initial_config.processor.registers.iunrep == 0, "uarch step proof is meaningless in unreproducible mode")
     stderr("Gathering uarch step log: please wait\n")
     util.print_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
@@ -2905,11 +2909,11 @@ if log_reset_uarch then
 end
 if dump_address_ranges_dir then dump_address_ranges(machine, dump_address_ranges_dir) end
 if final_hash then
-    assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
+    assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
-dump_value_proofs(machine, final_proof, config)
-if store_dir then store_machine(machine, config, store_dir, store_sharing) end
+dump_value_proofs(machine, final_proof, initial_config)
+if store_dir then store_machine(machine, initial_config, store_dir, store_sharing) end
 if assert_rolling_template then
     local cmd, reason = machine:receive_cmio_request()
     if not (cmd == cartesi.HTIF_YIELD_CMD_MANUAL and reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED) then
