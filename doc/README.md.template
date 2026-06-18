@@ -1270,7 +1270,7 @@ Inspect-state queries are echoed back as a single report.
 Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
 The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
 With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,input-1-output-0.bin,query-report-0.bin replace=source/server}
+```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,output-0-input-1.bin,query-report-0.bin replace=source/server}
 ln -sf $rolling_puppet_encode/*.bin .
 {
 # docs:begin server
@@ -1342,7 +1342,7 @@ The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_output/
 Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_output/hash_before_input1}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_output/hash_after_input1}, and resumes the machine.
 The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
 The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_output/input1_tx_output}, returning control to the client.
-The client reads the CMIO TX buffer and stores the output as `input-1-output-0.bin`.
+The client reads the CMIO TX buffer and stores the output as `output-0-input-1.bin`.
 The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_output/input1_rx_accepted} signals that the `puppet` is done processing input index 1 and has accepted it.
 
 The client then loads input index 2 and resumes the machine.
@@ -1384,10 +1384,10 @@ The payload field carries the hex encoding of the bytes `notice:hello from input
 
 Notices and reports carry only a payload.
 To decode them, run, for example
-```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/input-1-output-0.bin/path replace=source}
+```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/output-0-input-1.bin/path replace=source}
 ln -sf $notice .
 # docs:begin
-cartesi-rollup-data.lua decode notice < input-1-output-0.bin
+cartesi-rollup-data.lua decode notice < output-0-input-1.bin
 # docs:end
 ```
 ```{.js replace=rolling_puppet_decode_notice}
@@ -1487,7 +1487,7 @@ xgenext2fs \
 ```
 
 Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,input-2-output-0.bin replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
+```{.bash key=rolling_calc_template outputs=template,server,client,rolling-calculator-template,output-0-input-2.bin,rejected-output-0-input-1.bin replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
 # docs:begin inputs
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
@@ -1593,13 +1593,14 @@ It starts by loading the machine from directory `"rolling-calculator-template"` 
 Then, the first input is rejected, as the payload `"invalid input"` is not an expression that `bc` can understand.
 Note that an empty notice is still emitted before the rejection: shell pipelines run concurrently, so by the time `bc`'s failure is detected (via `grep` and `pipefail`), `rollup notice` has already run with the empty payload that `hex --encode` produces from no input.
 The empty notice is harmless because the rejection that follows discards all outputs for that input.
+For debugging, the `cartesi-machine` utility still saves them, here as `rejected-output-0-input-1.bin`.
 Finally, the second input, with payload `"6*2^1024 + 3*2^512"`, is accepted.
 
 Indeed, to see the result of the computation specified in the second input, run
-```{.bash key=rolling_calc_decode vars=input_2_output_0_bin->rolling_calc_template/input-2-output-0.bin/path replace=source}
-ln -sf $input_2_output_0_bin .
+```{.bash key=rolling_calc_decode vars=output_0_input_2_bin->rolling_calc_template/output-0-input-2.bin/path replace=source}
+ln -sf $output_0_input_2_bin .
 # docs:begin
-cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
+cartesi-rollup-data.lua decode notice < output-0-input-2.bin | \
     jq -j .payload | \
     hex --decode | \
     fold -w 68
@@ -2555,14 +2556,13 @@ The calculator script requires this module and uses `verify_slice` to verify the
 ```{.lua key=run_calculator_with_proof include=run-calculator-with-proof.lua title="run-calculator-with-proof.lua"}
 ```
 
-```{.lua key=proof_module include=hash-tree.lua replace=null}
+```{.lua key=proof_module include=../../usr/share/lua/5.4/cartesi/hash-tree.lua replace=null}
 ```
 
 Running the script with the command-line
 ```{.bash key=lua_calculator_with_proof vars=config->calc_run/config-calculator.lua/path depends=run_calculator_with_proof,proof_module replace=source}
 ln -sf "$config" .
 ln -sf "$RECIPES_DIR/run-calculator-with-proof.lua" .
-ln -sf "$RECIPES_DIR/hash-tree.lua" .
 truncate -s 4K input.raw output.raw
 # docs:begin
 lua5.4 run-calculator-with-proof.lua 6*2^1024 + 3*2^512
@@ -4120,7 +4120,7 @@ The contents of the proof returned are described in the [Lua interface](#state-v
 That section uses the same small `hash-tree` module, whose three helpers are shown alongside the prose below.
 
 The workhorse is `roll_hash_up_tree(<proof>, <new_target_hash>)`:
-```{.lua key=proof_roll include=hash-tree.lua/roll_hash_up_tree title="hash-tree.lua (excerpt)"}
+```{.lua replace=proof_module/source/roll_hash_up_tree title="hash-tree.lua (excerpt)"}
 ```
 In the first iteration of the loop, the function uses the bit with value 2<sup>`proof.log2_target_size`</sup> in `proof.target_address` to determine if the sibling of the target node comes before or after it in the address space of the Cartesi Machine.
 It then computes the hash of the concatenation of the target node's hash and its sibling's hash (in the correct order).
@@ -4134,7 +4134,7 @@ If they match, the proof passes.
 Otherwise, something is amiss.
 
 The slicing check `verify_slice` wires this walk into the proof structure returned by `machine:get_proof()`:
-```{.lua key=proof_slice include=hash-tree.lua/verify_slice title="hash-tree.lua (excerpt)"}
+```{.lua replace=proof_module/source/verify_slice title="hash-tree.lua (excerpt)"}
 ```
 To verify a slicing operation, the code first checks the root hash *M* against the one found in the proof.
 Then, it uses `roll_hash_up_tree` to recompute the root hash from the path between the target node and root.
@@ -4147,7 +4147,7 @@ Then, it uses `roll_hash_up_tree` to compute the root hash from the path between
 Only this time it starts from the new target node hash.
 The resulting root hash is the hash of a tree with the old node replaced by the new.
 This is exactly what `verify_splice` does:
-```{.lua key=proof_splice include=hash-tree.lua/verify_splice title="hash-tree.lua (excerpt)"}
+```{.lua replace=proof_module/source/verify_splice title="hash-tree.lua (excerpt)"}
 ```
 
 #### Template instantiation
@@ -4171,7 +4171,7 @@ The splicing operation bubbles that root hash up the tree to recover the state h
 
 Since the input NVRAM starts completely filled with zeros, only the mathematical expression is needed to describe its modified contents.
 Its root hash is computed by `hash_tree.get_root_hash(<data>, <log2_root_size>)`, which lays `<data>` at the base of a 2^`<log2_root_size>`-byte subtree and returns its root.
-```{.lua key=proof_root_hash include=hash-tree.lua/get_root_hash title="hash-tree.lua (excerpt)"}
+```{.lua replace=proof_module/source/get_root_hash title="hash-tree.lua (excerpt)"}
 ```
 The leaves are the []{replace=hash_tree_constants/word_size code=no}-byte words of `<data>`, each hashed with `cartesi.keccak256`, and a trailing partial word is zero-padded.
 Each inner node is the hash of its two children.
@@ -4183,7 +4183,6 @@ Running the script with the command-line
 ln -sf "$template" .
 ln -sf "$proofs_pristine_run/pristine-input-proof.lua" .
 ln -sf "$RECIPES_DIR/splice-calculator-with-new-drive.lua" .
-ln -sf "$RECIPES_DIR/hash-tree.lua" .
 # docs:begin
 lua5.4 splice-calculator-with-new-drive.lua "6*2^1024 + 3*2^512"
 # docs:end
@@ -4214,7 +4213,6 @@ In other words, once everyone agrees on *M'*, the result really is there.
 ln -sf "$template" .
 ln -sf "$output_raw_proof/output-proof.lua" .
 ln -sf "$RECIPES_DIR/slice-calculator-output.lua" .
-ln -sf "$RECIPES_DIR/hash-tree.lua" .
 # docs:begin
 lua5.4 slice-calculator-output.lua "6*2^1024 + 3*2^512"
 # docs:end
@@ -4291,7 +4289,6 @@ To run the whole game, start the referee, the server the players connect to:
 ln -sf "$template" .
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
-ln -sf "$RECIPES_DIR/hash-tree.lua" .
 {
 # docs:begin server
 lua5.4 verification-game.lua referee 127.0.0.1:8086 "6*2^1024 + 3*2^512"
@@ -4344,7 +4341,6 @@ Cheating instead at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves t
 ln -sf "$template" .
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
-ln -sf "$RECIPES_DIR/hash-tree.lua" .
 {
 lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
 } > /dev/null 2>&1 &

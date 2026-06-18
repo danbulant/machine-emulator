@@ -1899,10 +1899,10 @@ Before input 1
 
 Automatic yield tx-output (2) (0x000064 data)
 Cycles: 48400410
-Storing input-1-output-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 50514490
+Storing output-0-input-1.bin
 Storing input-1-output-hashes-root-hash.bin
 
 Before input 2
@@ -1911,6 +1911,7 @@ Before input 2
 
 Manual yield rx-rejected (2) (0x000000 data)
 Cycles: 50518439
+Storing output-0-input-1-proof.json
 
 Before query
 50514490: d727c6727c0249da3000bc768b7b101fffec23afc94afb34f697f6aeb84a0582
@@ -1942,7 +1943,7 @@ resumes the machine. The `puppet` reads the payload
 one notice with payload `hello from input 1`. The emission generates an
 `automatic yield tx-output` at cycle `48400410`, returning control to
 the client. The client reads the CMIO TX buffer and stores the output as
-`input-1-output-0.bin`. The `manual yield rx-accepted` at cycle
+`output-0-input-1.bin`. The `manual yield rx-accepted` at cycle
 `50514490` signals that the `puppet` is done processing input index 1
 and has accepted it.
 
@@ -1973,10 +1974,10 @@ ls *.bin
 ```
 
 ``` text
-input-1-output-0.bin
 input-1-output-hashes-root-hash.bin
 input-1.bin
 input-2.bin
+output-0-input-1.bin
 query-report-0.bin
 query.bin
 ```
@@ -2014,7 +2015,7 @@ Notices and reports carry only a payload. To decode them, run, for
 example
 
 ``` bash
-cartesi-rollup-data.lua decode notice < input-1-output-0.bin
+cartesi-rollup-data.lua decode notice < output-0-input-1.bin
 ```
 
 ``` js
@@ -2280,10 +2281,10 @@ Before input 1
 
 Automatic yield tx-output (2) (0x000044 data)
 Cycles: 109114594
-Storing input-1-output-0.bin
 
 Manual yield rx-rejected (2) (0x000000 data)
 Cycles: 113872238
+Storing rejected-output-0-input-1.bin
 
 Before input 2
 64891638: caf92f028e7730e3bbb675bc594c2fa8c54c9d8b3c9c6930a78e7a8706e014ec
@@ -2291,11 +2292,12 @@ Before input 2
 
 Automatic yield tx-output (2) (0x000184 data)
 Cycles: 110017203
-Storing input-2-output-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 116927422
+Storing output-0-input-2.bin
 Storing input-2-output-hashes-root-hash.bin
+Storing output-0-input-2-proof.json
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 ```
 
@@ -2308,14 +2310,16 @@ before the rejection: shell pipelines run concurrently, so by the time
 `bc`’s failure is detected (via `grep` and `pipefail`), `rollup notice`
 has already run with the empty payload that `hex --encode` produces from
 no input. The empty notice is harmless because the rejection that
-follows discards all outputs for that input. Finally, the second input,
-with payload `"6*2^1024 + 3*2^512"`, is accepted.
+follows discards all outputs for that input. For debugging, the
+`cartesi-machine` utility still saves them, here as
+`rejected-output-0-input-1.bin`. Finally, the second input, with payload
+`"6*2^1024 + 3*2^512"`, is accepted.
 
 Indeed, to see the result of the computation specified in the second
 input, run
 
 ``` bash
-cartesi-rollup-data.lua decode notice < input-2-output-0.bin | \
+cartesi-rollup-data.lua decode notice < output-0-input-2.bin | \
     jq -j .payload | \
     hex --decode | \
     fold -w 68
@@ -4301,7 +4305,7 @@ verify the output NVRAM proof.
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 
 -- Instantiate machine from configuration
 local config = require("config-calculator")
@@ -4321,7 +4325,8 @@ local output_state_hash = machine:get_root_hash()
 local output_nvram = assert(util.find_drive(config, "nvram", "output"))
 local output_proof = machine:get_proof(output_nvram.start, output_nvram.log2_size)
 
--- Proof must be rooted at the current machine state
+-- Proof must be a whole-machine proof rooted at the current machine state
+assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 assert(output_proof.root_hash == output_state_hash, "proof root mismatch")
 
 -- Verify proof
@@ -7149,7 +7154,7 @@ The workhorse is `roll_hash_up_tree(<proof>, <new_target_hash>)`:
 ``` lua
 local function roll_hash_up_tree(proof, target_hash)
     local hash = target_hash
-    for log2_size = proof.log2_target_size, cartesi.HASH_TREE_LOG2_ROOT_SIZE - 1 do
+    for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local sibling = assert(proof.sibling_hashes[log2_size - proof.log2_target_size + 1], "too few siblings")
         local bit = (proof.target_address & (1 << log2_size)) ~= 0
         local first, second
@@ -7233,7 +7238,7 @@ and then asks for the state hash *M’* of the modified machine.
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 
 -- Obtain input expression from the command line
 local input_expr = assert(arg[1], "missing input expression")
@@ -7254,8 +7259,9 @@ local instantiated_template_hash = machine:get_root_hash()
 
 -- Verify instantiated template hash using proofs
 
--- Load input proof
+-- Load input proof (must be a whole-machine proof)
 local template_input_proof = require("pristine-input-proof")
+assert(template_input_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Load actual input hash
 local input_hash = hash_tree.get_root_hash(input_expr .. "\n", input_nvram.log2_size)
@@ -7346,7 +7352,7 @@ state hash *M’* of the halted machine.
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 
 -- Obtain input expression from the command line
 local input_expr = assert(arg[1], "missing input expression")
@@ -7373,8 +7379,9 @@ local halted_state_hash = machine:get_root_hash()
 
 -- Verify the result against the output proof
 
--- Load output proof
+-- Load output proof (must be a whole-machine proof)
 local output_proof = require("output-proof")
+assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Reconstruct the root hash of the output NVRAM from the result alone
 local output_hash = hash_tree.get_root_hash(result, output_nvram.log2_size)
@@ -7573,6 +7580,7 @@ hash.
 ``` lua
 local function verify_output(dapp_contract, output, final_hash)
     return output.proof.root_hash == final_hash
+        and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
         and output.proof.target_address == dapp_contract.output.start
         and output.proof.log2_target_size == dapp_contract.output.log2_size
         and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash

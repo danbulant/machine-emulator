@@ -1,7 +1,7 @@
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 
 -- Obtain input expression from the command line
 local input_expr = assert(arg[1], "missing input expression")

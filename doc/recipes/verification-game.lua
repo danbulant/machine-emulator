@@ -20,7 +20,7 @@ local cartesi = require("cartesi")
 local cartesi_jsonrpc = require("cartesi.jsonrpc")
 local util = require("cartesi.util")
 local socket = require("socket")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 local dishonest = require("dishonest")
 
 local TEMPLATE = "calculator-template"

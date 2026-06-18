@@ -1,7 +1,7 @@
 -- Load the Cartesi module
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
-local hash_tree = require("hash-tree")
+local hash_tree = require("cartesi.hash-tree")
 
 -- Instantiate machine from configuration
 local config = require("config-calculator")

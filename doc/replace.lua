@@ -141,18 +141,19 @@
 --                       The runner verifies each artifact exists after the body
 --                       exits and fails if it does not.
 --
---   include=<path>      Only on key= blocks. The block's body is the body of
---                       the included thing: the contents of $RECIPES_DIR/<path>
---                       with docs:begin/docs:end markers stripped (infrastructure
---                       markers, not content). Block body must be empty when
---                       include= is set. outputs=, depends=, and vars= are not
---                       allowed on include= keys. The filter writes the body to
---                       cache/<K>/both at filter time; the make rule touches that
---                       file when the included file changes so consumers
---                       invalidate. No stdout, stderr, or body.<ext> are produced
---                       (an include= block does not execute -- it just publishes
---                       its body). replace= defaults to "both" on include= blocks;
---                       only replace=both and replace=null are accepted.
+--   include=<path>      Only on key= blocks. The block's body becomes the contents
+--                       of $RECIPES_DIR/<path> (null setup regions removed,
+--                       docs:begin/docs:end markers kept). Block body must be empty
+--                       when include= is set. outputs=, depends=, and vars= are not
+--                       allowed on include= keys. The filter writes the body, with
+--                       markers stripped, to cache/<K>/both at filter time; the make
+--                       rule touches that file when the included file changes so
+--                       consumers invalidate. The body is also the key's source, so
+--                       replace=K/source/<region> selects a named region of the
+--                       included file. No stdout, stderr, or body.<ext> are produced
+--                       (an include= block does not execute -- it just publishes its
+--                       body). replace= defaults to "both" on include= blocks; only
+--                       replace=both and replace=null are accepted.
 --                       Region-selecting form: include=<file>/<region>. The
 --                       whole value is tried as a file path first. If that
 --                       fails, the value is split on the last '/' into <file>
@@ -198,8 +199,10 @@
 --   K/path              Cross-block: absolute path of cache/<K>/ directory.
 --   K/<thing>           Cross-block: render K's thing.
 --                       thing is stdout|stderr|both|source[/<region>]|<artifact>.
---                       When K was defined with include=, only the bare K,
---                       K/both, K/path, and K/both/path forms are accepted.
+--                       When K was defined with include=, only the bare K, K/both,
+--                       K/path, K/both/path, K/source, and K/source/<region> forms
+--                       are accepted (K/source selects from the included file's
+--                       regions; the other streams and artifacts do not exist).
 --   K/<thing>/path      Cross-block: absolute path of cache/<K>/<thing>.
 --                       Forces lazy definition of K via ensure_defined.
 --
@@ -286,13 +289,14 @@
 --     at runner time. Editing vars.lua or the spec file triggers a rebuild.
 --   - $VAR substitution requires a non-word boundary after VAR so $foo does
 --     not consume the start of $foobar; longest var wins for disambiguation.
---   - include= keys publish only cache/<K>/both (the body). The filter writes
---     it at filter time via write_idempotent; the make rule has the included
---     file as its sole prereq and touches the primary, forcing consumers to
---     invalidate when the source changes (pass 3 rewrites the body during the
---     README.md build). Cross-block references to an include= key may only use
---     K, K/both, K/path, or K/both/path -- /source, /stdout, /stderr, and
---     artifact subs are rejected.
+--   - include= keys publish cache/<K>/both (the marker-stripped body) and keep the
+--     marker-bearing body as the key's source. The filter writes both at filter time
+--     via write_idempotent; the make rule has the included file as its sole prereq
+--     and touches the primary, forcing consumers to invalidate when the source
+--     changes (pass 3 rewrites the body during the README.md build). Cross-block
+--     references to an include= key may use K, K/both, K/path, K/both/path, K/source,
+--     or K/source/<region>; a source ref depends on cache/<K>/both so it invalidates
+--     with the included file. /stdout, /stderr, and artifact subs are rejected.
 
 local deps_target
 local default_enabled = true -- overridden in Pandoc() from -M default-replace=
@@ -607,7 +611,10 @@ local function define_script(key, attr, body, classes, deps, vars_list, include_
         assertf(#vars_list == 0, "key=%s: vars= not allowed on include= keys", key)
         defined[key] = true
         outputs_t[key] = {}
-        write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/both", body)
+        -- The body keeps its region markers so replace=K/source/<region> can pick them out, but the
+        -- published both stream is rendered verbatim, so strip the markers there.
+        sources[key] = body
+        write_idempotent(REPLACE_CACHE_DIR .. "/" .. key .. "/both", strip_all_markers(body))
         if deps_target then
             emit_include_rule(key, include_abs)
         end
@@ -812,11 +819,23 @@ local render_source -- forward declaration (render_source <-> cross_read mutual 
 local function cross_read(K, thing, vars_spec, label)
     ensure_defined(K)
     assertf(defined[K], "%s: key '%s' not defined", label, K)
-    -- include= keys produce only cache/<K>/both (the body). Reject any thing
-    -- other than K, K/both, K/path, K/both/path with a clear error.
+    -- include= keys publish cache/<K>/both (the marker-stripped body) and expose their source for
+    -- region selection. Reject any thing other than these with a clear error.
     if pending[K] and pending[K].include_abs then
-        local v = thing == "both" or thing == "path" or thing == "both/path"
-        assertf(v, "%s: include= key '%s' only supports K, K/both, K/path, K/both/path (got K/%s)", label, K, thing)
+        local is_source = thing == "source" or thing:sub(1, 7) == "source/"
+        local v = thing == "both" or thing == "path" or thing == "both/path" or is_source
+        assertf(
+            v,
+            "%s: include= key '%s' only supports K, K/both, K/path, K/both/path, K/source[/<region>] (got K/%s)",
+            label,
+            K,
+            thing
+        )
+        -- source renders from the in-memory body, so depend on cache/<K>/both (which tracks the
+        -- included file) to invalidate consumers when it changes.
+        if is_source then
+            consumed[K .. "/both"] = true
+        end
     end
     if thing == "path" then
         return REPLACE_CACHE_DIR .. "/" .. K
@@ -1110,9 +1129,12 @@ local function collect_codeblock(b)
         include_abs = RECIPES_DIR .. "/" .. file_path
         local file_content = read_file(include_abs, "key=" .. key .. " include=" .. include)
         if region then
+            -- A single region becomes the body (markers already stripped by extract_region).
             body = extract_region(file_content, region, "key=" .. key .. " include=" .. include)
         else
-            body = strip_all_markers(strip_null_regions(file_content, "key=" .. key .. " include=" .. include))
+            -- Whole file: keep the infrastructure markers so replace=K/source/<region> can pick
+            -- named regions. They are stripped when cache/<K>/both is written (see define_script).
+            body = strip_null_regions(file_content, "key=" .. key .. " include=" .. include)
         end
     end
     local seq = parse_sequential(b.attr.attributes.sequential)
