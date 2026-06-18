@@ -56,10 +56,11 @@ typedef enum cm_constant {
     CM_HASH_TREE_LOG2_WORD_SIZE = 5,
     CM_HASH_TREE_LOG2_PAGE_SIZE = 12,
     CM_HASH_TREE_LOG2_ROOT_SIZE = 64,
-    CM_FLASH_DRIVE_MAX = 8,         ///< Maximum number of flash drives
-    CM_NVRAM_MAX = 8,               ///< Maximum number of NVRAMs
-    CM_MEMORY_RANGE_LABEL_MAX = 31, ///< Maximum length of a memory range user label (DT alias constraint)
-    CM_RTC_FREQ_DIV = 8192,         ///< mtime increments once per this many mcycle increments
+    CM_CMIO_LOG2_MAX_OUTPUT_COUNT = 63, ///< Height of the cmio outputs Merkle tree (capacity 2^63 outputs)
+    CM_FLASH_DRIVE_MAX = 8,             ///< Maximum number of flash drives
+    CM_NVRAM_MAX = 8,                   ///< Maximum number of NVRAMs
+    CM_MEMORY_RANGE_LABEL_MAX = 31,     ///< Maximum length of a memory range user label (DT alias constraint)
+    CM_RTC_FREQ_DIV = 8192,             ///< mtime increments once per this many mcycle increments
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).

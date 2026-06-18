@@ -28,6 +28,7 @@ local describe, it, expect = lester.describe, lester.it, lester.expect
 describe("cartesi-machine CLI", function()
     local cartesi = require("cartesi")
     local evmu = require("cartesi.evmu")
+    local hash_tree = require("cartesi.hash-tree")
 
     local function zeros(n)
         return string.rep("\0", n)
@@ -1763,9 +1764,15 @@ describe("cartesi-machine CLI", function()
                 prefix .. "-input-1.bin",
                 prefix .. "-query.bin",
                 prefix .. "-out-0-0.bin",
-                prefix .. "-out-1-0.bin",
+                prefix .. "-out-0-1.bin",
+                prefix .. "-out-1-2.bin",
+                prefix .. "-out-1-3.bin",
                 prefix .. "-outh-0.bin",
                 prefix .. "-outh-1.bin",
+                prefix .. "-oproof-0-0.json",
+                prefix .. "-oproof-1-0.json",
+                prefix .. "-oproof-2-1.json",
+                prefix .. "-oproof-3-1.json",
                 prefix .. "-rep-0-0.bin",
                 prefix .. "-rep-1-0.bin",
                 prefix .. "-qrep-0.bin",
@@ -1785,6 +1792,9 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
+                .. "output_proof:"
+                .. prefix
+                .. "-oproof-%o-%i.json,"
                 .. "report:"
                 .. prefix
                 .. "-rep-%i-%o.bin,"
@@ -1801,14 +1811,36 @@ describe("cartesi-machine CLI", function()
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1",
         })
 
+        -- Each input emits one voucher (output 0) then one notice (output 1). Both inputs are
+        -- accepted, so "%o" is the global output index: input 0 gives 0 and 1, input 1 gives 2 and 3.
         local voucher_sig = "Voucher(address destination, uint256 value, bytes payload)"
         local out00 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-0-0.bin"), "raw")
         expect.equal(out00.payload, "hello")
-        local out10 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-1-0.bin"), "raw")
-        expect.equal(out10.payload, "world")
+        local out12 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-1-2.bin"), "raw")
+        expect.equal(out12.payload, "world")
         assert(io.open(prefix .. "-outh-0.bin", "r"), "no output-hash for input 0")
         assert(io.open(prefix .. "-outh-1.bin", "r"), "no output-hash for input 1")
         expect.equal(read_bin(prefix .. "-qrep-0.bin"), "inspect-me")
+
+        -- Every output proof must verify against the outputs root of the last accepted input (the
+        -- final epoch root), and its target must hash the saved output bytes. A passing run already
+        -- cross-checked that root against the guest via check_output_hashes_root_hash.
+        local final_root = read_bin(prefix .. "-outh-1.bin")
+        local outputs = {
+            { o = 0, i = 0, file = "-out-0-0.bin" },
+            { o = 1, i = 0, file = "-out-0-1.bin" },
+            { o = 2, i = 1, file = "-out-1-2.bin" },
+            { o = 3, i = 1, file = "-out-1-3.bin" },
+        }
+        for _, o in ipairs(outputs) do
+            local proof = cartesi.fromjson(read_bin(string.format("%s-oproof-%d-%d.json", prefix, o.o, o.i)), "Proof")
+            expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            expect.equal(proof.log2_target_size, 0)
+            expect.equal(proof.target_address, o.o)
+            expect.equal(proof.root_hash, final_root)
+            expect.equal(proof.target_hash, cartesi.keccak256(read_bin(prefix .. o.file)))
+            hash_tree.verify_slice(proof)
+        end
     end)
 
     -- -------------------------------------------------------------------------
@@ -1831,7 +1863,15 @@ describe("cartesi-machine CLI", function()
                 prefix .. "-inpr-1.bin",
                 prefix .. "-inpr-2.bin",
                 prefix .. "-rbo-0-0.bin",
-                prefix .. "-rbo-2-0.bin",
+                prefix .. "-rbo-0-1.bin",
+                prefix .. "-rbo-2-2.bin",
+                prefix .. "-rbo-2-3.bin",
+                prefix .. "-rbrej-2-1.bin",
+                prefix .. "-rbrej-3-1.bin",
+                prefix .. "-rbproof-0-0.json",
+                prefix .. "-rbproof-1-0.json",
+                prefix .. "-rbproof-2-2.json",
+                prefix .. "-rbproof-3-2.json",
                 prefix .. "-rbr-0-0.bin",
                 prefix .. "-rbr-2-0.bin",
                 prefix .. "-rboh-0.bin",
@@ -1844,10 +1884,12 @@ describe("cartesi-machine CLI", function()
         filesystem.write_file(prefix .. "-inpr-1.bin", encode_advance(1, "reject-me"))
         filesystem.write_file(prefix .. "-inpr-2.bin", encode_advance(2, "also-ok"))
 
-        -- ioctl-echo-loop --reject=1 rejects the second input, exercising do_rollback;
-        -- inputs 0 and 2 exercise do_snapshot + do_commit
+        -- ioctl-echo-loop --reject=1 rejects input 1, exercising do_rollback; inputs 0 and 2
+        -- exercise do_snapshot + do_commit. A rejected input's outputs go to rejected_output and
+        -- do not advance the global output index, so input 2 continues at index 2.
         run_ok({
             "--remote-address=" .. address,
+            "--console-io=output_destination:to_null",
             "--cmio-advance-state=input:"
                 .. prefix
                 .. "-inpr-%i.bin,"
@@ -1855,6 +1897,12 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-rbo-%i-%o.bin,"
+                .. "rejected_output:"
+                .. prefix
+                .. "-rbrej-%o-%i.bin,"
+                .. "output_proof:"
+                .. prefix
+                .. "-rbproof-%o-%i.json,"
                 .. "report:"
                 .. prefix
                 .. "-rbr-%i-%o.bin,"
@@ -1867,6 +1915,155 @@ describe("cartesi-machine CLI", function()
             "--",
             "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=1",
         })
+
+        local voucher_sig = "Voucher(address destination, uint256 value, bytes payload)"
+        -- input 0 accepted gives global 0 and 1, input 2 accepted continues at 2 and 3
+        expect.equal(evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbo-0-0.bin"), "raw").payload, "ok")
+        expect.equal(evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbo-2-2.bin"), "raw").payload, "also-ok")
+        -- the rejected input's outputs land in rejected_output at their would-be indices
+        expect.equal(
+            evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbrej-2-1.bin"), "raw").payload,
+            "reject-me"
+        )
+        assert(io.open(prefix .. "-rbrej-3-1.bin", "r"), "no rejected notice for input 1")
+        -- and never appear among the accepted outputs, nor get a proof or an output root hash
+        assert(not io.open(prefix .. "-rbo-1-2.bin", "r"), "rejected output leaked into accepted outputs")
+        assert(not io.open(prefix .. "-rbproof-2-1.json", "r"), "proof emitted for a rejected output")
+        assert(not io.open(prefix .. "-rboh-1.bin", "r"), "rejected input wrote an output root hash")
+
+        -- every accepted output proof verifies against the last accepted input's outputs root
+        local final_root = read_bin(prefix .. "-rboh-2.bin")
+        for _, p in ipairs({ { o = 0, i = 0 }, { o = 1, i = 0 }, { o = 2, i = 2 }, { o = 3, i = 2 } }) do
+            local proof = cartesi.fromjson(read_bin(string.format("%s-rbproof-%d-%d.json", prefix, p.o, p.i)), "Proof")
+            expect.equal(proof.target_address, p.o)
+            expect.equal(proof.root_hash, final_root)
+            hash_tree.verify_slice(proof)
+        end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Two-epoch continuation via last_output_proof, with a reject mid-epoch
+    --
+    -- What: A later epoch's output proofs continue the genesis-rooted outputs tree
+    --       of an earlier one when seeded with the previous epoch's last output
+    --       proof, and check_output_hashes_root_hash (default on) keeps holding
+    --       even when an input in the middle is rejected and rolls the tree back.
+    -- How:  Spawn one server and keep it alive. Epoch 1 (--no-remote-destroy)
+    --       instantiates the machine and advances inputs 0 and 1 against it. The
+    --       entrypoint, fixed at instantiation, carries --reject=3 so the input
+    --       with global index 3 is rejected when it arrives. Epoch 2
+    --       (--no-remote-create, no entrypoint) reuses the same live machine,
+    --       advancing inputs 2, 3, 4 seeded with epoch 1's last output proof. Each
+    --       input emits a voucher and a notice, so the global output index runs
+    --       0..3 in epoch 1 and continues over the accepted inputs 2 and 4 (4..7)
+    --       in epoch 2, while rejected input 3 advances nothing.
+    -- -------------------------------------------------------------------------
+    it("two-epoch continuation via last_output_proof", function()
+        local jsonrpc = require("cartesi.jsonrpc")
+        local server <close>, address = jsonrpc.spawn_server()
+        server:set_cleanup_call(jsonrpc.NOTHING)
+        local prefix = filesystem.temp_pathname()
+        local files = {
+            prefix .. "-ein-0.bin",
+            prefix .. "-ein-1.bin",
+            prefix .. "-ein-2.bin",
+            prefix .. "-ein-3.bin",
+            prefix .. "-ein-4.bin",
+            prefix .. "-e1proof-0-0.json",
+            prefix .. "-e1proof-1-0.json",
+            prefix .. "-e1proof-2-1.json",
+            prefix .. "-e1proof-3-1.json",
+            prefix .. "-e2o-4-2.bin",
+            prefix .. "-e2o-5-2.bin",
+            prefix .. "-e2o-6-4.bin",
+            prefix .. "-e2o-7-4.bin",
+            prefix .. "-e2rej-6-3.bin",
+            prefix .. "-e2rej-7-3.bin",
+            prefix .. "-e2proof-4-2.json",
+            prefix .. "-e2proof-5-2.json",
+            prefix .. "-e2proof-6-4.json",
+            prefix .. "-e2proof-7-4.json",
+            prefix .. "-e2oh-2.bin",
+            prefix .. "-e2oh-4.bin",
+        }
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs(files) do
+                os.remove(p)
+            end
+        end)
+        -- Inputs carry global indices. The reject targets the input whose encoded index is 3.
+        for i = 0, 4 do
+            filesystem.write_file(prefix .. "-ein-" .. i .. ".bin", encode_advance(i, "epoch-input-" .. i))
+        end
+
+        -- Epoch 1: inputs 0 and 1 against a freshly created machine, left alive on the server. Only
+        -- the proofs are kept, since epoch 2 is seeded from the last one (output 3, from input 1).
+        -- The entrypoint is fixed here, so --reject=3 is set now even though input 3 arrives later.
+        run_ok({
+            "--remote-address=" .. address,
+            "--no-remote-destroy",
+            "--console-io=output_destination:to_null",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-ein-%i.bin,"
+                .. "input_index_begin:0,input_index_end:2,"
+                .. "output:,rejected_output:,report:,output_hashes_root_hash:,"
+                .. "output_proof:"
+                .. prefix
+                .. "-e1proof-%o-%i.json",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=1 --reports=1 --reject=3",
+        })
+
+        -- Epoch 2: reuse the same live machine (no new entrypoint), seeded with epoch 1's last output
+        -- proof. Input 3 is rejected, so the guest rolls its outputs tree back. The default root-hash
+        -- check still holds because the host frontier rolls back in step.
+        run_ok({
+            "--remote-address=" .. address,
+            "--no-remote-create",
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-ein-%i.bin,"
+                .. "input_index_begin:2,input_index_end:5,"
+                .. "report:,"
+                .. "output:"
+                .. prefix
+                .. "-e2o-%o-%i.bin,"
+                .. "rejected_output:"
+                .. prefix
+                .. "-e2rej-%o-%i.bin,"
+                .. "last_output_proof:"
+                .. prefix
+                .. "-e1proof-3-1.json,"
+                .. "output_proof:"
+                .. prefix
+                .. "-e2proof-%o-%i.json,"
+                .. "output_hashes_root_hash:"
+                .. prefix
+                .. "-e2oh-%i.bin",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+        })
+
+        -- Accepted epoch 2 outputs continue the global index over inputs 2 and 4 (4..7) and verify
+        -- against epoch 2's final root. Rejected input 3 advanced nothing.
+        local final_root = read_bin(prefix .. "-e2oh-4.bin")
+        for _, p in ipairs({ { o = 4, i = 2 }, { o = 5, i = 2 }, { o = 6, i = 4 }, { o = 7, i = 4 } }) do
+            local proof = cartesi.fromjson(read_bin(string.format("%s-e2proof-%d-%d.json", prefix, p.o, p.i)), "Proof")
+            expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            expect.equal(proof.target_address, p.o)
+            expect.equal(proof.root_hash, final_root)
+            hash_tree.verify_slice(proof)
+        end
+        -- input 3's outputs went to rejected_output at their would-be indices and got no proof
+        assert(io.open(prefix .. "-e2rej-6-3.bin", "r"), "no rejected voucher for input 3")
+        assert(io.open(prefix .. "-e2rej-7-3.bin", "r"), "no rejected notice for input 3")
+        assert(not io.open(prefix .. "-e2o-6-3.bin", "r"), "rejected output leaked into accepted outputs")
+        assert(not io.open(prefix .. "-e2oh-3.bin", "r"), "rejected input wrote an output root hash")
     end)
 
     -- -------------------------------------------------------------------------

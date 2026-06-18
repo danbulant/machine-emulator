@@ -22,8 +22,9 @@ local instantiated_template_hash = machine:get_root_hash()
 
 -- Verify instantiated template hash using proofs
 
--- Load input proof
+-- Load input proof (must be a whole-machine proof)
 local template_input_proof = require("pristine-input-proof")
+assert(template_input_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Load actual input hash
 local input_hash = hash_tree.get_root_hash(input_expr .. "\n", input_nvram.log2_size)

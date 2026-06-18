@@ -21,7 +21,8 @@ local output_state_hash = machine:get_root_hash()
 local output_nvram = assert(util.find_drive(config, "nvram", "output"))
 local output_proof = machine:get_proof(output_nvram.start, output_nvram.log2_size)
 
--- Proof must be rooted at the current machine state
+-- Proof must be a whole-machine proof rooted at the current machine state
+assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 assert(output_proof.root_hash == output_state_hash, "proof root mismatch")
 
 -- Verify proof

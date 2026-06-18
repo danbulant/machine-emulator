@@ -225,6 +225,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_WORD_SIZE, "HASH_TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_PAGE_SIZE, "HASH_TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_HASH_TREE_LOG2_ROOT_SIZE, "HASH_TREE_LOG2_ROOT_SIZE", -1);
+    clua_setintegerfield(L, CM_CMIO_LOG2_MAX_OUTPUT_COUNT, "CMIO_LOG2_MAX_OUTPUT_COUNT", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);

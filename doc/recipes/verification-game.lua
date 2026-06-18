@@ -401,12 +401,13 @@ local function wait_for_output(players)
     return wait_for_any(players, "StateValueProof", "return player:prove_output()")
 end
 
--- Checks an output submission against a verified final hash. The bytes must hash to the proof's
--- target, the target must sit at the output drive address, and the proof must roll up to the
--- final hash. Returns whether it holds.
+-- Checks an output submission against a verified final hash. The proof must be whole-machine, the
+-- bytes must hash to the proof's target, the target must sit at the output drive address, and the
+-- proof must roll up to the final hash. Returns whether it holds.
 -- docs:begin verify_output
 local function verify_output(dapp_contract, output, final_hash)
     return output.proof.root_hash == final_hash
+        and output.proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
         and output.proof.target_address == dapp_contract.output.start
         and output.proof.log2_target_size == dapp_contract.output.log2_size
         and hash_tree.get_root_hash(output.target_value, dapp_contract.output.log2_size) == output.proof.target_hash

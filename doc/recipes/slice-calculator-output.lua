@@ -28,8 +28,9 @@ local halted_state_hash = machine:get_root_hash()
 
 -- Verify the result against the output proof
 
--- Load output proof
+-- Load output proof (must be a whole-machine proof)
 local output_proof = require("output-proof")
+assert(output_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE, "proof depth mismatch")
 
 -- Reconstruct the root hash of the output NVRAM from the result alone
 local output_hash = hash_tree.get_root_hash(result, output_nvram.log2_size)
