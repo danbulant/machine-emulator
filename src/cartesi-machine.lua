@@ -346,6 +346,7 @@ where options are:
         rejected_output:<filename-pattern>
         output_proof:<filename-pattern>
         last_output_proof:<filename>
+        format:<lua|json>
         report:<filename-pattern>
         output_hashes_root_hash:<filename-pattern>
         check_output_hashes_root_hash:<boolean>
@@ -373,17 +374,21 @@ where options are:
         a rejected input. "%%o" is the would-be global output index, and "%%i"
         is the input.
 
-        output_proof (default: "output-%%o-input-%%i-proof.json")
+        output_proof (default: "output-%%o-input-%%i-proof.<format>")
         the pattern that derives the name of the file written for the Merkle
         proof of each accepted output against the outputs root hash of the last
-        input of the run. the format follows the filename extension (.json or
-        .lua).
+        input of the run. serialized according to "format". when left at the
+        default, its extension tracks "format".
 
         last_output_proof (no default)
         a single filename, not a pattern, holding the previous run's last output
         proof. it resumes the outputs Merkle tree so this run continues at the
-        running global output index. omit it for the first (genesis) run. the
-        format follows the filename extension.
+        running global output index. omit it for the first (genesis) run. read
+        according to "format".
+
+        format (optional)
+        selects the format for output_proof and last_output_proof. when omitted,
+        it is inferred from the filename extension (.json/.lua), defaulting to Lua.
 
         report (default: "input-%%i-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
@@ -1724,7 +1729,10 @@ options = {
             -- An empty value ("") disables writing that file.
             r.output = r.output or "output-%o-input-%i.bin"
             r.rejected_output = r.rejected_output or "rejected-output-%o-input-%i.bin"
-            r.output_proof = r.output_proof or "output-%o-input-%i-proof.json"
+            -- When the user does not override output_proof, the default filename's extension tracks
+            -- "format" (default lua), so format:json alone yields a .json file. An explicit
+            -- output_proof is left as the user wrote it (format still selects the content).
+            r.output_proof = r.output_proof or ("output-%o-input-%i-proof." .. (r.format or "lua"))
             r.report = r.report or "input-%i-report-%o.bin"
             r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hashes-root-hash.bin"
             if r.check_output_hashes_root_hash == nil then r.check_output_hashes_root_hash = true end
@@ -1741,6 +1749,7 @@ options = {
             rejected_output = "file",
             output_proof = "file",
             last_output_proof = "file",
+            format = { lua = "lua", json = "json" },
             report = "file",
             check_output_hashes_root_hash = "boolean",
             hashes = "boolean",
@@ -2655,10 +2664,11 @@ local function serialize_proof(proof, format)
     return "return " .. table.concat(parts) .. "\n"
 end
 
--- Reads back a Proof written by serialize_proof, in the format resolved from the filename.
-local function read_proof(filename)
+-- Reads back a Proof written by serialize_proof, in the resolved format (explicit format wins,
+-- else the filename extension).
+local function read_proof(filename, format)
     local contents = util.read_file(filename)
-    if resolve_format(nil, filename) == "json" then return cartesi.fromjson(contents, "Proof") end
+    if resolve_format(format, filename) == "json" then return cartesi.fromjson(contents, "Proof") end
     return assert(load(contents, filename, "t", {}))()
 end
 
@@ -2667,7 +2677,7 @@ end
 local function save_cmio_output_proofs(advance)
     if advance.output_proof == "" then return end
     local proofs = hash_tree.frontier_next_proofs(advance.frontier, advance.output_hashes)
-    local format = resolve_format(nil, advance.output_proof)
+    local format = resolve_format(advance.format, advance.output_proof)
     for i, proof in ipairs(proofs) do
         local values = { i = advance.output_inputs[i], o = proof.target_address }
         local name = instantiate_filename(advance.output_proof, values)
@@ -2770,7 +2780,7 @@ end
 if cmio_advance then
     local depth = cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT
     if cmio_advance.last_output_proof then
-        local proof = read_proof(cmio_advance.last_output_proof)
+        local proof = read_proof(cmio_advance.last_output_proof, cmio_advance.format)
         assertf(
             proof.log2_root_size == depth and proof.log2_target_size == 0,
             "%s is not an outputs proof",

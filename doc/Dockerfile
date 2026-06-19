@@ -1,5 +1,5 @@
 ARG TAG=0.20.0
-ARG GUEST_TOOLS_VERSION=v0.18.0-test3
+ARG GUEST_TOOLS_VERSION=v0.18.0-test4
 ARG GENEXT2FS_VERSION=v1.5.6
 # Base for the host-tool builder stages below. These stages compile binaries
 # that are copied into the final emulator-based image, so the base must stay

@@ -30,23 +30,16 @@ describe("cartesi-machine CLI", function()
     local evmu = require("cartesi.evmu")
     local hash_tree = require("cartesi.hash-tree")
 
-    local function zeros(n)
-        return string.rep("\0", n)
-    end
+    local function zeros(n) return string.rep("\0", n) end
 
     local function scope_temp_pathname()
         local path = filesystem.temp_pathname()
-        return utils.scope_exit(function()
-            os.remove(path)
-        end), path
+        return utils.scope_exit(function() os.remove(path) end), path
     end
 
     local function scope_stored_dirname()
         local dir = filesystem.temp_pathname()
-        return utils.scope_exit(function()
-            pcall(cartesi.machine.remove_stored, cartesi.machine, dir)
-        end),
-            dir
+        return utils.scope_exit(function() pcall(cartesi.machine.remove_stored, cartesi.machine, dir) end), dir
     end
 
     -- EVM ABI function signature for EvmAdvance (must match libcmt's EVM_ADVANCE)
@@ -76,11 +69,6 @@ describe("cartesi-machine CLI", function()
         })
     end
 
-    local function read_bin(path)
-        local f <close> = assert(io.open(path, "rb"))
-        return f:read("*a")
-    end
-
     -- Interpreter used for sub-invocations of cartesi-machine.lua.
     -- Under coverage (coverage=yes), the Makefile exports LUA_CLI as
     -- "lua5.4 -lluacov" so that cartesi-machine.lua children are measured.
@@ -88,14 +76,10 @@ describe("cartesi-machine CLI", function()
     local CLI = os.getenv("CM_CLI") or "../../src/cartesi-machine.lua"
 
     local images_path = os.getenv("CARTESI_IMAGES_PATH") or "../build/images"
-    if images_path:sub(-1) ~= "/" then
-        images_path = images_path .. "/"
-    end
+    if images_path:sub(-1) ~= "/" then images_path = images_path .. "/" end
 
     -- Shell-quote a single argument
-    local function shquote(s)
-        return "'" .. s:gsub("'", "'\\''") .. "'"
-    end
+    local function shquote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
 
     -- Run cartesi-machine.lua with the given flags (array of strings).
     -- stdin_text is fed to the process stdin (default: empty).
@@ -123,9 +107,7 @@ describe("cartesi-machine CLI", function()
         os.execute(cmd)
         local function readfile(p)
             local f = io.open(p, "r")
-            if not f then
-                return ""
-            end
+            if not f then return "" end
             local s = f:read("*a")
             f:close()
             return s
@@ -404,9 +386,7 @@ describe("cartesi-machine CLI", function()
         -- data_filename="" for unspecified keys, which would overwrite the default.
         cfg = config_for({ "--flash-drive=label:root,data_filename:" .. flash_tmp .. ",length:0x10000,read_only" })
         for _, fd in ipairs(cfg.flash_drive) do
-            if fd.label == "root" then
-                expect.truthy(fd.read_only)
-            end
+            if fd.label == "root" then expect.truthy(fd.read_only) end
         end
         expect.truthy(not cfg.dtb.bootargs:find("pmem0 rw"))
 
@@ -419,9 +399,7 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(cfg.dtb.bootargs:find("pmem0 rw"))
         for _, fd in ipairs(cfg.flash_drive) do
-            if fd.label == "root" then
-                expect.truthy(not fd.read_only)
-            end
+            if fd.label == "root" then expect.truthy(not fd.read_only) end
         end
 
         -- backing_store.shared explicit false via override_bool.
@@ -531,9 +509,7 @@ describe("cartesi-machine CLI", function()
         })
         local shared_count = 0
         for _, n in ipairs(cfg.nvram) do
-            if n.label == "shared" then
-                shared_count = shared_count + 1
-            end
+            if n.label == "shared" then shared_count = shared_count + 1 end
         end
         expect.equal(shared_count, 1)
 
@@ -760,9 +736,7 @@ describe("cartesi-machine CLI", function()
         })
         local net_entry2
         for _, v in ipairs(cfg.virtio) do
-            if v.type == "net-user" then
-                net_entry2 = v
-            end
+            if v.type == "net-user" then net_entry2 = v end
         end
         expect.truthy(net_entry2 and net_entry2.hostfwd and net_entry2.hostfwd[1])
         expect.equal(net_entry2.hostfwd[1].is_udp, true)
@@ -772,9 +746,7 @@ describe("cartesi-machine CLI", function()
             cfg = config_for({ "--virtio-net=tap0" })
             local found_tap
             for _, v in ipairs(cfg.virtio) do
-                if v.type == "net-tuntap" then
-                    found_tap = v
-                end
+                if v.type == "net-tuntap" then found_tap = v end
             end
             expect.truthy(found_tap)
         end
@@ -874,9 +846,7 @@ describe("cartesi-machine CLI", function()
         local _, err = run_ok({ "--initial-hash", "--final-hash", "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
-                hash_count = hash_count + 1
-            end
+            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then hash_count = hash_count + 1 end
         end
         expect.truthy(hash_count >= 2)
 
@@ -884,9 +854,7 @@ describe("cartesi-machine CLI", function()
         _, err = run_ok({ "--periodic-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
-                hash_count = hash_count + 1
-            end
+            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then hash_count = hash_count + 1 end
         end
         expect.truthy(hash_count >= 1)
 
@@ -903,9 +871,7 @@ describe("cartesi-machine CLI", function()
         -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per address range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
         local dump_dir = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function()
-            os.remove(dump_dir)
-        end)
+        local _ <close> = utils.scope_exit(function() os.remove(dump_dir) end)
         run_ok({ "--dump-address-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
@@ -1104,9 +1070,7 @@ describe("cartesi-machine CLI", function()
         -- JSON via .json filename extension (no explicit format:), round-tripped
         -- by --load-config which also infers JSON from the extension.
         local json_ext_file = filesystem.temp_pathname() .. ".json"
-        local _ <close> = utils.scope_exit(function()
-            os.remove(json_ext_file)
-        end)
+        local _ <close> = utils.scope_exit(function() os.remove(json_ext_file) end)
         run_ok({
             "--hash-tree=hash_function:sha256",
             "--max-mcycle=0",
@@ -1727,9 +1691,7 @@ describe("cartesi-machine CLI", function()
         end
         local function has_p9fs(cfg)
             for _, v in ipairs(cfg.virtio or {}) do
-                if v.type == "p9fs" then
-                    return true
-                end
+                if v.type == "p9fs" then return true end
             end
             return false
         end
@@ -1814,18 +1776,18 @@ describe("cartesi-machine CLI", function()
         -- Each input emits one voucher (output 0) then one notice (output 1). Both inputs are
         -- accepted, so "%o" is the global output index: input 0 gives 0 and 1, input 1 gives 2 and 3.
         local voucher_sig = "Voucher(address destination, uint256 value, bytes payload)"
-        local out00 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-0-0.bin"), "raw")
+        local out00 = evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-out-0-0.bin"), "raw")
         expect.equal(out00.payload, "hello")
-        local out12 = evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-out-1-2.bin"), "raw")
+        local out12 = evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-out-1-2.bin"), "raw")
         expect.equal(out12.payload, "world")
         assert(io.open(prefix .. "-outh-0.bin", "r"), "no output-hash for input 0")
         assert(io.open(prefix .. "-outh-1.bin", "r"), "no output-hash for input 1")
-        expect.equal(read_bin(prefix .. "-qrep-0.bin"), "inspect-me")
+        expect.equal(filesystem.read_file(prefix .. "-qrep-0.bin"), "inspect-me")
 
         -- Every output proof must verify against the outputs root of the last accepted input (the
         -- final epoch root), and its target must hash the saved output bytes. A passing run already
         -- cross-checked that root against the guest via check_output_hashes_root_hash.
-        local final_root = read_bin(prefix .. "-outh-1.bin")
+        local final_root = filesystem.read_file(prefix .. "-outh-1.bin")
         local outputs = {
             { o = 0, i = 0, file = "-out-0-0.bin" },
             { o = 1, i = 0, file = "-out-0-1.bin" },
@@ -1833,14 +1795,163 @@ describe("cartesi-machine CLI", function()
             { o = 3, i = 1, file = "-out-1-3.bin" },
         }
         for _, o in ipairs(outputs) do
-            local proof = cartesi.fromjson(read_bin(string.format("%s-oproof-%d-%d.json", prefix, o.o, o.i)), "Proof")
+            local proof =
+                cartesi.fromjson(filesystem.read_file(string.format("%s-oproof-%d-%d.json", prefix, o.o, o.i)), "Proof")
             expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
             expect.equal(proof.log2_target_size, 0)
             expect.equal(proof.target_address, o.o)
             expect.equal(proof.root_hash, final_root)
-            expect.equal(proof.target_hash, cartesi.keccak256(read_bin(prefix .. o.file)))
+            expect.equal(proof.target_hash, cartesi.keccak256(filesystem.read_file(prefix .. o.file)))
             hash_tree.verify_slice(proof)
         end
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Output-proof serialization format
+    --
+    -- What: output_proof proofs default to Lua (round-trip via load) and the
+    --       format sub-option forces the content regardless of the filename
+    --       extension.
+    -- How:  Advance one accepted voucher writing proofs two ways: the default
+    --       (Lua, read back with load) and format:json into a .lua-named file
+    --       (read back with fromjson; load must fail on it). Both must verify.
+    -- -------------------------------------------------------------------------
+    it("output proof format", function()
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-input-0.bin",
+                prefix .. "-out-0-0.bin",
+                prefix .. "-lua-0-0.lua",
+                prefix .. "-json-0-0.lua",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
+
+        run_ok({
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-input-%i.bin,"
+                .. "input_index_begin:0,input_index_end:1,"
+                .. "output:"
+                .. prefix
+                .. "-out-%i-%o.bin,"
+                .. "output_proof:"
+                .. prefix
+                .. "-lua-%o-%i.lua",
+            "--no-rollback",
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0",
+        })
+
+        -- The default proof is a Lua chunk returning the Proof table, with raw-byte hashes.
+        local lua_proof = assert(load(filesystem.read_file(prefix .. "-lua-0-0.lua"), "proof", "t", {}))()
+        expect.equal(lua_proof.target_address, 0)
+        expect.equal(lua_proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+        expect.equal(lua_proof.target_hash, cartesi.keccak256(filesystem.read_file(prefix .. "-out-0-0.bin")))
+        hash_tree.verify_slice(lua_proof)
+
+        -- format:json forces JSON content even though the filename ends in .lua.
+        run_ok({
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-input-%i.bin,"
+                .. "input_index_begin:0,input_index_end:1,"
+                .. "output:"
+                .. prefix
+                .. "-out-%i-%o.bin,"
+                .. "output_proof:"
+                .. prefix
+                .. "-json-%o-%i.lua,"
+                .. "format:json",
+            "--no-rollback",
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0",
+        })
+
+        local json_text = filesystem.read_file(prefix .. "-json-0-0.lua")
+        expect.falsy(load(json_text, "proof", "t", {})) -- JSON is not loadable as Lua
+        local json_proof = cartesi.fromjson(json_text, "Proof")
+        expect.equal(json_proof.target_address, 0)
+        hash_tree.verify_slice(json_proof)
+    end)
+
+    -- -------------------------------------------------------------------------
+    -- Output hashes root hash accumulates across accepted inputs
+    --
+    -- What: The outputs tree grows from genesis and is NOT reset on each accept,
+    --       so the root the guest writes after the second input covers both
+    --       inputs' outputs, not just the second's. A guest that reset its tree
+    --       per accept (a real bug once present in the rollup guest utility)
+    --       would write the single-leaf root instead.
+    -- How:  Advance two accepted inputs, one output each, and compare each
+    --       input's output_hashes_root_hash against the root computed
+    --       independently over the accumulated leaves.
+    -- -------------------------------------------------------------------------
+    it("output hashes root hash accumulates across inputs", function()
+        -- Root of the height-CMIO_LOG2_MAX_OUTPUT_COUNT pristine-padded outputs tree over leaves.
+        local function outputs_root(leaves)
+            local frontier = hash_tree.frontier(cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+            for _, leaf in ipairs(leaves) do
+                hash_tree.frontier_push_back(frontier, leaf)
+            end
+            return hash_tree.frontier_get_root_hash(frontier)
+        end
+
+        local prefix = filesystem.temp_pathname()
+        local _ <close> = utils.scope_exit(function()
+            for _, p in ipairs({
+                prefix .. "-input-0.bin",
+                prefix .. "-input-1.bin",
+                prefix .. "-out-0-0.bin",
+                prefix .. "-out-1-1.bin",
+                prefix .. "-oh-0.bin",
+                prefix .. "-oh-1.bin",
+            }) do
+                os.remove(p)
+            end
+        end)
+        filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "first"))
+        filesystem.write_file(prefix .. "-input-1.bin", encode_advance(1, "second"))
+
+        run_ok({
+            "--cmio-advance-state=input:"
+                .. prefix
+                .. "-input-%i.bin,"
+                .. "input_index_begin:0,input_index_end:2,"
+                .. "output:"
+                .. prefix
+                .. "-out-%o-%i.bin,"
+                .. "output_proof:,rejected_output:,report:,"
+                .. "output_hashes_root_hash:"
+                .. prefix
+                .. "-oh-%i.bin",
+            "--no-rollback",
+            "--assert-rolling-template",
+            "--max-mcycle=2000000000",
+            "--no-init-splash",
+            "--quiet",
+            "--",
+            "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0",
+        })
+
+        local leaf0 = cartesi.keccak256(filesystem.read_file(prefix .. "-out-0-0.bin"))
+        local leaf1 = cartesi.keccak256(filesystem.read_file(prefix .. "-out-1-1.bin"))
+        -- After input 0 the guest root covers one leaf, after input 1 it covers both.
+        expect.equal(filesystem.read_file(prefix .. "-oh-0.bin"), outputs_root({ leaf0 }))
+        expect.equal(filesystem.read_file(prefix .. "-oh-1.bin"), outputs_root({ leaf0, leaf1 }))
+        -- A per-accept reset would have written the single-leaf root for input 1.
+        expect.truthy(filesystem.read_file(prefix .. "-oh-1.bin") ~= outputs_root({ leaf1 }))
     end)
 
     -- -------------------------------------------------------------------------
@@ -1918,11 +2029,17 @@ describe("cartesi-machine CLI", function()
 
         local voucher_sig = "Voucher(address destination, uint256 value, bytes payload)"
         -- input 0 accepted gives global 0 and 1, input 2 accepted continues at 2 and 3
-        expect.equal(evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbo-0-0.bin"), "raw").payload, "ok")
-        expect.equal(evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbo-2-2.bin"), "raw").payload, "also-ok")
+        expect.equal(
+            evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-rbo-0-0.bin"), "raw").payload,
+            "ok"
+        )
+        expect.equal(
+            evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-rbo-2-2.bin"), "raw").payload,
+            "also-ok"
+        )
         -- the rejected input's outputs land in rejected_output at their would-be indices
         expect.equal(
-            evmu.decode_calldata(voucher_sig, read_bin(prefix .. "-rbrej-2-1.bin"), "raw").payload,
+            evmu.decode_calldata(voucher_sig, filesystem.read_file(prefix .. "-rbrej-2-1.bin"), "raw").payload,
             "reject-me"
         )
         assert(io.open(prefix .. "-rbrej-3-1.bin", "r"), "no rejected notice for input 1")
@@ -1932,9 +2049,12 @@ describe("cartesi-machine CLI", function()
         assert(not io.open(prefix .. "-rboh-1.bin", "r"), "rejected input wrote an output root hash")
 
         -- every accepted output proof verifies against the last accepted input's outputs root
-        local final_root = read_bin(prefix .. "-rboh-2.bin")
+        local final_root = filesystem.read_file(prefix .. "-rboh-2.bin")
         for _, p in ipairs({ { o = 0, i = 0 }, { o = 1, i = 0 }, { o = 2, i = 2 }, { o = 3, i = 2 } }) do
-            local proof = cartesi.fromjson(read_bin(string.format("%s-rbproof-%d-%d.json", prefix, p.o, p.i)), "Proof")
+            local proof = cartesi.fromjson(
+                filesystem.read_file(string.format("%s-rbproof-%d-%d.json", prefix, p.o, p.i)),
+                "Proof"
+            )
             expect.equal(proof.target_address, p.o)
             expect.equal(proof.root_hash, final_root)
             hash_tree.verify_slice(proof)
@@ -2051,9 +2171,12 @@ describe("cartesi-machine CLI", function()
 
         -- Accepted epoch 2 outputs continue the global index over inputs 2 and 4 (4..7) and verify
         -- against epoch 2's final root. Rejected input 3 advanced nothing.
-        local final_root = read_bin(prefix .. "-e2oh-4.bin")
+        local final_root = filesystem.read_file(prefix .. "-e2oh-4.bin")
         for _, p in ipairs({ { o = 4, i = 2 }, { o = 5, i = 2 }, { o = 6, i = 4 }, { o = 7, i = 4 } }) do
-            local proof = cartesi.fromjson(read_bin(string.format("%s-e2proof-%d-%d.json", prefix, p.o, p.i)), "Proof")
+            local proof = cartesi.fromjson(
+                filesystem.read_file(string.format("%s-e2proof-%d-%d.json", prefix, p.o, p.i)),
+                "Proof"
+            )
             expect.equal(proof.log2_root_size, cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
             expect.equal(proof.target_address, p.o)
             expect.equal(proof.root_hash, final_root)
@@ -2186,9 +2309,7 @@ describe("cartesi-machine CLI", function()
         os.execute("chmod +x " .. runner)
         local pipe = io.popen(runner)
         local pid = pipe and pipe:read("*l")
-        if pipe then
-            pipe:close()
-        end
+        if pipe then pipe:close() end
 
         -- Wait for listen, send GDB detach packet, then wait for process
         os.execute(
@@ -2199,8 +2320,6 @@ describe("cartesi-machine CLI", function()
                 port
             )
         )
-        if pid then
-            os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null")
-        end
+        if pid then os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null") end
     end)
 end)
