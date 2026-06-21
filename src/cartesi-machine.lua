@@ -401,7 +401,7 @@ where options are:
 
         output_hashes_root_hash_proof (default: "input-%%i-output-hashes-root-hash-proof.<format>")
         the pattern that derives the name of the file written for the Merkle
-        proof that the output hashes root hash occupied the cmio tx buffer in
+        proof that the output hashes root hash occupied the tx buffer in
         the machine state in which input %%i was accepted. it ties the output
         hashes root hash (against which "output_proof" proves each output) back
         into the machine state hash. serialized according to "format". when left
@@ -719,11 +719,13 @@ where options are:
             config: store "shared" backing stores from current state; others are copied as they were during load.
             all: (default) store current state for all backings stores.
 
-  --initial-hash
+  --initial-hash[=<filename>]
     print initial state hash before running machine.
+    if <filename> is given, write the raw state hash to it instead.
 
-  --final-hash
+  --final-hash[=<filename>]
     print final state hash when done.
+    if <filename> is given, write the raw state hash to it instead.
 
   --periodic-hashes=<period>[,start:<mcycle>]
     prints root hash every <period> cycles.
@@ -2060,11 +2062,27 @@ options = {
         end,
     },
     {
+        "--initial-hash=",
+        function(_, _, v)
+            initial_hash = v
+            return true
+        end,
+        "filename",
+    },
+    {
         "--final-hash",
         function()
             final_hash = true
             return true
         end,
+    },
+    {
+        "--final-hash=",
+        function(_, _, v)
+            final_hash = v
+            return true
+        end,
+        "filename",
     },
     {
         "--periodic-hashes=",
@@ -2700,7 +2718,7 @@ local function save_cmio_output_proofs(advance)
 end
 
 -- Writes the proof, in the machine state in which the just-accepted input was accepted, that the
--- output hashes root hash occupied the first word of the cmio tx buffer (its 32 bytes are exactly one
+-- output hashes root hash occupied the first word of the tx buffer (its 32 bytes are exactly one
 -- tree word). This ties the output hashes root hash, against which "output_proof" proves each output,
 -- back into the machine state hash. Must be called while the machine still sits at the accept yield.
 local function save_cmio_output_hashes_root_hash_proof(advance, proof)
@@ -2829,7 +2847,11 @@ if cmio_advance then
 end
 if initial_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
-    print_root_hash(machine, stderr_unsilenceable)
+    if type(initial_hash) == "string" then
+        util.write_file(machine:get_root_hash(), initial_hash)
+    else
+        print_root_hash(machine, stderr_unsilenceable)
+    end
 end
 dump_value_proofs(machine, initial_proof, initial_config)
 local exit_code = 0
@@ -3080,7 +3102,11 @@ end
 if dump_address_ranges_dir then dump_address_ranges(machine, dump_address_ranges_dir) end
 if final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
-    print_root_hash(machine, stderr_unsilenceable)
+    if type(final_hash) == "string" then
+        util.write_file(machine:get_root_hash(), final_hash)
+    else
+        print_root_hash(machine, stderr_unsilenceable)
+    end
 end
 dump_value_proofs(machine, final_proof, initial_config)
 if store_dir then store_machine(machine, initial_config, store_dir, store_sharing) end
