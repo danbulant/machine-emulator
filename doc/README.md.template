@@ -135,6 +135,7 @@ _Rejecting an input not only reverts the state, but also cancels all vouchers an
 The advance-state requests serviced by a Rolling Cartesi Machine are grouped into _epochs_.
 At the end of an epoch, the state of the machine is finalized, so its state hash becomes known.
 From the finalized state one can read the _output hashes root hash_, a single hash that commits to every voucher and notice the machine has emitted since genesis.
+This hash is the root of a Merkle tree maintained inside the machine, where each leaf is the hash of one of the outputs, in the order they are emitted.
 Once an epoch is finalized, anyone can prove that a particular output is among those committed to by this hash, and therefore that the machine really did emit it.
 This is how Cartesi Rollups settles disputes over the vouchers and notices a Rolling Cartesi Machine produces.
 
@@ -1203,16 +1204,13 @@ Recall that, as responses, the guest application can issue _vouchers_, _notices_
 In contrast, an inspect-state request carries only a _query_ and, as response, produces only reports and exceptions.
 The query in an inspect-state request consists of an application-specific payload.
 
-Guest applications running inside Rolling Cartesi Machines communicate with the outside world through the `/dev/cmio` Linux character device, which the Cartesi-extended kernel exposes as a single user-space endpoint for the yield sub-device of HTIF, the machine's Host-Target Interface (&ldquo;target&rdquo; in the sense of &ldquo;guest&rdquo;).
-Data flows through two board-level memory regions, the _CMIO RX buffer_ (host to guest) and the _CMIO TX buffer_ (guest to host).
-Applications typically use a higher-level layer: the `libcmt` library when a language binding is available, the `/usr/bin/rollup-http-server` daemon otherwise, or the `/usr/bin/rollup` command-line utility for shell-driven workflows.
-Tooling and tests can also drive the device directly through its `ioctl` interface.
+Guest applications running inside Rolling Cartesi Machines do not access the network or the file-system directly.
+They communicate with the host through a Cartesi-specific mechanism, detailed under [Communication between guest and host](#communication-between-guest-and-host) in the guest perspective.
 
 In a nutshell, the process is as follows.
-To obtain the next request, the guest application issues a _manual_ yield through `/dev/cmio`, returning control to the host (in our case, the `cartesi-machine` command-line utility).
-The host writes the next request into the CMIO RX buffer and resumes the machine, so the guest application can read and process it.
-When the guest application emits an output (a voucher, notice, report, or exception), it writes the payload to the CMIO TX buffer and issues an _automatic_ yield through `/dev/cmio`, which momentarily returns control to the host so it can collect the output (in our case, saving it to a file or printing it to the terminal) before resuming the machine.
-(See [the guest perspective](#system-architecture) for the underlying HTIF protocol and yield semantics.)
+To obtain the next request, the guest application _yields_ control back to the host (in our case, the `cartesi-machine` command-line utility).
+The host writes the next request where the guest can read it and resumes the machine, so the guest application can process it.
+When the guest application emits an output (a voucher, notice, report, or exception), it again yields control to the host so it can collect the output (in our case, saving it to a file or printing it to the terminal) before resuming the machine.
 
 To help debugging applications, developers can obtain from Cartesi Rollups, as files, the inputs associated to each advance-state request, so the sequence can be replayed locally in the command line.
 When prototyping, developers can create their own files simulating requests that test the behavior of their guest application under customized conditions.
@@ -1220,210 +1218,48 @@ When prototyping, developers can create their own files simulating requests that
 #### Encoding requests
 
 The `cartesi-rollup-data.lua` command-line utility, available in the `cartesi/machine-emulator-docs` Docker image, can encode advance-state requests and inspect-state queries to files, and decode vouchers, notices, reports, exceptions, and delegate-call vouchers from files.
-For example, the following commands create the input files for two distinct advance-state requests
-(saved as `input-1.bin` and `input-2.bin`), and one query for an inspect-state request (saved as `query.bin`):
+The calculator we will run treats the payload of each advance-state request as an arbitrary-precision arithmetic expression and emits the result as a notice.
+The following commands encode six such requests as `input-1.bin` through `input-6.bin`, sharing their common structure through a small `encode_input` shell function, and one inspect-state query as `query.bin`:
 
-```{.bash key=rolling_puppet_encode outputs=ls_bin replace=source}
+```{.bash key=rolling_calc_encode outputs=ls_bin replace=source}
 # docs:begin
-cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
+encode_input() {
+  cartesi-rollup-data.lua encode advance <<EOF
 {
   "chain_id": 0,
   "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 1)",
+  "msg_sender": "$(printf '0x%040d' "$1")",
   "block_number": 0,
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 1,
-  "payload": "$(printf 'notice:hello from input 1' | hex --encode)"
+  "index": $1,
+  "payload": "$(printf '%s\n' "$2" | hex --encode)"
 }
 EOF
-cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 2)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 2,
-  "payload": "$(printf 'something the puppet does not understand' | hex --encode)"
 }
-EOF
+encode_input 1 '6*2^1024 + 3*2^512' > input-1.bin
+encode_input 2 'invalid input' > input-2.bin
+encode_input 3 '2^2048' > input-3.bin
+encode_input 4 '(2^256 - 1) * (2^256 - 1)' > input-4.bin
+encode_input 5 'scale=80; sqrt(2)' > input-5.bin
+encode_input 6 'scale=100; 355/113' > input-6.bin
 cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 {
-  "payload": "$(printf 'hello from query!' | hex --encode)"
+  "payload": "$(printf 'scale=70; (1+sqrt(5))/2\n' | hex --encode)"
 }
 EOF
 # docs:end
 ls *.bin > ls_bin
 ```
 Listing the files created with `ls *.bin`, we see
-```{.text replace=rolling_puppet_encode/ls_bin}
+```{.text replace=rolling_calc_encode/ls_bin}
 ```
+The six numbered files are advance-state requests, and `query.bin` is an inspect-state query.
 
-#### Running a simple guest application
+#### A simple calculator guest application
 
-The command-line utility `/home/dapp/puppet`, pre-installed in the root file-system `rootfs.ext2` available in the []{replace=globals/docs_image} Docker image, is a small Rolling Cartesi Machine application built directly against `libcmt`.
-Its source is shown later under [The libcmt library](#the-libcmt-library).
-The `puppet` interprets each advance-state payload as a command.
-A payload of the form `notice:<data>` or `voucher:<data>` causes the named output to be emitted with `<data>`, and likewise for `report:<data>`.
-A payload of the form `exception:<data>` halts the machine with `<data>` as the error message.
-The bare payload `exit` breaks out of the request loop and returns from `main`.
-Control then returns to `cartesi-init`, which halts the machine.
-Any payload that does not match a known verb causes the advance-state request to be rejected.
-Inspect-state queries are echoed back as a single report.
-
-Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
-The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
-With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,output-0-input-1.bin,input-1-output-hashes-root-hash.bin,output-0-input-1-proof.lua,query-report-0.bin replace=source/server}
-ln -sf $rolling_puppet_encode/*.bin .
-{
-# docs:begin server
-cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8082
-# docs:end server
-} > server 2>&1 &
-srv_pid=$!
-{
-# docs:begin client
-while ! cartesi-machine \
-    --remote-address=127.0.0.1:8082 \
-    --remote-health-check 2>/dev/null; do sleep 1; done
-cartesi-machine \
-    --no-init-splash \
-    --remote-address=127.0.0.1:8082 \
-    --remote-shutdown \
-    --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
-    --cmio-inspect-state=hashes \
-    --final-hash \
-    -- /home/dapp/puppet
-# docs:end client
-} > client 2>&1
-client_status=$?
-# If the client failed, it never sent SHUTDOWN, so the server would hang forever
-[ "$client_status" -ne 0 ] && kill "$srv_pid" 2>/dev/null
-wait "$srv_pid"
-```
-
-Then, from a different shell into the same container, run the client with the command
-```{.bash replace=rolling_puppet/source/client}
-```
-
-The command-line option `--cmio-advance-state` instructs the utility to look for input files to use in a sequence of advance-state requests.
-By default, the input filename is `input-%i.bin`, where `%i` is replaced by the input index.
-The input index progressively takes the values in the (open ended) range given by parameters `input_index_begin=<number>` and `input_index_end=<number>`.
-In the example, two advance-state requests will be performed: one for input 1 and one for input 2.
-The filenames therefore match those of the encoded files present in the working directory.
-The parameter `hashes` instructs the utility to print the state hashes between state advances, both before and after it loads the request data into the CMIO RX buffer.
-The command-line option `--cmio-inspect-state` causes the utility to create an inspect-state request right after all advance-state requests have been carried out (if any).
-By default, the query is loaded from a file `query.bin`.
-The guest application is just `puppet`, which acts on whatever payloads it is fed.
-The payload of `input-1.bin` is `notice:hello from input 1`, so the `puppet` will emit a single notice and accept.
-The payload of `input-2.bin` does not match any known verb, so the `puppet` will reject the advance-state request and the client will roll the machine state back, discarding any side-effects from its processing.
-The contents of `query.bin` do not matter (it will be simply echoed), but once again the state of the machine reverts after it is processed.
-
-As a result of these commands, the server shell shows nothing (the `--no-init-splash` option passed to the client suppresses the splash that the remote machine would otherwise print on boot).
-The client shell shows a lot more activity:
-```{replace=rolling_puppet/client}
-```
-
-```{.bash key=rolling_puppet_output outputs=first_rx_accepted,hash_before_input1,hash_after_input1,hash_after_input1_accepted,input1_tx_output,input1_rx_accepted,input2_rx_rejected,query_tx_report,post_query_rx_accepted,revert_cycle_hash vars=client->rolling_puppet/client/path replace=null}
-$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'   < $client > first_rx_accepted
-$RECIPES_DIR/hash-of.sh 'Before input 1'              < $client | $RECIPES_DIR/trunc8.sh > hash_before_input1
-$RECIPES_DIR/hash-of.sh 'Before input 1' 2            < $client | $RECIPES_DIR/trunc8.sh > hash_after_input1
-$RECIPES_DIR/hash-of.sh 'Before input 2' 1            < $client | $RECIPES_DIR/trunc8.sh > hash_after_input1_accepted
-$RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'  < $client > input1_tx_output
-$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2 < $client > input1_rx_accepted
-$RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'   < $client > input2_rx_rejected
-$RECIPES_DIR/cycle-of.sh 'Automatic yield tx-report'  < $client > query_tx_report
-$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 3 < $client > post_query_rx_accepted
-printf '%s:%s' "$(cat input1_rx_accepted)" "$(cat hash_after_input1_accepted)" > revert_cycle_hash
-```
-
-The client starts by printing information about the remote server it connected to.
-It then runs the machine in a loop, occasionally transferring information in and out.
-The first `manual yield rx-accepted` (at cycle []{replace=rolling_puppet_output/first_rx_accepted}) signals the point at which the guest application attempted to obtain its first request.
-
-Upon receiving control back from the machine, the client prints input index 1, prints state hash [...]{replace=rolling_puppet_output/hash_before_input1}, loads file `input-1.bin` into the CMIO RX buffer, prints the modified state hash [...]{replace=rolling_puppet_output/hash_after_input1}, and resumes the machine.
-The `puppet` reads the payload `notice:hello from input 1`, dispatches on the `notice` verb, and emits one notice with payload `hello from input 1`.
-The emission generates an `automatic yield tx-output` at cycle []{replace=rolling_puppet_output/input1_tx_output}, returning control to the client.
-The client reads the CMIO TX buffer and stores the output as `output-0-input-1.bin`.
-The `manual yield rx-accepted` at cycle []{replace=rolling_puppet_output/input1_rx_accepted} signals that the `puppet` is done processing input index 1 and has accepted it.
-
-The client then loads input index 2 and resumes the machine.
-The payload `something the puppet does not understand` does not match any of the recognized verbs, so the `puppet` rejects the request.
-The resulting `manual yield rx-rejected` at cycle []{replace=rolling_puppet_output/input2_rx_rejected} causes the client to roll the machine state back to what it was before the input was processed.
-This can be confirmed by the fact that the cycle count and state hash before the query remain [...]{replace=rolling_puppet_output/revert_cycle_hash}.
-
-With both advance-state requests handled, the client moves to the inspect-state request.
-It loads `query.bin` into the CMIO RX buffer and resumes the machine so the `puppet` can respond.
-The `automatic yield tx-report` at cycle []{replace=rolling_puppet_output/query_tx_report} signals the application issued a report, which the client then saves as `query-report-0.bin`.
-Finally, when the subsequent `manual yield rx-accepted` is received at cycle []{replace=rolling_puppet_output/post_query_rx_accepted}, the client reverts the state of the machine back to what it was before the query was processed.
-(Note the final cycle count and state hash are still [...]{replace=rolling_puppet_output/revert_cycle_hash}.)
-Since there is nothing else to do, the client shuts down the remote Cartesi Machine server and exits.
-
-Here is the complete list of `.bin` files after the client exits:
-```{.bash key=rolling_puppet_all_bins vars=rolling_puppet replace=source}
-ln -sf $rolling_puppet/*.bin $rolling_puppet/*.lua .
-# docs:begin
-ls *.bin *.lua
-# docs:end
-```
-```{.text replace=rolling_puppet_all_bins}
-```
-
-The advance over input 1 also produced two files for verifying its output.
-We can regard this entire run as a single epoch.
-`input-1-output-hashes-root-hash.bin` then holds the epoch's output hashes root hash, recorded when input 1 was accepted (the rejected input 2 contributes nothing).
-It commits to every output the machine has emitted since genesis, which in this short run is just the single notice stored in `output-0-input-1.bin`.
-`output-0-input-1-proof.lua` is the proof that this notice is among the outputs committed to by that root hash.
-The hash operations behind such proofs are explained later, under [Merkle tree operations](#merkle-tree-operations) in the Blockchain perspective.
-
-#### Decoding responses
-
-The `cartesi-rollup-data.lua` command-line utility can also decode the binary records produced by the guest application.
-
-For example, we can decode the advance-state request file we encoded for the first input above with the command
-```{.bash key=rolling_puppet_decode_advance vars=rolling_puppet replace=source}
-ln -sf $rolling_puppet/*.bin .
-# docs:begin
-cartesi-rollup-data.lua decode advance < input-1.bin
-# docs:end
-```
-```{.js replace=rolling_puppet_decode_advance}
-```
-The payload field carries the hex encoding of the bytes `notice:hello from input 1`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 1`.
-
-Notices and reports carry only a payload.
-To decode them, run, for example
-```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/output-0-input-1.bin/path replace=source}
-ln -sf $notice .
-# docs:begin
-cartesi-rollup-data.lua decode notice < output-0-input-1.bin | jq -j .payload | hex --decode
-# docs:end
-```
-```{.text replace=rolling_puppet_decode_notice}
-```
-```{.bash key=rolling_puppet_decode_report vars=report->rolling_puppet/query-report-0.bin/path replace=source}
-ln -sf $report .
-# docs:begin
-cartesi-rollup-data.lua decode report < query-report-0.bin | jq -j .payload | hex --decode
-# docs:end
-```
-```{.text replace=rolling_puppet_decode_report}
-```
-Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
-A voucher carries a _destination_, a _value_, and a _payload_.
-Sending the `puppet` an advance-state input with payload `voucher:<data>` would emit such a record, with _destination_ taken from the advance-state _msg_sender_ field, _value_ set to zero, and _payload_ set to `<data>`.
-Payloads are 0x-prefixed hex.
-
-### Rolling Cartesi Machine templates
-
-A Rolling Cartesi Machine template is a machine that has been configured to support Cartesi Rollups, is running a guest application in a request-processing loop, is ready to process the next request, and has been stored.
-
-As an example, we will create a Rolling Cartesi Machine template for an arbitrary-precision arithmetic expression evaluator that outputs, as notices, the result of computation it receives as inputs to advance-state requests.
-We will, once again, rely on the `bc` command-line utility to perform the computations.
+We will run an arbitrary-precision arithmetic expression evaluator that outputs, as notices, the result of the computation it receives as the payload of each advance-state request.
+We will rely on the `bc` command-line utility to perform the computations.
 To interact with the `/dev/cmio` Linux device (i.e., to obtain the advance-state request inputs and to generate the notices), we will use the `/usr/bin/rollup` command-line utility.
 
 The `rollup` command-line utility supports the commands `accept`, `reject`, `voucher`, `notice`, `report`, and `exception`.
@@ -1465,16 +1301,17 @@ A `bc`-based arbitrary precision application, for example, might look like this:
 ```
 
 The loop in the `calc.sh` script calls `rollup accept` or `rollup reject` (shortcuts for `rollup finish`) to accept or reject the previous request and obtain the next one.
-It uses `jq` to extract the `request_type` field and, if it is an `"advance_state"` request, it uses `jq` again to extract the `"payload"` field inside the `"data"` field.
+It uses `jq` to read the `request_type` field, which selects the output verb: an advance-state request emits the result as a notice, and an inspect-state request emits it as a report.
+Both kinds of request carry the expression at `.data.payload`, which `jq` extracts.
 The hex-encoded payload is decoded back to bytes by `hex --decode` and passed to `bc`, which outputs the result split into lines terminated by `\`.
 Unfortunately, `bc` does not exit with an error when it detects one.
 Instead, it prints a message to the error stream and exits successfully.
 The `grep .` exits with an error in that case, because the output stream of `bc` will be empty.
 Otherwise, `grep .` simply passes the output through unchanged.
 In that case, `tr` utility joins the lines back together.
-The joined result is hex-encoded by `hex --encode` and fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice`.
+The joined result is hex-encoded by `hex --encode` and fed to `jq`, which assembles the proper JSON object with a `"payload"` field that is passed to `rollup notice` or `rollup report`, the verb chosen by the request type.
 
-To use `calc.sh` in a Rolling Cartesi Machine template, first create a file-system with the program:
+To run `calc.sh`, first create a file-system with the program:
 ```{.bash key=calc_ext2 outputs=calc.ext2 replace=source}
 trap 'rm -rf calc calc.tar' EXIT
 rm -rf calc
@@ -1499,61 +1336,32 @@ xgenext2fs \
 # docs:end
 ```
 
-Then, follow a procedure similar to the creation of Cartesi Machine templates, using the command line
-```{.bash key=rolling_calc_template outputs=template,server,client1,client2,rolling-calculator-template,output-0-input-1.bin,output-1-input-3.bin,output-2-input-4.bin,output-3-input-5.bin,output-4-input-6.bin,rejected-output-1-input-2.bin,output-0-input-1-proof.lua,output-1-input-3-proof.lua,output-2-input-4-proof.lua,output-3-input-5-proof.lua,output-4-input-6-proof.lua,input-1-output-hashes-root-hash.bin,input-3-output-hashes-root-hash.bin,input-4-output-hashes-root-hash.bin,input-5-output-hashes-root-hash.bin,input-6-output-hashes-root-hash.bin replace=source/template vars=calc_ext2->calc_ext2/calc.ext2/path}
-# docs:begin inputs
-encode_input() {
-  cartesi-rollup-data.lua encode advance <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' "$1")",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": $1,
-  "payload": "$(printf '%s\n' "$2" | hex --encode)"
-}
-EOF
-}
-encode_input 1 '6*2^1024 + 3*2^512' > input-1.bin
-encode_input 2 'invalid input' > input-2.bin
-encode_input 3 '2^2048' > input-3.bin
-encode_input 4 '(2^256 - 1) * (2^256 - 1)' > input-4.bin
-encode_input 5 'scale=80; sqrt(2)' > input-5.bin
-encode_input 6 'scale=60; 1/7' > input-6.bin
-# docs:end inputs
+Running a Rolling Cartesi Machine in the command line requires using the `cartesi-jsonrpc-machine` server in combination with the `cartesi-machine` client.
+The server provides the fork functionality the client uses to roll the machine state back when an input to advance-state request is rejected, or after an inspect-state request.
+With the encoded inputs and `calc.ext2` in the working directory, run the remote server with the command
+```{.bash key=rolling_calc_run vars=rolling_calc_encode,calc_ext2->calc_ext2/calc.ext2/path outputs=server,client1,client2,output-0-input-1.bin,output-1-input-3.bin,output-2-input-4.bin,output-3-input-5.bin,output-4-input-6.bin,rejected-output-1-input-2.bin,output-0-input-1-proof.lua,output-1-input-3-proof.lua,output-2-input-4-proof.lua,output-3-input-5-proof.lua,output-4-input-6-proof.lua,input-1-output-hashes-root-hash.bin,input-3-output-hashes-root-hash.bin,input-4-output-hashes-root-hash.bin,input-5-output-hashes-root-hash.bin,input-6-output-hashes-root-hash.bin,query-report-0.bin replace=source/server}
+ln -sf $rolling_calc_encode/*.bin .
 rm -f calc.ext2
 ln -sf "$calc_ext2" .
-rm -rf rolling-calculator-template
-{
-# docs:begin template
-cartesi-machine \
-    --no-init-splash \
-    --assert-rolling-template \
-    --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --store="rolling-calculator-template" \
-    -- /mnt/calc/calc.sh
-# docs:end template
-} > template 2>&1
 {
 # docs:begin server
 cartesi-jsonrpc-machine \
-    --server-address=127.0.0.1:8083
+    --server-address=127.0.0.1:8082
 # docs:end server
 } > server 2>&1 &
 srv_pid=$!
 {
 # docs:begin client1
 while ! cartesi-machine \
-    --remote-address=127.0.0.1:8083 \
+    --remote-address=127.0.0.1:8082 \
     --remote-health-check 2>/dev/null; do sleep 1; done
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8083 \
+    --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
+    --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --cmio-advance-state=input_index_begin:1,input_index_end:4,hashes \
-    --load="rolling-calculator-template"
+    -- /mnt/calc/calc.sh
 # docs:end client1
 } > client1 2>&1
 client1_status=$?
@@ -1561,84 +1369,99 @@ client1_status=$?
 # docs:begin client2
 cartesi-machine \
     --no-init-splash \
-    --remote-address=127.0.0.1:8083 \
+    --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:4,input_index_end:7,last_output_proof:output-1-input-3-proof.lua,hashes
+    --cmio-advance-state=input_index_begin:4,input_index_end:7,last_output_proof:output-1-input-3-proof.lua,hashes \
+    --cmio-inspect-state=query:query.bin,hashes
 # docs:end client2
 } > client2 2>&1
 client2_status=$?
-# If either client failed, the server may still be up, so kill it to avoid a hang
 { [ "$client1_status" -eq 0 ] && [ "$client2_status" -eq 0 ]; } || kill "$srv_pid" 2>/dev/null
 wait "$srv_pid"
 ```
 
-We add the command line option `--assert-rolling-template` to help catch errors.
-When enabled, it will cause `cartesi-machine` to exit with a status-code reporting failure if the generated machine is not a Rolling Cartesi Machine template.
-
-The result is as follows
-```{replace=rolling_calc_template/template}
-```
-The machine execution stops when the first call to `rollup finish` yields, and the machine at that state is stored in directory `"rolling-calculator-template"`.
-
-:::note
-In production, if the guest application finds an irrecoverable error during initialization, it should abort with an exception.
-In that case, the `cartesi-machine` command-line utility will detect the exception, print it to the console, and exit with a status-code reporting failure.
-:::
-
-To test the template, create the advance-state requests
-```{.bash replace=rolling_calc_template/source/inputs}
-```
-
-With the files just created by `cartesi-rollup-data.lua` in the working directory, run the remote server with the command
-```{.bash key=rolling_calc_template_ls_bin replace=source vars=rolling_calc_template}
-ln -sf $rolling_calc_template/input-?.bin .
-# docs:begin
-ls *.bin
-# docs:end
-```
-```{replace=rolling_calc_template_ls_bin}
-```
-```{.bash replace=rolling_calc_template/source/server}
-```
-
-We will run the inputs in two separate epochs against a server that is kept alive between runs.
+We will run the inputs in two separate epochs against this server, kept alive between runs.
 From a different shell into the same container, run the client to process the first epoch
-```{.bash replace=rolling_calc_template/source/client1}
+```{.bash replace=rolling_calc_run/source/client1}
 ```
-This run loads the machine from directory `"rolling-calculator-template"` and advances inputs 1 to 3.
-The first input, with payload `"6*2^1024 + 3*2^512"`, is accepted.
-The second input is rejected, as the payload `"invalid input"` is not an expression that `bc` can understand.
-Note that an empty notice is still emitted before the rejection.
-Shell pipelines run concurrently, so by the time `bc`'s failure is detected (via `grep` and `pipefail`), `rollup notice` has already run with the empty payload that `hex --encode` produces from no input.
-The empty notice is harmless because the rejection that follows discards all outputs for that input.
-For debugging, the `cartesi-machine` utility still saves them, here as `rejected-output-1-input-2.bin`.
-The third input, with payload `"2^2048"`, is accepted.
+This run instantiates the machine from the `calc.ext2` flash drive and advances inputs 1 to 3.
 Passing `--no-remote-destroy` and omitting `--remote-shutdown` leaves both the server and the machine it holds alive for the next epoch.
 
 The client shell shows
-```{replace=rolling_calc_template/client1}
+```{replace=rolling_calc_run/client1}
+```
+```{.bash key=rolling_calc_output outputs=first_rx_accepted,hash_before_input1,hash_after_input1,input1_tx_output,input1_rx_accepted,input2_rx_rejected,hash_before_input3 vars=client1->rolling_calc_run/client1/path replace=null}
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted'   < $client1 > first_rx_accepted
+$RECIPES_DIR/hash-of.sh 'Before input 1'              < $client1 | $RECIPES_DIR/trunc8.sh > hash_before_input1
+$RECIPES_DIR/hash-of.sh 'Before input 1' 2            < $client1 | $RECIPES_DIR/trunc8.sh > hash_after_input1
+$RECIPES_DIR/cycle-of.sh 'Automatic yield tx-output'  < $client1 > input1_tx_output
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-accepted' 2 < $client1 > input1_rx_accepted
+$RECIPES_DIR/cycle-of.sh 'Manual yield rx-rejected'   < $client1 > input2_rx_rejected
+$RECIPES_DIR/hash-of.sh 'Before input 3'              < $client1 | $RECIPES_DIR/trunc8.sh > hash_before_input3
 ```
 
+The client starts by printing information about the remote server it connected to.
+It then runs the machine in a loop, occasionally transferring information in and out.
+The first `manual yield rx-accepted`, at cycle []{replace=rolling_calc_output/first_rx_accepted}, is the point at which the calculator attempted to obtain its first request.
+
+Upon receiving control back, the client prints input index 1 and the state hash [...]{replace=rolling_calc_output/hash_before_input1}.
+It loads `input-1.bin` as the next request, prints the modified state hash [...]{replace=rolling_calc_output/hash_after_input1}, and resumes the machine.
+The calculator evaluates `6*2^1024 + 3*2^512` and emits the result as a notice.
+That emission is an `automatic yield tx-output` at cycle []{replace=rolling_calc_output/input1_tx_output}, which returns control to the client.
+The client collects the emitted output and stores it as `output-0-input-1.bin`.
+The `manual yield rx-accepted` at cycle []{replace=rolling_calc_output/input1_rx_accepted} signals that input index 1 was accepted.
+At this point the client also stores the output hashes root hash the guest reported, as `input-1-output-hashes-root-hash.bin`, and double-checks it against its own local computation of the same hash.
+This hash commits to every output the machine has emitted so far.
+
+The client then loads input index 2 and resumes the machine.
+The payload `invalid input` is not an expression that `bc` understands, so the calculator rejects the request.
+An empty notice is still emitted just before the rejection.
+Shell pipelines run concurrently, so `rollup notice` has already run by the time `bc`'s failure is detected.
+Rejection discards all outputs, such as this notice.
+For debugging purposes, the client saves the notice contents as `rejected-output-1-input-2.bin`.
+The resulting `manual yield rx-rejected` at cycle []{replace=rolling_calc_output/input2_rx_rejected} rolls the machine state back to what it was before the input was processed.
+The state hash before input 3, [...]{replace=rolling_calc_output/hash_before_input3}, is identical to the hash after input 1 was accepted, which confirms the rejected input left no trace.
+
+Input index 3, with payload `2^2048`, is accepted like the first, so the client stores `output-1-input-3.bin` and `input-3-output-hashes-root-hash.bin`.
+The two output proofs for this epoch, `output-0-input-1-proof.lua` and `output-1-input-3-proof.lua`, are written at the end, once all of the epoch's outputs are known.
+Each proves that one of the epoch's outputs belongs to the tree the final output hashes root hash commits to.
+
 Now run the client to process the second epoch in the same server
-```{.bash replace=rolling_calc_template/source/client2}
+```{.bash replace=rolling_calc_run/source/client2}
 ```
 The command-line option `--no-remote-create` reuses the machine where the first epoch left off.
-The outputs tree inside the machine keeps growing across the epoch boundary on its own.
-The `last_output_proof:output-1-input-3-proof.lua` option is there for `cartesi-machine` alone, which uses the first epoch's last output proof to rebuild its own copy of the outputs tree as it stood at the end of that epoch.
-With this copy, the outputs root hash `cartesi-machine` computes for each accepted input matches the one `libcmt` produces inside the emulator, which is what the default `check_output_hashes_root_hash` verifies.
+The output hashes tree inside the machine keeps growing across the epoch boundary on its own.
+The `last_output_proof:output-1-input-3-proof.lua` option is there for the `cartesi-machine` command-line-utility alone, which uses the first epoch's last output proof to rebuild its own copy of the output hashes tree as it stood at the end of that epoch.
+With this copy, the output hashes root hash `cartesi-machine` computes for each accepted input matches the one produced inside the emulator, which is what the default `check_output_hashes_root_hash` verifies.
 The copy also lets `cartesi-machine` emit correct proofs, at the right global output indices, for the outputs it collects during this epoch.
-The three inputs evaluate `(2^256 - 1) * (2^256 - 1)`, `sqrt(2)` to 80 decimal places, and `1/7` to 60 decimal places.
+The three inputs evaluate `(2^256 - 1) * (2^256 - 1)`, `sqrt(2)` to 80 decimal places, and `355/113` to 100 decimal places.
 Arbitrary-precision results like these are awkward to compute on the blockchain, whose native arithmetic works on fixed-width 256-bit integers and has no fractions.
 Their outputs continue the global output index, becoming outputs 2, 3, and 4.
 The run passes `--remote-shutdown` to stop the server once the epoch is done.
 
 The client shell now shows
-```{replace=rolling_calc_template/client2}
+```{replace=rolling_calc_run/client2}
 ```
 
-Indeed, to see the value of `sqrt(2)` computed in the second epoch, run
-```{.bash key=rolling_calc_decode vars=output_3_input_5_bin->rolling_calc_template/output-3-input-5.bin/path replace=source}
+After the second epoch's advances, the same run sends the inspect-state query from `query.bin`.
+The calculator evaluates `scale=70; (1+sqrt(5))/2`, the golden ratio, and returns it as a report rather than a notice.
+An inspect-state request cannot emit verifiable outputs such as notices or vouchers, because any change its processing makes to the machine state is reverted afterward.
+The client saves the report as `query-report-0.bin`.
+
+The hash operations behind the output proofs are explained later, under [Merkle tree operations](#merkle-tree-operations) in the Blockchain perspective.
+
+The server shell shows only the error message output by `bc` and `rollup`.
+In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
+```{replace=rolling_calc_run/server}
+```
+
+#### Decoding responses
+
+The `cartesi-rollup-data.lua` command-line utility can also decode the binary records produced by the guest application.
+
+For example, to see the value of `sqrt(2)` computed in the second epoch, decode its notice with the command
+```{.bash key=rolling_calc_decode vars=output_3_input_5_bin->rolling_calc_run/output-3-input-5.bin/path replace=source}
 ln -sf $output_3_input_5_bin .
 # docs:begin
 cartesi-rollup-data.lua decode notice < output-3-input-5.bin | \
@@ -1650,10 +1473,104 @@ cartesi-rollup-data.lua decode notice < output-3-input-5.bin | \
 to produce
 ```{replace=rolling_calc_decode}
 ```
-The server shell shows only the error message output by `bc` and `rollup`.
-In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
-```{replace=rolling_calc_template/server}
+This is `sqrt(2)` to 80 decimal places.
+
+The inspect-state report is decoded the same way, with `decode report`
+```{.bash key=rolling_calc_decode_report vars=query_report->rolling_calc_run/query-report-0.bin/path replace=source}
+ln -sf $query_report .
+# docs:begin
+cartesi-rollup-data.lua decode report < query-report-0.bin | \
+    jq -j .payload | \
+    hex --decode | \
+    fold -w 68
+# docs:end
 ```
+to produce
+```{replace=rolling_calc_decode_report}
+```
+This is the golden ratio to 70 decimal places.
+
+Vouchers, exceptions, and delegate-call vouchers are also supported by `cartesi-rollup-data.lua decode`.
+A voucher carries a _destination_, a _value_, and a _payload_.
+Payloads are 0x-prefixed hex.
+
+### Rolling Cartesi Machine templates
+
+A Rolling Cartesi Machine template is a machine that has been configured to support Cartesi Rollups, is running a guest application in a request-processing loop, is ready to process the next request, and has been stored.
+
+A template is the genesis of a Cartesi Rollups application.
+Its state hash is what a freshly deployed application looks like to the blockchain, and the stored template is the artifact distributed to anyone who wants to run the application in their own Cartesi Node.
+
+We store the calculator from the previous section as a template with the command
+```{.bash key=rolling_calc_template outputs=template,rolling-calculator-template vars=calc_ext2->calc_ext2/calc.ext2/path replace=source/template}
+rm -f calc.ext2
+ln -sf "$calc_ext2" .
+rm -rf rolling-calculator-template
+{
+# docs:begin template
+cartesi-machine \
+    --no-init-splash \
+    --assert-rolling-template \
+    --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
+    --store="rolling-calculator-template" \
+    --final-hash \
+    -- /mnt/calc/calc.sh
+# docs:end template
+} > template 2>&1
+```
+
+The `--assert-rolling-template` option makes `cartesi-machine` exit with a status-code reporting failure if the generated machine is not a Rolling Cartesi Machine template, which helps catch errors.
+The result is as follows
+```{replace=rolling_calc_template/template}
+```
+The machine execution stops when the first call to `rollup finish` yields, and the machine at that state is stored in directory `"rolling-calculator-template"`.
+The `--final-hash` option prints the state hash of the stored machine, the genesis state hash that identifies this application to the blockchain.
+
+:::note
+In production, if the guest application finds an irrecoverable error during initialization, it should abort with an exception.
+In that case, the `cartesi-machine` command-line utility will detect the exception, print it to the console, and exit with a status-code reporting failure.
+:::
+
+To run the application, load the template into a server and feed it the same inputs.
+With the encoded inputs and the stored template in the working directory, run the remote server with the command
+```{.bash key=rolling_calc_template_run vars=rolling_calc_encode,tmpl->rolling_calc_template/rolling-calculator-template/path outputs=server,client,output-0-input-1.bin,output-1-input-3.bin,output-2-input-4.bin,output-3-input-5.bin,output-4-input-6.bin replace=source/server}
+ln -sf $rolling_calc_encode/input-?.bin .
+ln -sf "$tmpl" rolling-calculator-template
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8083
+# docs:end server
+} > server 2>&1 &
+srv_pid=$!
+{
+# docs:begin client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8083 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8083 \
+    --remote-shutdown \
+    --cmio-advance-state=input_index_begin:1,input_index_end:7,output_proof:,hashes \
+    --load="rolling-calculator-template"
+# docs:end client
+} > client 2>&1
+client_status=$?
+[ "$client_status" -ne 0 ] && kill "$srv_pid" 2>/dev/null
+wait "$srv_pid"
+```
+From a different shell into the same container, run the client
+```{.bash replace=rolling_calc_template_run/source/client}
+```
+This loads the machine from the stored template and advances all six inputs.
+Abbreviated, the client shell shows
+```{.bash key=rolling_calc_template_run_elided vars=client->rolling_calc_template_run/client/path outputs=elided replace=null}
+{ head -n 16 "$client"; echo ...; tail -n 8 "$client"; } > elided
+```
+```{replace=rolling_calc_template_run_elided/elided}
+```
+The outputs and their hashes are identical to those produced in the previous section, because the template captured exactly the same genesis state.
 
 ### Additional options
 
@@ -2720,7 +2637,7 @@ Outputs come back as ABI-encoded `Voucher(address,uint256,bytes)` or `Notice(byt
 Reports, exceptions, and inspect-state queries are raw payload bytes with no ABI wrapping.
 The `cartesi.evmu` Lua submodule provides `encode_calldata` and `decode_calldata` helpers for these signatures.
 
-The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (we will use the server calculator [example](#rolling-cartesi-machine-templates)):
+The following script illustrates how the Lua API can be used to send advance-state requests to a Rolling Cartesi Machine, and how it can be used to collect the notices produced as responses (we will use the server calculator [example](#rolling-cartesi-machines)):
 
 ```{.lua key=run_rolling_calculator include=run-rolling-calculator.lua}
 ```
@@ -3317,8 +3234,8 @@ While processing a request, the application emits zero or more outputs.
 The rules of the request/response protocol and the meaning of each output type are spelled out under Rolling Cartesi Machines, in the host-side chapter.
 Finally, `cmt_rollup_fini()` tears down the mappings and closes the device.
 
-The `puppet` guest application used in the [rolling-machines walk-through](#rolling-cartesi-machines) is a small libcmt rollup loop whose advance-state payloads are commands.
-It exercises most of the `rollup.h` API in roughly fifty lines.
+The `puppet` guest application is a small libcmt rollup loop whose advance-state payloads are commands.
+It exercises every emit call of the `rollup.h` API in roughly fifty lines.
 
 ```{.c key=puppet include=puppet.c title="puppet.c"}
 ```
@@ -3334,6 +3251,118 @@ Any payload that does not match a known verb causes the advance-state request to
 For inspect-state requests, the program emits a single report echoing the query and accepts.
 The loop exits when an error escapes from any libcmt call, which is also what happens when the host signals end of input by halting the machine.
 
+We can drive `puppet` through the same command-line harness used earlier for the calculator under [Rolling Cartesi Machines](#rolling-cartesi-machines).
+First, encode two advance-state requests and one inspect-state query:
+```{.bash key=rolling_puppet_encode outputs=ls_bin replace=source}
+# docs:begin
+cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 1)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 1,
+  "payload": "$(printf 'notice:hello from input 1' | hex --encode)"
+}
+EOF
+cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 2)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 2,
+  "payload": "$(printf 'something the puppet does not understand' | hex --encode)"
+}
+EOF
+cartesi-rollup-data.lua encode inspect > query.bin <<EOF
+{
+  "payload": "$(printf 'hello from query!' | hex --encode)"
+}
+EOF
+# docs:end
+ls *.bin > ls_bin
+```
+
+Then run the server and client, instantiating the machine directly from `/home/dapp/puppet`:
+```{.bash key=rolling_puppet vars=rolling_puppet_encode outputs=server,client,output-0-input-1.bin,input-1-output-hashes-root-hash.bin,output-0-input-1-proof.lua,query-report-0.bin replace=source/server}
+ln -sf $rolling_puppet_encode/*.bin .
+{
+# docs:begin server
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8086
+# docs:end server
+} > server 2>&1 &
+srv_pid=$!
+{
+# docs:begin client
+while ! cartesi-machine \
+    --remote-address=127.0.0.1:8086 \
+    --remote-health-check 2>/dev/null; do sleep 1; done
+cartesi-machine \
+    --no-init-splash \
+    --remote-address=127.0.0.1:8086 \
+    --remote-shutdown \
+    --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
+    --cmio-inspect-state=hashes \
+    --final-hash \
+    -- /home/dapp/puppet
+# docs:end client
+} > client 2>&1
+client_status=$?
+[ "$client_status" -ne 0 ] && kill "$srv_pid" 2>/dev/null
+wait "$srv_pid"
+```
+```{.bash replace=rolling_puppet/source/server}
+```
+
+From a different shell into the same container, run the client
+```{.bash replace=rolling_puppet/source/client}
+```
+The payload of `input-1.bin` is `notice:hello from input 1`, so the `puppet` emits a single notice and accepts.
+The payload of `input-2.bin` does not match any known verb, so the `puppet` rejects the advance-state request and the client rolls the machine state back, discarding any side-effects from its processing.
+The contents of `query.bin` are echoed back as a report, and once again the state of the machine reverts after the inspect-state request is processed.
+
+The client shell shows
+```{replace=rolling_puppet/client}
+```
+
+As expected, the yields and state hashes shown here follow the same pattern detailed for the calculator under [Rolling Cartesi Machines](#rolling-cartesi-machines).
+
+The `cartesi-rollup-data.lua` utility decodes the records the run produced.
+The advance-state request carries the command `puppet` acted on
+```{.bash key=rolling_puppet_decode_advance vars=rolling_puppet replace=source}
+ln -sf $rolling_puppet/*.bin .
+# docs:begin
+cartesi-rollup-data.lua decode advance < input-1.bin
+# docs:end
+```
+```{.js replace=rolling_puppet_decode_advance}
+```
+The payload field carries the hex encoding of the bytes `notice:hello from input 1`, which the `puppet` parsed as a command to emit a notice with payload `hello from input 1`.
+
+Notices and reports carry only a payload, which we recover with
+```{.bash key=rolling_puppet_decode_notice vars=notice->rolling_puppet/output-0-input-1.bin/path replace=source}
+ln -sf $notice .
+# docs:begin
+cartesi-rollup-data.lua decode notice < output-0-input-1.bin | jq -j .payload | hex --decode
+# docs:end
+```
+```{.text replace=rolling_puppet_decode_notice}
+```
+```{.bash key=rolling_puppet_decode_report vars=report->rolling_puppet/query-report-0.bin/path replace=source}
+ln -sf $report .
+# docs:begin
+cartesi-rollup-data.lua decode report < query-report-0.bin | jq -j .payload | hex --decode
+# docs:end
+```
+```{.text replace=rolling_puppet_decode_report}
+```
+
 #### The rollup HTTP server
 
 For guest applications written in languages that have no libcmt binding, the `/usr/bin/rollup-http-server` daemon is the practical bridge to `/dev/cmio`.
@@ -3345,7 +3374,7 @@ The guest application's request/response loop runs in the host language and issu
 The `/usr/bin/rollup` utility is a thin libcmt wrapper that exposes single libcmt operations on the command line, reading and writing JSON on standard input and standard output.
 It is intended for shell-driven demos and tests.
 Production applications should use either a libcmt language binding or `/usr/bin/rollup-http-server` instead.
-The [calculator that evaluates `bc` expressions](#rolling-cartesi-machine-templates) earlier in this document drives a `rollup`-based loop from a shell script.
+The [calculator that evaluates `bc` expressions](#rolling-cartesi-machines) earlier in this document drives a `rollup`-based loop from a shell script.
 
 For reference, the help text of the `rollup` utility is
 
@@ -4332,18 +4361,18 @@ ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
 {
 # docs:begin server
-lua5.4 verification-game.lua referee 127.0.0.1:8086 "6*2^1024 + 3*2^512"
+lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
 # docs:end server
 } > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep 8086 > /dev/null; do sleep 1; done
+while ! netstat -ntl 2>&1 | grep 8087 > /dev/null; do sleep 1; done
 {
 # docs:begin honest
-lua5.4 verification-game.lua honest 127.0.0.1:8086 "6*2^1024 + 3*2^512"
+lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
 # docs:end honest
 } > /dev/null 2>&1 &
 {
 # docs:begin dishonest
-lua5.4 verification-game.lua dishonest 127.0.0.1:8086 "6*2^1024 + 3*2^512" 25 7 "2+2"
+lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 7 "2+2"
 # docs:end dishonest
 } > /dev/null 2>&1 &
 wait
@@ -4383,16 +4412,16 @@ ln -sf "$template" .
 ln -sf "$RECIPES_DIR/verification-game.lua" .
 ln -sf "$RECIPES_DIR/dishonest.lua" .
 {
-lua5.4 verification-game.lua referee 127.0.0.1:8087 "6*2^1024 + 3*2^512"
+lua5.4 verification-game.lua referee 127.0.0.1:8088 "6*2^1024 + 3*2^512"
 } > /dev/null 2>&1 &
-while ! netstat -ntl 2>&1 | grep 8087 > /dev/null; do sleep 1; done
+while ! netstat -ntl 2>&1 | grep 8088 > /dev/null; do sleep 1; done
 {
-lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
+lua5.4 verification-game.lua honest 127.0.0.1:8088 "6*2^1024 + 3*2^512"
 } > /dev/null 2>&1 &
 last_uarch_cycle=$(( $uarch_cycle_max - 1 ))
 {
 # docs:begin dishonest
-lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
+lua5.4 verification-game.lua dishonest 127.0.0.1:8088 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
 # docs:end dishonest
 } > /dev/null 2>&1 &
 wait

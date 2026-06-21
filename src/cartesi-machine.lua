@@ -376,15 +376,15 @@ where options are:
 
         output_proof (default: "output-%%o-input-%%i-proof.<format>")
         the pattern that derives the name of the file written for the Merkle
-        proof of each accepted output against the outputs root hash of the last
-        input of the run. serialized according to "format". when left at the
+        proof of each accepted output against the output hashes root hash of the
+        last input of the run. serialized according to "format". when left at the
         default, its extension tracks "format".
 
         last_output_proof (no default)
         a single filename, not a pattern, holding the previous run's last output
-        proof. it resumes the outputs Merkle tree so this run continues at the
-        running global output index. omit it for the first (genesis) run. read
-        according to "format".
+        proof. it resumes the output hashes Merkle tree so this run continues at
+        the running global output index. omit it for the first (genesis) run.
+        read according to "format".
 
         format (optional)
         selects the format for output_proof and last_output_proof. when omitted,
@@ -395,12 +395,12 @@ where options are:
         of input %%i.
 
         output_hashes_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
-        the pattern that derives the name of the file written for outputs root
-        hash of input %%i.
+        the pattern that derives the name of the file written for the output
+        hashes root hash after input %%i.
 
         check_output_hashes_root_hash (default: true)
-        on each accepted input, check that the host's running outputs root hash
-        equals the one the guest wrote to the tx buffer. it needs either the
+        on each accepted input, check that the host's running output hashes root
+        hash equals the one the guest wrote to the tx buffer. it needs either the
         genesis run or a last_output_proof seed to know the count of prior
         outputs.
 

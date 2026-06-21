@@ -30,16 +30,23 @@ describe("cartesi-machine CLI", function()
     local evmu = require("cartesi.evmu")
     local hash_tree = require("cartesi.hash-tree")
 
-    local function zeros(n) return string.rep("\0", n) end
+    local function zeros(n)
+        return string.rep("\0", n)
+    end
 
     local function scope_temp_pathname()
         local path = filesystem.temp_pathname()
-        return utils.scope_exit(function() os.remove(path) end), path
+        return utils.scope_exit(function()
+            os.remove(path)
+        end), path
     end
 
     local function scope_stored_dirname()
         local dir = filesystem.temp_pathname()
-        return utils.scope_exit(function() pcall(cartesi.machine.remove_stored, cartesi.machine, dir) end), dir
+        return utils.scope_exit(function()
+            pcall(cartesi.machine.remove_stored, cartesi.machine, dir)
+        end),
+            dir
     end
 
     -- EVM ABI function signature for EvmAdvance (must match libcmt's EVM_ADVANCE)
@@ -76,10 +83,14 @@ describe("cartesi-machine CLI", function()
     local CLI = os.getenv("CM_CLI") or "../../src/cartesi-machine.lua"
 
     local images_path = os.getenv("CARTESI_IMAGES_PATH") or "../build/images"
-    if images_path:sub(-1) ~= "/" then images_path = images_path .. "/" end
+    if images_path:sub(-1) ~= "/" then
+        images_path = images_path .. "/"
+    end
 
     -- Shell-quote a single argument
-    local function shquote(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
+    local function shquote(s)
+        return "'" .. s:gsub("'", "'\\''") .. "'"
+    end
 
     -- Run cartesi-machine.lua with the given flags (array of strings).
     -- stdin_text is fed to the process stdin (default: empty).
@@ -107,7 +118,9 @@ describe("cartesi-machine CLI", function()
         os.execute(cmd)
         local function readfile(p)
             local f = io.open(p, "r")
-            if not f then return "" end
+            if not f then
+                return ""
+            end
             local s = f:read("*a")
             f:close()
             return s
@@ -386,7 +399,9 @@ describe("cartesi-machine CLI", function()
         -- data_filename="" for unspecified keys, which would overwrite the default.
         cfg = config_for({ "--flash-drive=label:root,data_filename:" .. flash_tmp .. ",length:0x10000,read_only" })
         for _, fd in ipairs(cfg.flash_drive) do
-            if fd.label == "root" then expect.truthy(fd.read_only) end
+            if fd.label == "root" then
+                expect.truthy(fd.read_only)
+            end
         end
         expect.truthy(not cfg.dtb.bootargs:find("pmem0 rw"))
 
@@ -399,7 +414,9 @@ describe("cartesi-machine CLI", function()
         })
         expect.truthy(cfg.dtb.bootargs:find("pmem0 rw"))
         for _, fd in ipairs(cfg.flash_drive) do
-            if fd.label == "root" then expect.truthy(not fd.read_only) end
+            if fd.label == "root" then
+                expect.truthy(not fd.read_only)
+            end
         end
 
         -- backing_store.shared explicit false via override_bool.
@@ -509,7 +526,9 @@ describe("cartesi-machine CLI", function()
         })
         local shared_count = 0
         for _, n in ipairs(cfg.nvram) do
-            if n.label == "shared" then shared_count = shared_count + 1 end
+            if n.label == "shared" then
+                shared_count = shared_count + 1
+            end
         end
         expect.equal(shared_count, 1)
 
@@ -736,7 +755,9 @@ describe("cartesi-machine CLI", function()
         })
         local net_entry2
         for _, v in ipairs(cfg.virtio) do
-            if v.type == "net-user" then net_entry2 = v end
+            if v.type == "net-user" then
+                net_entry2 = v
+            end
         end
         expect.truthy(net_entry2 and net_entry2.hostfwd and net_entry2.hostfwd[1])
         expect.equal(net_entry2.hostfwd[1].is_udp, true)
@@ -746,7 +767,9 @@ describe("cartesi-machine CLI", function()
             cfg = config_for({ "--virtio-net=tap0" })
             local found_tap
             for _, v in ipairs(cfg.virtio) do
-                if v.type == "net-tuntap" then found_tap = v end
+                if v.type == "net-tuntap" then
+                    found_tap = v
+                end
             end
             expect.truthy(found_tap)
         end
@@ -846,7 +869,9 @@ describe("cartesi-machine CLI", function()
         local _, err = run_ok({ "--initial-hash", "--final-hash", "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then hash_count = hash_count + 1 end
+            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+                hash_count = hash_count + 1
+            end
         end
         expect.truthy(hash_count >= 2)
 
@@ -854,7 +879,9 @@ describe("cartesi-machine CLI", function()
         _, err = run_ok({ "--periodic-hashes=1,start:0", "--max-mcycle=2", "--no-init-splash", "--quiet" })
         hash_count = 0
         for line in err:gmatch("[^\n]+") do
-            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then hash_count = hash_count + 1 end
+            if line:match("^%d+: [0-9a-f]+$") and #line:match("[0-9a-f]+$") == 64 then
+                hash_count = hash_count + 1
+            end
         end
         expect.truthy(hash_count >= 1)
 
@@ -871,7 +898,9 @@ describe("cartesi-machine CLI", function()
         -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per address range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
         local dump_dir = filesystem.temp_pathname()
-        local _ <close> = utils.scope_exit(function() os.remove(dump_dir) end)
+        local _ <close> = utils.scope_exit(function()
+            os.remove(dump_dir)
+        end)
         run_ok({ "--dump-address-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
@@ -1070,7 +1099,9 @@ describe("cartesi-machine CLI", function()
         -- JSON via .json filename extension (no explicit format:), round-tripped
         -- by --load-config which also infers JSON from the extension.
         local json_ext_file = filesystem.temp_pathname() .. ".json"
-        local _ <close> = utils.scope_exit(function() os.remove(json_ext_file) end)
+        local _ <close> = utils.scope_exit(function()
+            os.remove(json_ext_file)
+        end)
         run_ok({
             "--hash-tree=hash_function:sha256",
             "--max-mcycle=0",
@@ -1691,7 +1722,9 @@ describe("cartesi-machine CLI", function()
         end
         local function has_p9fs(cfg)
             for _, v in ipairs(cfg.virtio or {}) do
-                if v.type == "p9fs" then return true end
+                if v.type == "p9fs" then
+                    return true
+                end
             end
             return false
         end
@@ -2309,7 +2342,9 @@ describe("cartesi-machine CLI", function()
         os.execute("chmod +x " .. runner)
         local pipe = io.popen(runner)
         local pid = pipe and pipe:read("*l")
-        if pipe then pipe:close() end
+        if pipe then
+            pipe:close()
+        end
 
         -- Wait for listen, send GDB detach packet, then wait for process
         os.execute(
@@ -2320,6 +2355,8 @@ describe("cartesi-machine CLI", function()
                 port
             )
         )
-        if pid then os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null") end
+        if pid then
+            os.execute("wait " .. pid .. " 2>/dev/null || kill " .. pid .. " 2>/dev/null")
+        end
     end)
 end)
