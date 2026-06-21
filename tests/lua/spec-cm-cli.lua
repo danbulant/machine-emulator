@@ -1795,7 +1795,7 @@ describe("cartesi-machine CLI", function()
                 .. "-rep-%i-%o.bin,"
                 .. "output_hashes_root_hash:"
                 .. prefix
-                .. "-outh-%i.bin",
+                .. "-outh-%i.bin,output_hashes_root_hash_proof:",
             "--cmio-inspect-state=query:" .. prefix .. "-query.bin," .. "report:" .. prefix .. "-qrep-%o.bin",
             "--no-rollback",
             "--assert-rolling-template",
@@ -1863,8 +1863,9 @@ describe("cartesi-machine CLI", function()
         end)
         filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
 
-        -- This test inspects only the proof files. Disable output_hashes_root_hash so its cwd-relative
-        -- default is not written (a stray relative write fails on a read-only CI working directory).
+        -- This test inspects only the output proof files. Disable output_hashes_root_hash and
+        -- output_hashes_root_hash_proof so their cwd-relative defaults are not written (a stray
+        -- relative write fails on a read-only CI working directory).
         run_ok({
             "--cmio-advance-state=input:"
                 .. prefix
@@ -1873,7 +1874,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "output_hashes_root_hash:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
@@ -1902,7 +1903,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
-                .. "output_hashes_root_hash:,"
+                .. "output_hashes_root_hash:,output_hashes_root_hash_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-json-%o-%i.lua,"
@@ -1972,7 +1973,7 @@ describe("cartesi-machine CLI", function()
                 .. "output_proof:,rejected_output:,report:,"
                 .. "output_hashes_root_hash:"
                 .. prefix
-                .. "-oh-%i.bin",
+                .. "-oh-%i.bin,output_hashes_root_hash_proof:",
             "--no-rollback",
             "--assert-rolling-template",
             "--max-mcycle=2000000000",
@@ -2056,7 +2057,7 @@ describe("cartesi-machine CLI", function()
                 .. "-rbr-%i-%o.bin,"
                 .. "output_hashes_root_hash:"
                 .. prefix
-                .. "-rboh-%i.bin",
+                .. "-rboh-%i.bin,output_hashes_root_hash_proof:",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",
@@ -2164,7 +2165,7 @@ describe("cartesi-machine CLI", function()
                 .. prefix
                 .. "-ein-%i.bin,"
                 .. "input_index_begin:0,input_index_end:2,"
-                .. "output:,rejected_output:,report:,output_hashes_root_hash:,"
+                .. "output:,rejected_output:,report:,output_hashes_root_hash:,output_hashes_root_hash_proof:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-e1proof-%o-%i.json",
@@ -2200,7 +2201,7 @@ describe("cartesi-machine CLI", function()
                 .. "-e2proof-%o-%i.json,"
                 .. "output_hashes_root_hash:"
                 .. prefix
-                .. "-e2oh-%i.bin",
+                .. "-e2oh-%i.bin,output_hashes_root_hash_proof:",
             "--max-mcycle=2000000000",
             "--no-init-splash",
             "--quiet",

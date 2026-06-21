@@ -43,6 +43,7 @@
     - [State value proofs](#state-value-proofs-1)
     - [Remote Cartesi Machines](#remote-cartesi-machines-1)
     - [Rolling Cartesi Machines](#rolling-cartesi-machines-1)
+    - [Output proofs](#output-proofs)
     - [State-transition proofs](#state-transition-proofs)
 - [The guest perspective](#the-guest-perspective)
   - [Linux environment](#linux-environment)
@@ -287,11 +288,13 @@ The advance-state requests serviced by a Rolling Cartesi Machine are
 grouped into *epochs*. At the end of an epoch, the state of the machine
 is finalized, so its state hash becomes known. From the finalized state
 one can read the *output hashes root hash*, a single hash that commits
-to every voucher and notice the machine has emitted since genesis. Once
-an epoch is finalized, anyone can prove that a particular output is
-among those committed to by this hash, and therefore that the machine
-really did emit it. This is how Cartesi Rollups settles disputes over
-the vouchers and notices a Rolling Cartesi Machine produces.
+to every voucher and notice the machine has emitted since genesis. This
+hash is the root of a Merkle tree maintained inside the machine, where
+each leaf is the hash of one of the outputs, in the order they are
+emitted. Once an epoch is finalized, anyone can prove that a particular
+output is among those committed to by this hash, and therefore that the
+machine really did emit it. This is how Cartesi Rollups settles disputes
+over the vouchers and notices a Rolling Cartesi Machine produces.
 
 Between state advances, it is possible to inspect the state of a Rolling
 Cartesi Machine. This works by sending a query for processing inside the
@@ -1961,6 +1964,7 @@ cartesi-machine \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
     --cmio-advance-state=input_index_begin:1,input_index_end:4,hashes \
+    --final-hash=epoch-1-state-hash.bin \
     -- /mnt/calc/calc.sh
 ```
 
@@ -1988,6 +1992,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 117115963
 Storing output-0-input-1.bin
 Storing input-1-output-hashes-root-hash.bin
+Storing input-1-output-hashes-root-hash-proof.lua
 
 Before input 2
 117115963: 3f4481b15415771a97e5fc505cefc7ef887c48e95c61f00426b097933dc2cd10
@@ -2011,6 +2016,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 168348264
 Storing output-1-input-3.bin
 Storing input-3-output-hashes-root-hash.bin
+Storing input-3-output-hashes-root-hash-proof.lua
 Storing output-0-input-1-proof.lua
 Storing output-1-input-3-proof.lua
 Left alive JSONRPC remote cartesi machine at '127.0.0.1:8082'
@@ -2030,9 +2036,9 @@ notice. That emission is an `automatic yield tx-output` at cycle
 `110210177`, which returns control to the client. The client collects
 the emitted output and stores it as `output-0-input-1.bin`. The
 `manual yield rx-accepted` at cycle `117115963` signals that input index
-1 was accepted. At this point the client also stores the outputs root
-hash the guest reported, as `input-1-output-hashes-root-hash.bin`, and
-double-checks it against its own local computation of the same hash.
+1 was accepted. At this point the client also stores the output hashes
+root hash the guest reported, as `input-1-output-hashes-root-hash.bin`,
+and double-checks it against its own local computation of the same hash.
 This hash commits to every output the machine has emitted so far.
 
 The client then loads input index 2 and resumes the machine. The payload
@@ -2050,11 +2056,17 @@ accepted, which confirms the rejected input left no trace.
 
 Input index 3, with payload `2^2048`, is accepted like the first, so the
 client stores `output-1-input-3.bin` and
-`input-3-output-hashes-root-hash.bin`. The two output proofs for this
-epoch, `output-0-input-1-proof.lua` and `output-1-input-3-proof.lua`,
-are written at the end, once all of the epoch’s outputs are known. Each
-proves that one of the epoch’s outputs belongs to the tree the final
-outputs root hash commits to.
+`input-3-output-hashes-root-hash.bin`. On each accept the client also
+writes the proof that the output hashes root hash occupied the machine’s
+CMIO tx buffer, as `input-1-output-hashes-root-hash-proof.lua` and
+`input-3-output-hashes-root-hash-proof.lua`. The two output proofs for
+this epoch, `output-0-input-1-proof.lua` and
+`output-1-input-3-proof.lua`, are written at the end, once all of the
+epoch’s outputs are known. Each proves that one of the epoch’s outputs
+belongs to the tree the final output hashes root hash commits to. The
+`--final-hash` option saves the machine state hash at the end of the
+epoch, as `epoch-1-state-hash.bin`, the state a dispute over this epoch
+would settle on.
 
 Now run the client to process the second epoch in the same server
 
@@ -2069,14 +2081,14 @@ cartesi-machine \
 ```
 
 The command-line option `--no-remote-create` reuses the machine where
-the first epoch left off. The outputs tree inside the machine keeps
-growing across the epoch boundary on its own. The
+the first epoch left off. The output hashes tree inside the machine
+keeps growing across the epoch boundary on its own. The
 `last_output_proof:output-1-input-3-proof.lua` option is there for the
 `cartesi-machine` command-line-utility alone, which uses the first
-epoch’s last output proof to rebuild its own copy of the outputs tree as
-it stood at the end of that epoch. With this copy, the outputs root hash
-`cartesi-machine` computes for each accepted input matches the one
-produced inside the emulator, which is what the default
+epoch’s last output proof to rebuild its own copy of the output hashes
+tree as it stood at the end of that epoch. With this copy, the output
+hashes root hash `cartesi-machine` computes for each accepted input
+matches the one produced inside the emulator, which is what the default
 `check_output_hashes_root_hash` verifies. The copy also lets
 `cartesi-machine` emit correct proofs, at the right global output
 indices, for the outputs it collects during this epoch. The three inputs
@@ -2107,6 +2119,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 217833232
 Storing output-2-input-4.bin
 Storing input-4-output-hashes-root-hash.bin
+Storing input-4-output-hashes-root-hash-proof.lua
 
 Before input 5
 217833232: d64a2d35d997cceaafed94a14d6eb7c07e8773279f6bf645e113e36d968929e7
@@ -2119,6 +2132,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 267595780
 Storing output-3-input-5.bin
 Storing input-5-output-hashes-root-hash.bin
+Storing input-5-output-hashes-root-hash-proof.lua
 
 Before input 6
 267595780: 0d9fe908b07b6cb45cf00e7c586133b10284243e28df3169679d152acc5aee73
@@ -2131,6 +2145,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 316884774
 Storing output-4-input-6.bin
 Storing input-6-output-hashes-root-hash.bin
+Storing input-6-output-hashes-root-hash-proof.lua
 Storing output-2-input-4-proof.lua
 Storing output-3-input-5-proof.lua
 Storing output-4-input-6-proof.lua
@@ -2313,13 +2328,13 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 117115963
 Storing output-0-input-1.bin
 ...
-Automatic yield tx-output (2) (0x0000c4 data)
 Cycles: 310194028
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 316884774
 Storing output-4-input-6.bin
 Storing input-6-output-hashes-root-hash.bin
+Storing input-6-output-hashes-root-hash-proof.lua
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 ```
 
@@ -4757,6 +4772,263 @@ expression `1+(` was entered:
 (standard_in) 2: syntax error
 ```
 
+### Output proofs
+
+Recall that the advance-state requests serviced by a Rolling Cartesi
+Machine are grouped into epochs. The outputs that these requests
+produce, across every epoch, are accumulated in order from genesis as
+the leaves of a single fixed-height Merkle tree. The root of this tree
+over the outputs accepted so far is the *output hashes root hash*. The
+guest writes it to the CMIO tx buffer on every accept, so it is part of
+the machine state.
+
+Disputes are settled over the machine state hash at the end of an epoch.
+Because the output hashes root hash sits in that state, a [state value
+proof](#state-value-proofs-1) of the tx-buffer word it occupies ties it
+to the state hash, so once the [verification game](#verification-game)
+settles the state hash, the output hashes root hash is settled with it.
+The blockchain then verifies any output with its *output proof* alone,
+checking that the leaf `keccak256(<output>)` rolls up to the settled
+output hashes root hash from its global output index.
+
+The `hash-tree.lua` sample module accumulates the outputs tree with an
+incremental keccak Merkle accumulator whose leaves are
+`keccak256(<output>)`. A *frontier* captures the outputs accepted so
+far. At genesis, the frontier is
+`hash_tree.frontier(<log2_max_leaves>)`. The frontier for a later epoch
+can be obtained from the previous epoch’s last output using
+`hash_tree.frontier(<last_output_proof>)`. As each output is accepted,
+`hash_tree.frontier_push_back(<frontier>, <leaf>)` folds its leaf in,
+and `hash_tree.frontier_get_root_hash(<frontier>)` yields the output
+hashes root hash to check against the one the guest wrote. Once the
+epoch closes, `hash_tree.frontier_next_proofs(<frontier>, <leaves>)`
+returns one proof per new output, all against the single final root.
+These helpers are shown and explained under [Merkle tree
+operations](#merkle-tree-operations) in the Blockchain perspective.
+
+The following script extends the rolling calculator
+[example](#rolling-cartesi-machines-1) to collect output proofs and the
+state-value proof for the output hashes root hash. It buffers the
+outputs of each input until the input’s verdict is known. On accept, it
+folds the buffered outputs into the running frontier, checks the
+resulting root against the output hashes root hash the guest wrote to
+the tx buffer, and saves the state value proof of that tx-buffer word,
+obtained with
+`machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)`,
+whose `target_hash` equals `cartesi.keccak256(<root hash>)`. On reject,
+it simply discards the buffered outputs, leaving the tree untouched.
+Once the epoch closes, it generates the per-output proofs against the
+final root and verifies each with the same `verify_slice` used above.
+
+``` lua
+-- Load the JSON-RPC submodule, the EVM ABI helpers, and the hash-tree helpers
+local cartesi = require("cartesi")
+local cartesi_jsonrpc = require("cartesi.jsonrpc")
+local evmu = require("cartesi.evmu")
+local util = require("cartesi.util")
+local hash_tree = require("cartesi.hash-tree")
+
+local EVM_ADVANCE = "EvmAdvance(uint256 chain_id, address app_contract, address msg_sender, "
+    .. "uint256 block_number, uint256 block_timestamp, uint256 prev_randao, uint256 index, bytes payload)"
+local NOTICE = "Notice(bytes payload)"
+local ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+-- Writes formatted text to stderr
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
+
+-- Encode a raw expression as an EvmAdvance request payload (bc needs a
+-- trailing newline to accept the line as a complete expression)
+local function encode_advance(expr, index)
+    local bint = evmu.bint
+    return evmu.encode_calldata(EVM_ADVANCE, {
+        chain_id = bint.new(0),
+        app_contract = ZERO_ADDRESS,
+        msg_sender = ZERO_ADDRESS,
+        block_number = bint.new(0),
+        block_timestamp = bint.new(os.time()),
+        prev_randao = bint.new(0),
+        index = bint.new(index),
+        payload = evmu.raw(expr .. "\n"),
+    })
+end
+
+-- Print a string folded into lines of width w
+local function fold(s, w)
+    for i = 1, #s, w do
+        print(s:sub(i, i + w - 1))
+    end
+end
+
+-- Decode a response inside a notice
+local function print_decoded_notice(data)
+    fold(evmu.decode_calldata(NOTICE, data, "raw").payload, 68)
+end
+
+-- Serialize a proof as a Lua chunk and save it
+local function save_proof(proof, name)
+    local f <close> = assert(io.open(name, "w"))
+    f:write("return ")
+    util.dump_table(proof, f)
+    f:write("\n")
+    stderr("saved %s\n", name)
+end
+
+-- Connect to remote Cartesi Machine server (and shut it down on exit)
+local remote_address = assert(arg[1], "missing remote address")
+stderr("Connecting to remote cartesi machine at '%s'\n", remote_address)
+local cartesi_jsonrpc_machine <close> =
+    assert(cartesi_jsonrpc.connect_server(remote_address)):set_cleanup_call(cartesi_jsonrpc.SHUTDOWN)
+
+-- Print server version (and test connection)
+local v = assert(cartesi_jsonrpc_machine:get_server_version())
+stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
+
+-- Load remote machine from the rolling-calculator template
+local machine = cartesi_jsonrpc_machine("rolling-calculator-template")
+
+-- Snapshot via fork: the backup server keeps the pre-input state
+local backup
+local function snapshot()
+    backup = machine:fork_server()
+end
+local function commit()
+    if backup then
+        backup:shutdown_server()
+    end
+    backup = nil
+end
+local function rollback()
+    assert(backup, "no snapshot to rollback to")
+    local address = machine:get_server_address()
+    machine:shutdown_server()
+    machine:swap(backup)
+    machine:rebind_server(address)
+    backup = nil
+end
+
+-- Seed frontier builds the end-of-epoch proofs, a running copy checks each input's root
+local seed_frontier = hash_tree.frontier(cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+local running_frontier = hash_tree.frontier_copy(seed_frontier)
+local output_hashes = {} -- keccak256 leaf of every accepted output, in order
+local output_inputs = {} -- the input index each accepted output came from
+local pending_outputs = {} -- outputs of the current input, buffered until its verdict is known
+
+-- On accept, fold the input's outputs into the tree and save its tx-buffer root-hash proof
+local function flush_accepted(input_index, root_hash)
+    for _, output in ipairs(pending_outputs) do
+        local leaf = cartesi.keccak256(output)
+        output_hashes[#output_hashes + 1] = leaf
+        output_inputs[#output_inputs + 1] = input_index
+        hash_tree.frontier_push_back(running_frontier, leaf)
+    end
+    pending_outputs = {}
+    assert(#root_hash == cartesi.HASH_SIZE, "expected output hashes root hash in tx buffer")
+    assert(hash_tree.frontier_get_root_hash(running_frontier) == root_hash, "output hashes root hash mismatch")
+    local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+    assert(proof.root_hash == machine:get_root_hash(), "proof root mismatch")
+    assert(proof.target_hash == cartesi.keccak256(root_hash), "tx buffer does not hold the output hashes root hash")
+    hash_tree.verify_slice(proof)
+    save_proof(proof, string.format("input-%d-output-hashes-root-hash-proof.lua", input_index))
+end
+
+-- Run the machine until it halts or stdin closes
+local i = 0
+repeat
+    local break_reason = machine:run(math.maxinteger)
+    if break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY then
+        local _, yield_reason, data = machine:receive_cmio_request()
+        if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            commit()
+            -- the just-run input was accepted, so close it out before feeding the next one
+            if i > 0 then
+                flush_accepted(i, data)
+            end
+            stderr("type expression\n")
+            local expr = io.read()
+            if not expr then
+                break
+            end
+            stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
+            i = i + 1
+            snapshot()
+            machine:send_cmio_response(
+                machine:get_root_hash(),
+                cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+                encode_advance(expr, i)
+            )
+        elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+            stderr("input rejected\n")
+            pending_outputs = {} -- discard the rejected input's outputs; the tree is left untouched
+            rollback()
+        else
+            stderr("machine initialization failed\n")
+            break
+        end
+    elseif break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
+        local _, yield_reason, data = machine:receive_cmio_request()
+        if yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+            pending_outputs[#pending_outputs + 1] = data -- buffer until the input's verdict is known
+            stderr("result is\n")
+            print_decoded_notice(data)
+        end
+    end
+until break_reason == cartesi.BREAK_REASON_HALTED
+commit()
+
+-- Build, verify, and save one per-output proof against the final root
+local proofs = hash_tree.frontier_next_proofs(seed_frontier, output_hashes)
+for k, proof in ipairs(proofs) do
+    hash_tree.verify_slice(proof)
+    save_proof(proof, string.format("output-%d-input-%d-proof.lua", proof.target_address, output_inputs[k]))
+end
+```
+
+Here is what a session looks like. As before, open a separate shell into
+the same docker container and run the `cartesi-jsonrpc-machine` server
+in it
+
+``` bash
+cartesi-jsonrpc-machine \
+    --server-address=127.0.0.1:8089
+```
+
+Then, run the `run-rolling-calculator-output-proofs.lua` client script
+in the other shell
+
+``` bash
+lua5.4 run-rolling-calculator-output-proofs.lua 127.0.0.1:8089
+```
+
+Entering `6*2^1024 + 3*2^512` produces the expected result, after which
+the client saves the tx-buffer-word proof tying the output hashes root
+hash into the accepting state, and then, once `^D` closes the epoch, the
+per-output proof against that root. The full transcript is
+
+``` text
+Connecting to remote cartesi machine at '127.0.0.1:8089'
+Connected: remote version is 0.6.0
+type expression
+6*2^1024 + 3*2^512
+result is
+10786158809173895446375831144734148401707861873653839436405804869463
+96054833005778796250863934445216126720683279228360145952738612886499
+73495708458383684478649003115037698421037988831222501494715481595948
+96901677837132352593468675094844090688678579236903861342030923488978
+36036892526733668721977278692363075584
+saved input-1-output-hashes-root-hash-proof.lua
+type expression
+saved output-0-input-1-proof.lua
+```
+
+The same proofs are what the `cartesi-machine` command-line utility
+writes for each accepted input and output when given
+`--cmio-advance-state=output_hashes_root_hash_proof:<pattern>,output_proof:<pattern>`.
+Verifying these proofs against a machine state hash, from the
+blockchain’s perspective, is shown under [Output
+verification](#output-verification).
+
 ### State-transition proofs
 
 During verification, the blockchain mediates a [*verification
@@ -6017,6 +6289,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 50514472
 Storing output-0-input-1.bin
 Storing input-1-output-hashes-root-hash.bin
+Storing input-1-output-hashes-root-hash-proof.lua
 
 Before input 2
 50514472: f1abb4d8965246bf2a718d8da8d2a10ff7d01b917bd270d0fd35916bc1b6eace
@@ -7564,6 +7837,86 @@ Extraction by proof works!
 73495708458383684478649003115037698421037988831222501494715481595948\
 96901677837132352593468675094844090688678579236903861342030923488978\
 36036892526733668721977278692363075584
+```
+
+#### Output verification
+
+The slicing and splicing operations above extract a result from a halted
+machine, whose entire output occupies a single NVRAM. A Rolling Cartesi
+Machine instead emits outputs one at a time and keeps running. The
+analogous operation is to verify the contents of a given output it
+produced. This is possible between epochs, once the state hash of the
+machine is agreed upon. From that state hash, a slicing operation
+recovers the output hashes root hash from the machine’s CMIO tx buffer.
+As described under [Output proofs](#output-proofs), this is the root of
+a Merkle tree. Its leaves are the hashes of all outputs ever produced,
+in order. A second slicing operation, in that tree, then proves the
+output’s hash is one of its leaves.
+
+When the [rolling calculator](#rolling-cartesi-machines) processed its
+first epoch, it saved more than the outputs themselves. For each
+accepted input, it saved a proof that the output hashes root hash
+occupied the CMIO tx buffer. For each output, it saved an output proof.
+Through `--final-hash`, it also saved the machine state hash the epoch
+settled on. The output proofs are built against the epoch’s final output
+hashes root hash. They therefore pair with the output hashes root hash
+proof from the last accepted input, input 3. The following script
+verifies output 0 from the settled state hash and those artifacts alone,
+without instantiating any machine.
+
+``` lua
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
+local hash_tree = require("cartesi.hash-tree")
+
+-- Read a proof saved as a Lua chunk
+local function read_proof(name)
+    return assert(loadfile(name, "t", {}))()
+end
+
+-- The settled machine state hash, the two proofs, and the output to verify against them
+local machine_hash = util.read_file(assert(arg[1], "missing machine state hash"))
+local output_hashes_root_hash_proof = read_proof(assert(arg[2], "missing output hashes root hash proof"))
+local output_proof = read_proof(assert(arg[3], "missing output proof"))
+local output = util.read_file(assert(arg[4], "missing output"))
+
+-- The output hashes root hash proof must be rooted at the agreed machine state hash
+assert(output_hashes_root_hash_proof.root_hash == machine_hash, "proof not rooted at the machine state hash")
+hash_tree.verify_slice(output_hashes_root_hash_proof)
+
+-- The output proof's root is the output hashes root hash, the value the tx-buffer word holds
+assert(
+    cartesi.keccak256(output_proof.root_hash) == output_hashes_root_hash_proof.target_hash,
+    "tx buffer holds another value"
+)
+hash_tree.verify_slice(output_proof)
+
+-- The output proof's target must be the hash of the output itself
+assert(cartesi.keccak256(output) == output_proof.target_hash, "output does not match the proof")
+
+print(string.format("output %d verified against the machine state hash", output_proof.target_address))
+```
+
+The script first confirms the output proof’s root equals the value the
+output hashes root hash proof locates in the tx-buffer word. That joins
+the two trees. It then hashes the output’s bytes and matches them
+against the leaf the output proof locates, pinning down this exact
+output.
+
+Running the script over the artifacts the rolling calculator saved
+
+``` bash
+lua5.4 verify-output-proof.lua \
+    epoch-1-state-hash.bin \
+    input-3-output-hashes-root-hash-proof.lua \
+    output-0-input-1-proof.lua \
+    output-0-input-1.bin
+```
+
+produces the output
+
+``` text
+output 0 verified against the machine state hash
 ```
 
 ## Verification game
