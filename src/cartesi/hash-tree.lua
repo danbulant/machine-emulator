@@ -211,6 +211,9 @@ local function frontier_genesis(log2_max_leaves)
     return f
 end
 
+-- A shallow copy of a frontier, so the original keeps its leaves while the copy advances independently.
+local function frontier_copy(frontier) return { table.unpack(frontier, 1, #frontier) } end
+
 -- Whether a frontier constructor argument is a last-output proof rather than a tree height.
 local function is_proof(log2_max_leaves_or_last_proof) return type(log2_max_leaves_or_last_proof) == "table" end
 
@@ -257,6 +260,7 @@ return {
     verify_splice = verify_splice,
     get_root_hash = get_root_hash,
     frontier = frontier,
+    frontier_copy = frontier_copy,
     frontier_push_back = frontier_push_back,
     frontier_get_root_hash = frontier_get_root_hash,
     frontier_next_proofs = frontier_next_proofs,

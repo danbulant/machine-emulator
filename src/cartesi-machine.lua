@@ -349,6 +349,7 @@ where options are:
         format:<lua|json>
         report:<filename-pattern>
         output_hashes_root_hash:<filename-pattern>
+        output_hashes_root_hash_proof:<filename-pattern>
         check_output_hashes_root_hash:<boolean>
         hashes
 
@@ -397,6 +398,14 @@ where options are:
         output_hashes_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
         the pattern that derives the name of the file written for the output
         hashes root hash after input %%i.
+
+        output_hashes_root_hash_proof (default: "input-%%i-output-hashes-root-hash-proof.<format>")
+        the pattern that derives the name of the file written for the Merkle
+        proof that the output hashes root hash occupied the cmio tx buffer in
+        the machine state in which input %%i was accepted. it ties the output
+        hashes root hash (against which "output_proof" proves each output) back
+        into the machine state hash. serialized according to "format". when left
+        at the default, its extension tracks "format".
 
         check_output_hashes_root_hash (default: true)
         on each accepted input, check that the host's running output hashes root
@@ -1735,6 +1744,9 @@ options = {
             r.output_proof = r.output_proof or ("output-%o-input-%i-proof." .. (r.format or "lua"))
             r.report = r.report or "input-%i-report-%o.bin"
             r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hashes-root-hash.bin"
+            -- Like output_proof, the default extension tracks "format" while an explicit value is left as-is.
+            r.output_hashes_root_hash_proof = r.output_hashes_root_hash_proof
+                or ("input-%i-output-hashes-root-hash-proof." .. (r.format or "lua"))
             if r.check_output_hashes_root_hash == nil then r.check_output_hashes_root_hash = true end
             r.next_input_index = r.input_index_begin
             cmio_advance = r
@@ -1745,6 +1757,7 @@ options = {
             input_index_begin = "number",
             input_index_end = "number",
             output_hashes_root_hash = "file",
+            output_hashes_root_hash_proof = "file",
             output = "file",
             rejected_output = "file",
             output_proof = "file",
@@ -2686,10 +2699,23 @@ local function save_cmio_output_proofs(advance)
     end
 end
 
+-- Writes the proof, in the machine state in which the just-accepted input was accepted, that the
+-- output hashes root hash occupied the first word of the cmio tx buffer (its 32 bytes are exactly one
+-- tree word). This ties the output hashes root hash, against which "output_proof" proves each output,
+-- back into the machine state hash. Must be called while the machine still sits at the accept yield.
+local function save_cmio_output_hashes_root_hash_proof(advance, proof)
+    if advance.output_hashes_root_hash_proof == "" then return end
+    local values = { i = advance.next_input_index - 1 }
+    local name = instantiate_filename(advance.output_hashes_root_hash_proof, values)
+    local format = resolve_format(advance.format, advance.output_hashes_root_hash_proof)
+    stderr("Storing %s\n", name)
+    util.write_file(serialize_proof(proof, format), name)
+end
+
 -- On the verdict of the just-run input, commit or discard its buffered outputs. Accepted outputs
 -- are saved, folded into the running frontier (for the root check), and accumulated for the
 -- end-of-epoch proofs. Rejected outputs go to their own files and never enter the tree.
-local function flush_pending_outputs(advance, reason, data)
+local function flush_pending_outputs(machine, advance, reason, data)
     if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
         for _, output in ipairs(advance.pending_outputs) do
             save_cmio_output(advance, output, advance.global_output_index)
@@ -2708,6 +2734,10 @@ local function flush_pending_outputs(advance, reason, data)
                 advance.next_input_index - 1
             )
         end
+        -- The accept-state proof that the tx buffer holds this root hash (target_hash = keccak256(data)).
+        local proof = machine:get_proof(cartesi.AR_CMIO_TX_BUFFER_START, cartesi.HASH_TREE_LOG2_WORD_SIZE)
+        assert(proof.target_hash == cartesi.keccak256(data), "tx buffer does not hold the output hashes root hash")
+        save_cmio_output_hashes_root_hash_proof(advance, proof)
     elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
         for position, output in ipairs(advance.pending_outputs) do
             save_cmio_rejected_output(advance, output, advance.global_output_index + position - 1)
@@ -2792,7 +2822,7 @@ if cmio_advance then
         cmio_advance.frontier = hash_tree.frontier(depth)
         cmio_advance.global_output_index = 0
     end
-    cmio_advance.running_frontier = { table.unpack(cmio_advance.frontier, 1, #cmio_advance.frontier) }
+    cmio_advance.running_frontier = hash_tree.frontier_copy(cmio_advance.frontier)
     cmio_advance.output_hashes = {}
     cmio_advance.output_inputs = {}
     cmio_advance.pending_outputs = {}
@@ -2931,11 +2961,11 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
                 do_commit()
                 -- flush only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                    flush_pending_outputs(cmio_advance, reason, data)
+                    flush_pending_outputs(machine, cmio_advance, reason, data)
                 end
             -- previous reason was a reject
             elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                flush_pending_outputs(cmio_advance, reason, data)
+                flush_pending_outputs(machine, cmio_advance, reason, data)
                 do_rollback(machine)
             else
                 error("unexpected manual yield reason")
@@ -2951,10 +2981,10 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
             if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                 -- the last input's verdict closes the epoch
                 if reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                    flush_pending_outputs(cmio_advance, reason, data)
+                    flush_pending_outputs(machine, cmio_advance, reason, data)
                     do_commit()
                 elseif reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                    flush_pending_outputs(cmio_advance, reason, data)
+                    flush_pending_outputs(machine, cmio_advance, reason, data)
                     do_rollback(machine)
                 end
                 -- all accepted outputs are known, so the per-output proofs against the final root
