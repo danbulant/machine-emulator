@@ -1863,6 +1863,8 @@ describe("cartesi-machine CLI", function()
         end)
         filesystem.write_file(prefix .. "-input-0.bin", encode_advance(0, "hello"))
 
+        -- This test inspects only the proof files. Disable output_hashes_root_hash so its cwd-relative
+        -- default is not written (a stray relative write fails on a read-only CI working directory).
         run_ok({
             "--cmio-advance-state=input:"
                 .. prefix
@@ -1871,6 +1873,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
+                .. "output_hashes_root_hash:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-lua-%o-%i.lua",
@@ -1899,6 +1902,7 @@ describe("cartesi-machine CLI", function()
                 .. "output:"
                 .. prefix
                 .. "-out-%i-%o.bin,"
+                .. "output_hashes_root_hash:,"
                 .. "output_proof:"
                 .. prefix
                 .. "-json-%o-%i.lua,"
