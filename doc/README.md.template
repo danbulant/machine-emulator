@@ -888,7 +888,7 @@ The result of running the command is, as expected,
 
 ### State value proofs
 
-```{.lua key=hash_tree_constants replace=null outputs=log2_word_size,word_size,log2_root_size,log2_leaf_count}
+```{.lua key=hash_tree_constants replace=null outputs=log2_word_size,word_size,log2_root_size,log2_leaf_count,log2_max_output_count,hash_size}
 local cartesi = require("cartesi")
 local log2_word = cartesi.HASH_TREE_LOG2_WORD_SIZE
 local log2_root = cartesi.HASH_TREE_LOG2_ROOT_SIZE
@@ -902,6 +902,8 @@ writefile("log2_word_size", log2_word)
 writefile("word_size",      word_size)
 writefile("log2_root_size", log2_root)
 writefile("log2_leaf_count", log2_root - log2_word)
+writefile("log2_max_output_count", cartesi.CMIO_LOG2_MAX_OUTPUT_COUNT)
+writefile("hash_size", cartesi.HASH_SIZE)
 ```
 *State value proofs* are proofs that a given node in the Merkle tree of the Cartesi Machine state has a given associated hash.
 Each Merkle tree node covers a contiguous range of the machine's 64-bit address space.
@@ -1452,7 +1454,7 @@ The calculator evaluates `scale=70; (1+sqrt(5))/2`, the golden ratio, and return
 An inspect-state request cannot emit verifiable outputs such as notices or vouchers, because any change its processing makes to the machine state is reverted afterward.
 The client saves the report as `query-report-0.bin`.
 
-The hash operations behind the output proofs are explained later, under [Merkle tree operations](#merkle-tree-operations) in the Blockchain perspective.
+The hash operations behind the output proofs are explained later, under [The outputs tree](#the-outputs-tree) in the Blockchain perspective.
 
 The server shell shows only the error message output by `bc` and `rollup`.
 In production, these error messages should have been captured and output as a report, rather than being allowed to leak into the console.
@@ -2507,7 +2509,7 @@ The `sibling_hashes` array contains the hashes of the *siblings* of all nodes vi
 Using the data in a proof, it is possible to verify the claim that a Merkle tree with a given root hash contains a target node with a given hash and size at the position given by its address.
 The following script verifies the state value proof for the output NVRAM in the calculator example discussed above.
 It uses two helper functions from the `hash-tree.lua` sample module to check the proof returned by `machine:get_proof()`.
-These helpers are shown and explained under [Merkle tree operations](#merkle-tree-operations) in the Blockchain perspective.
+These helpers are shown and explained under [Slicing and splicing](#slicing-and-splicing) in the Blockchain perspective.
 
 The `cartesi.keccak256(<string>)` function of the `cartesi` Lua module returns the hash of the byte string `<string>`.
 The `cartesi.keccak256(<hash1>, <hash2>)` overload returns the hash of the concatenation of `<hash1>` and `<hash2>`.
@@ -2735,7 +2737,7 @@ As each output is accepted, `hash_tree.frontier_push_back(<frontier>, <leaf>)` f
 the guest wrote.
 Once the epoch closes, `hash_tree.frontier_next_proofs(<frontier>, <leaves>)` returns one proof per new
 output, all against the single final root.
-These helpers are shown and explained under [Merkle tree operations](#merkle-tree-operations) in the
+These helpers are shown and explained under [The outputs tree](#the-outputs-tree) in the
 Blockchain perspective.
 
 The following script extends the rolling calculator [example](#rolling-cartesi-machines-1) to collect output proofs and
@@ -4250,7 +4252,7 @@ The computation is also smart enough to only update the parts of the tree that c
 
 Tree hashes are used instead of linear hashes because they support a variety of operations that are unavailable from linear hashes.
 
-### Merkle tree operations
+### Slicing and splicing
 
 In the Merkle tree of a Cartesi Machine state, the labels of each of the 2<sup>D</sup> nodes at a depth *D* can be seen as the root hashes for Merkle *subtrees* corresponding to adjacent intervals of *2<sup>L</sup>* bytes in the address space, where *L=64-D*.
 Each of these nodes can be identified by an address *A* and the log *L* of the length of the interval it spans, where *A* is aligned to a *2<sup>L</sup>* boundary.
@@ -4306,7 +4308,7 @@ This is exactly what `verify_splice` does:
 ```{.lua replace=proof_module/source/verify_splice title="hash-tree.lua (excerpt)"}
 ```
 
-#### Template instantiation
+### Template instantiation
 
 The most important use for the splicing operation is template instantiation.
 From the blockchain perspective, a [Cartesi Machine template](#cartesi-machine-templates) is simply a state hash *M*.
@@ -4347,7 +4349,7 @@ produces the output
 ```{replace=lua_splice_calculator_with_new_drive}
 ```
 
-#### Result extraction
+### Result extraction
 
 The most important use for the slicing operation is retrieving computation results.
 In a typical scenario, a user posts the final state hash of an instantiated Cartesi Machine that has been run until it halted.
@@ -4376,7 +4378,71 @@ produces the output
 ```{replace=lua_slice_calculator_output}
 ```
 
-#### Output verification
+### The outputs tree
+
+The operations so far concern the word-leaf tree of the machine state.
+The same slicing idea applies to another Merkle tree the project uses, the *outputs tree*, introduced in the Lua [Output proofs](#output-proofs) section.
+Its leaves are output hashes, each one `cartesi.keccak256` of a single output, rather than the bytes of a fixed address range.
+Its height is fixed at []{replace=hash_tree_constants/log2_max_output_count code=no}, so it can hold up to 2<sup>[]{replace=hash_tree_constants/log2_max_output_count code=no}</sup> outputs.
+A leaf for an output not yet produced is pristine, literally []{replace=hash_tree_constants/hash_size code=no} zero bytes, rather than the hash of a pristine word.
+A Rolling Cartesi Machine grows this one tree from genesis, across all of its epochs, one output at a time.
+
+Every operation the outputs tree needs can be carried out from a compact summary of it, called a *frontier*, without ever materializing the whole tree.
+This matters at both ends of the system.
+Inside the Cartesi Machine, outputs accumulate across an unbounded number of epochs, so holding the complete tree would eventually exhaust the memory available to the guest.
+Outside, as we will see, even the output proofs can be generated holding only the frontier.
+
+The frontier after *c* outputs captures the complete left subtrees standing over the leaves in the range [0, *c*), each by its root hash.
+Writing *c* in binary, such a subtree spans 2<sup>*l*</sup> leaves and is present exactly when bit *l* of *c* is set.
+These subtrees tile the leaves left to right, largest first, so the frontier holds one root hash per set bit of *c*, and *c* itself can be read back from which entries are present.
+The module stores it as a fixed-length array with one slot per level, holding that level's subtree root hash, or `false` where its bit is clear.
+
+The shared accessor is `frontier_node`, which reads the hash of a node at one level from three regions that sit left to right in the tree, the frontier, an active region of nodes being worked on, and pristine padding:
+```{.lua replace=proof_module/source/frontier_node title="hash-tree.lua (excerpt)"}
+```
+A node index that falls to the left of the active region is supplied by the frontier, a complete left subtree's root hash.
+One that falls to the right is the root hash of an all-pristine subtree.
+One inside is taken straight from the active region.
+Both maintaining the frontier and emitting proofs go through this accessor.
+
+The running accumulator is `frontier_push_back`, which folds one new output leaf into the frontier:
+```{.lua replace=proof_module/source/frontier_push_back title="hash-tree.lua (excerpt)"}
+```
+Adding an output advances the leaf count from *c* to *c*+1.
+In binary that clears a run of low set bits and sets the next one up, an ordinary carry.
+The function mirrors the carry, combining the new leaf with the present low levels from the bottom up to the first empty one, clearing each, and storing the resulting hash at that first empty level.
+It is the root of the subtree covering exactly the leaves ending at the new output, the frontier entry the carry creates.
+A level is combined only once every 2<sup>*l*</sup> outputs, so a long run of outputs costs constant work each, amortized.
+
+The matching reader is `frontier_get_root_hash`, which pads the frontier out to the full tree root:
+```{.lua replace=proof_module/source/frontier_get_root_hash title="hash-tree.lua (excerpt)"}
+```
+Every leaf the outputs have not reached is pristine.
+The function climbs level by level, combining each present frontier entry on the left with pristine padding on the right.
+The [Output proofs](#output-proofs) example uses these two together while processing an epoch, pushing each accepted output and then rooting the frontier to check it against the output hashes root hash the guest reported.
+
+The constructor is `frontier`, which produces the frontier an epoch begins from:
+```{.lua replace=proof_module/source/frontier title="hash-tree.lua (excerpt)"}
+```
+Given the tree height, it returns the empty frontier of a genesis epoch.
+Given the previous epoch's last output proof instead, it rebuilds the frontier as it stood after that output.
+The last output is the rightmost leaf in the range [0, *c*), so at every level where *c* has a set bit that leaf is a right child, and its proof sibling there is exactly the root hash the frontier stores for that level.
+The lowest such entry is recovered by rolling the leaf up through its siblings below.
+A single proof, the one already saved for an epoch's last output, is therefore all the next epoch needs to resume the same genesis-rooted tree.
+
+Finally, `frontier_next_proofs` produces an epoch's output proofs:
+```{.lua replace=proof_module/source/frontier_next_proofs title="hash-tree.lua (excerpt)"}
+```
+Given the starting frontier and the output hashes accepted during the epoch, in order, it returns one proof per new output, all against the single final root.
+The only thing a new output's proof needs from the earlier leaves in the range [0, *c*) is the frontier.
+A left sibling on a new leaf's path to the root always ends at an aligned boundary at or before *c*, so it is a complete subtree whose root hash the frontier already holds, never an individual old leaf.
+The function sweeps the new leaves up one level at a time, reading each proof sibling through `frontier_node`, which supplies a frontier entry or pristine padding at the boundaries.
+The proofs are built together, in one batch at the end of the epoch, because an early output's low siblings are later outputs of the same epoch.
+
+Generating these proofs is shown in the Lua [Output proofs](#output-proofs) section.
+Checking an output against them, from a settled machine state hash alone, is shown under [Output verification](#output-verification) below.
+
+### Output verification
 
 The slicing and splicing operations above extract a result from a halted machine, whose entire output occupies a single NVRAM.
 A Rolling Cartesi Machine instead emits outputs one at a time and keeps running.
@@ -4498,6 +4564,8 @@ while ! netstat -ntl 2>&1 | grep 8087 > /dev/null; do sleep 1; done
 lua5.4 verification-game.lua honest 127.0.0.1:8087 "6*2^1024 + 3*2^512"
 # docs:end honest
 } > /dev/null 2>&1 &
+# make sure honest player is player 1 and dishonest is player 2
+while ! netstat -nt 2>&1 | grep 8087 > /dev/null; do sleep 1; done
 {
 # docs:begin dishonest
 lua5.4 verification-game.lua dishonest 127.0.0.1:8087 "6*2^1024 + 3*2^512" 25 7 "2+2"
@@ -4547,6 +4615,8 @@ while ! netstat -ntl 2>&1 | grep 8088 > /dev/null; do sleep 1; done
 lua5.4 verification-game.lua honest 127.0.0.1:8088 "6*2^1024 + 3*2^512"
 } > /dev/null 2>&1 &
 last_uarch_cycle=$(( $uarch_cycle_max - 1 ))
+# make sure honest player is player 1 and dishonest is player 2
+while ! netstat -nt 2>&1 | grep 8088 > /dev/null; do sleep 1; done
 {
 # docs:begin dishonest
 lua5.4 verification-game.lua dishonest 127.0.0.1:8088 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
