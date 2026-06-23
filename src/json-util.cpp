@@ -2061,6 +2061,14 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_descr
     ju_get_opt_field(jconfig, "length"s, value.length, new_path);
     ju_get_opt_field(jconfig, "start"s, value.start, new_path);
     ju_get_opt_field(jconfig, "description"s, value.description, new_path);
+    ju_get_opt_field(jconfig, "is_memory"s, value.is_memory, new_path);
+    ju_get_opt_field(jconfig, "is_device"s, value.is_device, new_path);
+    ju_get_opt_field(jconfig, "is_readable"s, value.is_readable, new_path);
+    ju_get_opt_field(jconfig, "is_writeable"s, value.is_writeable, new_path);
+    ju_get_opt_field(jconfig, "is_executable"s, value.is_executable, new_path);
+    ju_get_opt_field(jconfig, "is_read_idempotent"s, value.is_read_idempotent, new_path);
+    ju_get_opt_field(jconfig, "is_write_idempotent"s, value.is_write_idempotent, new_path);
+    ju_get_opt_field(jconfig, "driver_id"s, value.driver_id, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, address_range_description &value,
@@ -2523,7 +2531,11 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
 }
 
 void to_json(nlohmann::json &j, const address_range_description &mrd) {
-    j = nlohmann::json{{"length", mrd.length}, {"start", mrd.start}, {"description", mrd.description}};
+    j = nlohmann::json{{"length", mrd.length}, {"start", mrd.start}, {"description", mrd.description},
+        {"is_memory", mrd.is_memory}, {"is_device", mrd.is_device}, {"is_readable", mrd.is_readable},
+        {"is_writeable", mrd.is_writeable}, {"is_executable", mrd.is_executable},
+        {"is_read_idempotent", mrd.is_read_idempotent}, {"is_write_idempotent", mrd.is_write_idempotent},
+        {"driver_id", mrd.driver_id}};
 }
 
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds) {

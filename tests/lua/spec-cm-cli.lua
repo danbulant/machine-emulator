@@ -895,7 +895,7 @@ describe("cartesi-machine CLI", function()
         -- --dense-uarch-hashes=N single-argument form
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per address range under <dir>.
+        -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
         local dump_dir = filesystem.temp_pathname()
         local _ <close> = utils.scope_exit(function()
@@ -907,9 +907,13 @@ describe("cartesi-machine CLI", function()
         for _, v in ipairs(m:get_address_ranges()) do
             local filename = dump_dir .. "/" .. string.format("%016x--%016x.bin", v.start, v.length)
             local f = io.open(filename, "r")
-            assert(f, "--dump-address-ranges: expected file not created: " .. filename)
-            f:close()
-            assert(os.remove(filename))
+            if v.is_memory then
+                assert(f, "--dump-address-ranges: expected file not created: " .. filename)
+                f:close()
+                assert(os.remove(filename))
+            else
+                assert(not f, "--dump-address-ranges: file created for device range: " .. filename)
+            end
         end
     end)
 

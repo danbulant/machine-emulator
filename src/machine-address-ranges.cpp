@@ -331,7 +331,15 @@ machine_address_ranges::machine_address_ranges(const machine_config &config,
         m_all | std::views::filter([](auto &ar) { return !ar->is_empty(); }) | std::views::transform([](auto &ar) {
             return address_range_description{.start = ar->get_start(),
                 .length = ar->get_length(),
-                .description = ar->get_description()};
+                .description = ar->get_description(),
+                .is_memory = ar->is_memory(),
+                .is_device = ar->is_device(),
+                .is_readable = ar->is_readable(),
+                .is_writeable = ar->is_writeable(),
+                .is_executable = ar->is_executable(),
+                .is_read_idempotent = ar->is_read_idempotent(),
+                .is_write_idempotent = ar->is_write_idempotent(),
+                .driver_id = static_cast<uint64_t>(ar->get_driver_id())};
         });
     std::ranges::copy(src, std::back_inserter(m_descrs));
     std::ranges::sort(m_descrs, [](auto &a, auto &b) { return a.start < b.start; });

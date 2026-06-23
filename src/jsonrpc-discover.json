@@ -2535,6 +2535,30 @@
           },
           "description": {
             "type": "string"
+          },
+          "is_memory": {
+            "type": "boolean"
+          },
+          "is_device": {
+            "type": "boolean"
+          },
+          "is_readable": {
+            "type": "boolean"
+          },
+          "is_writeable": {
+            "type": "boolean"
+          },
+          "is_executable": {
+            "type": "boolean"
+          },
+          "is_read_idempotent": {
+            "type": "boolean"
+          },
+          "is_write_idempotent": {
+            "type": "boolean"
+          },
+          "driver_id": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       },

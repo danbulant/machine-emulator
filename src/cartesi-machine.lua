@@ -2798,9 +2798,11 @@ local function dump_address_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
     if prefix ~= "" then assertf(os.execute("mkdir " .. dir), "could not create directory %s", dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
-        local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
-        local file <close> = assert(io.open(filename, "w"))
-        assert(file:write(machine:read_memory(v.start, v.length)))
+        -- Only memory ranges hold state. Device ranges are always pristine, so skip them.
+        if v.is_memory then
+            local filename = prefix .. string.format("%016x--%016x.bin", v.start, v.length)
+            util.write_file(machine:read_memory(v.start, v.length), filename)
+        end
     end
 end
 
