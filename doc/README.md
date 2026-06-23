@@ -7897,6 +7897,21 @@ right is the root hash of an all-pristine subtree. One inside is taken
 straight from the active region. Both maintaining the frontier and
 emitting proofs go through this accessor.
 
+<figure>
+<img src="images/outputs-tree.svg"
+alt="Outputs tree partitioned into frontier, active region, and pristine padding" />
+<figcaption aria-hidden="true">Outputs tree partitioned into frontier,
+active region, and pristine padding</figcaption>
+</figure>
+
+The figure shows the tree after two earlier outputs, with four more
+arriving in a single epoch. The frontier supplies the AB subtree, in
+blue, the four new outputs C through F form the active region, in green,
+and the leaves beyond them are pristine padding, in gray. A node falling
+to the left of the active leaves is a complete frontier subtree and one
+falling to the right is all pristine, so both enter whole at aligned
+boundaries and only the active outputs appear as individual leaves.
+
 The running accumulator is `frontier_push_back`, which folds one new
 output leaf into the frontier:
 

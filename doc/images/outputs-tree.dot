@@ -1,0 +1,27 @@
+// Outputs tree after an epoch: leaf_count=2 entering (the frontier holds the
+// AB subtree), four new outputs C,D,E,F in the active region, pristine padding
+// to the right. Frontier and pristine subtrees enter whole at aligned
+// boundaries (drawn collapsed); only the active outputs are individual leaves.
+digraph outputs_tree {
+  graph [ordering=out, nodesep=0.3, ranksep=0.45, bgcolor=transparent];
+  node  [shape=box, fontname="monospace", style="filled,rounded", fillcolor=white, color="#555555"];
+  edge  [color="#555555", arrowhead=none];
+
+  ROOT [label="ABCDEFGH"];
+  ABCD [label="ABCD"];
+  EFGH [label="EFGH"];
+  CD   [label="CD"];
+  EF   [label="EF"];
+
+  AB [label="AB = frontier[2]", fillcolor="#cfe8ff"];
+  GH [label="GH (pristine)",    fillcolor="#cccccc"];
+
+  C [fillcolor="#d8f5d0"]; D [fillcolor="#d8f5d0"];
+  E [fillcolor="#d8f5d0"]; F [fillcolor="#d8f5d0"];
+
+  ROOT -> ABCD; ROOT -> EFGH;
+  ABCD -> AB;   ABCD -> CD;
+  EFGH -> EF;   EFGH -> GH;
+  CD -> C; CD -> D;
+  EF -> E; EF -> F;
+}

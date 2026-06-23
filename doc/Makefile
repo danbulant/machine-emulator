@@ -167,11 +167,21 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 -include template.d
 endif
 
+# Diagrams rendered from committed Graphviz sources under images/. Generated
+# into the same dir and committed, like README.md itself. Regenerated only when
+# a .dot source changes. Order-only prereq of README.md below: a render always
+# brings them up to date, without forcing a re-render when only the image bytes
+# change (the template references the path, not the contents).
+DOC_DIAGRAMS := $(patsubst %.dot,%.svg,$(wildcard images/*.dot))
+
+images/%.svg: images/%.dot
+	dot -Tsvg $< -o $@
+
 # Real run: render the document. template.d adds per-cache-file prereqs to
 # README.md, so editing a recipe propagates here naturally. check-rootfs-docs is
 # order-only so a recipe-input change that leaves the committed image stale fails
 # the render here (as in CI) without forcing a re-render on every invocation.
-README.md: README.md.template replace.lua alerts.lua github.template.md template.d | check-rootfs-docs
+README.md: README.md.template replace.lua alerts.lua github.template.md template.d | check-rootfs-docs $(DOC_DIAGRAMS)
 	REPLACE_CACHE_DIR=$(REPLACE_CACHE_DIR) RECIPES_DIR=$(RECIPES_DIR) \
 	    pandoc -f markdown -s -t gfm --toc \
 	    -M docs_image=$(DOCS_IMAGE):$(TAG) \

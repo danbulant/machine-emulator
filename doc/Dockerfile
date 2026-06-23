@@ -39,7 +39,7 @@ USER root
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     apt-get install -y \
         make pandoc \
-        bash-completion bc devio device-tree-compiler e2tools file jq libarchive13 lua-dkjson lua-socket net-tools wget && \
+        bash-completion bc devio device-tree-compiler e2tools file graphviz jq libarchive13 lua-dkjson lua-socket net-tools wget && \
     rm -rf /var/lib/apt/lists/*
 
 # Snapshot cartesi-machine's bash completion into the canonical dir, then enable
