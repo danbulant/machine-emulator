@@ -7518,6 +7518,20 @@ using precomputed hashes for subtrees that span zeroed out regions of
 all power-of-2 sizes. The computation is also smart enough to only
 update the parts of the tree that changed between invocations.
 
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="images/state-tree-dark.svg">
+<img alt="A machine's state hash-tree over its address space" src="images/state-tree-light.svg">
+</picture>
+
+The figure above shows the state Merkle tree of a machine, drawn over
+its 64-bit address space. Each memory range is a complete subtree, shown
+as a blue triangle rooted at one tree node. The address space between
+ranges is pristine, shown as pale triangles, and a single pristine gap
+may take more than one subtree to span. A tree node is blue when
+everything below it is a memory range, pale when all of it is pristine,
+and gray when it mixes the two. The state hash is the root, at the far
+left.
+
 Tree hashes are used instead of linear hashes because they support a
 variety of operations that are unavailable from linear hashes.
 
@@ -7904,13 +7918,17 @@ alt="Outputs tree partitioned into frontier, active region, and pristine padding
 active region, and pristine padding</figcaption>
 </figure>
 
-The figure shows the tree after two earlier outputs, with four more
-arriving in a single epoch. The frontier supplies the AB subtree, in
-blue, the four new outputs C through F form the active region, in green,
-and the leaves beyond them are pristine padding, in gray. A node falling
-to the left of the active leaves is a complete frontier subtree and one
-falling to the right is all pristine, so both enter whole at aligned
-boundaries and only the active outputs appear as individual leaves.
+The figure shows the tree mid-stream, scaled down to height four while
+the real outputs tree has height 63. Six earlier outputs sit to the left
+under the frontier, which holds them as two complete subtrees, one of
+four leaves and one of two, filled blue at their roots. The three new
+outputs of this epoch form the active region in the middle, filled
+green, and the seven leaves to the right are pristine padding, held as a
+four-leaf, a two-leaf, and a single-leaf subtree, filled gray at their
+roots. Only the hashes actually held are filled, so every node below a
+frontier or pristine root is left empty, outlined in its subtree’s
+color, because the frontier keeps each whole subtree as that one root
+hash and never materializes the leaves under it.
 
 The running accumulator is `frontier_push_back`, which folds one new
 output leaf into the frontier:

@@ -167,15 +167,33 @@ ifeq (,$(filter clean,$(MAKECMDGOALS)))
 -include template.d
 endif
 
-# Diagrams rendered from committed Graphviz sources under images/. Generated
-# into the same dir and committed, like README.md itself. Regenerated only when
-# a .dot source changes. Order-only prereq of README.md below: a render always
-# brings them up to date, without forcing a re-render when only the image bytes
-# change (the template references the path, not the contents).
-DOC_DIAGRAMS := $(patsubst %.dot,%.svg,$(wildcard images/*.dot))
+# Diagrams rendered from committed sources under images/. Generated into the same
+# dir and committed, like README.md itself. Regenerated only when a source changes.
+# Order-only prereq of README.md below: a render always brings them up to date,
+# without forcing a re-render when only the image bytes change (the template
+# references the path, not the contents).
+# Diagrams are committed SVGs under images/, like README.md itself, with no background of
+# their own so they inherit the page. state-tree's ink colors depend on the theme, so it is
+# built in a light and a dark variant that the template selects with a <picture>;
+# outputs-tree reads on both themes, so a single variant serves both.
+DOC_DIAGRAMS := \
+    images/outputs-tree.svg \
+    images/state-tree-light.svg images/state-tree-dark.svg
 
-images/%.svg: images/%.dot
-	dot -Tsvg $< -o $@
+# outputs-tree pins its node positions for a perfectly symmetric binary tree (dot's own
+# layout skews internal nodes), so it renders with neato -n, which uses the given positions
+# and runs no layout. Held nodes are filled and the unmaterialized interiors are transparent
+# outlines, so its colors read on both themes from one variant.
+images/outputs-tree.svg: images/outputs-tree.dot
+	neato -n -Tsvg $< -o $@
+
+# state-tree draws an actual machine's state hash-tree over the address space. It
+# instantiates a machine and reads its memory ranges, so it is a Lua program that emits the
+# SVG directly rather than a Graphviz source. Its first argument selects the palette.
+images/state-tree-light.svg: images/state-tree.lua
+	lua5.4 $< light > $@
+images/state-tree-dark.svg: images/state-tree.lua
+	lua5.4 $< dark > $@
 
 # Real run: render the document. template.d adds per-cache-file prereqs to
 # README.md, so editing a recipe propagates here naturally. check-rootfs-docs is

@@ -1,27 +1,60 @@
-// Outputs tree after an epoch: leaf_count=2 entering (the frontier holds the
-// AB subtree), four new outputs C,D,E,F in the active region, pristine padding
-// to the right. Frontier and pristine subtrees enter whole at aligned
-// boundaries (drawn collapsed); only the active outputs are individual leaves.
+// Height-4 outputs tree (16 leaves), a stand-in for the real, much taller tree.
+// Node positions are pinned for a perfectly symmetric binary tree (dot's own layout
+// leaves it skewed); render with "neato -n", which uses the positions and runs no
+// layout. leaf_count=6 entering: the frontier holds a complete 4-leaf subtree and a
+// complete 2-leaf subtree. Three new outputs form the active region. The last seven
+// leaves are pristine padding, a 4-leaf, a 2-leaf, and a 1-leaf subtree. Only the hashes
+// actually held are filled (the five subtree roots and the active region); the rest empty.
 digraph outputs_tree {
-  graph [ordering=out, nodesep=0.3, ranksep=0.45, bgcolor=transparent];
-  node  [shape=box, fontname="monospace", style="filled,rounded", fillcolor=white, color="#555555"];
-  edge  [color="#555555", arrowhead=none];
+  graph [bgcolor=transparent];
+  node [shape=circle, fixedsize=true, width=0.34, label="", style=filled, color="#555555", penwidth=2];
+  edge [arrowhead=none, color="#555555"];
 
-  ROOT [label="ABCDEFGH"];
-  ABCD [label="ABCD"];
-  EFGH [label="EFGH"];
-  CD   [label="CD"];
-  EF   [label="EF"];
+  N1 [fillcolor="#8fd16f", color="#8fd16f", pos="345.0,256!"];
+  N2 [fillcolor="#8fd16f", color="#8fd16f", pos="161.0,192!"];
+  N3 [fillcolor="#8fd16f", color="#8fd16f", pos="529.0,192!"];
+  N4 [fillcolor="#5b9bf0", color="#5b9bf0", pos="69.0,128!"];
+  N5 [fillcolor="#8fd16f", color="#8fd16f", pos="253.0,128!"];
+  N6 [fillcolor="#8fd16f", color="#8fd16f", pos="437.0,128!"];
+  N7 [fillcolor="#888888", color="#888888", pos="621.0,128!"];
+  N8 [fillcolor="none", color="#5b9bf0", pos="23.0,64!"];
+  N9 [fillcolor="none", color="#5b9bf0", pos="115.0,64!"];
+  N10 [fillcolor="#5b9bf0", color="#5b9bf0", pos="207.0,64!"];
+  N11 [fillcolor="#8fd16f", color="#8fd16f", pos="299.0,64!"];
+  N12 [fillcolor="#8fd16f", color="#8fd16f", pos="391.0,64!"];
+  N13 [fillcolor="#888888", color="#888888", pos="483.0,64!"];
+  N14 [fillcolor="none", color="#888888", pos="575.0,64!"];
+  N15 [fillcolor="none", color="#888888", pos="667.0,64!"];
+  N16 [fillcolor="none", color="#5b9bf0", pos="0.0,0!"];
+  N17 [fillcolor="none", color="#5b9bf0", pos="46.0,0!"];
+  N18 [fillcolor="none", color="#5b9bf0", pos="92.0,0!"];
+  N19 [fillcolor="none", color="#5b9bf0", pos="138.0,0!"];
+  N20 [fillcolor="none", color="#5b9bf0", pos="184.0,0!"];
+  N21 [fillcolor="none", color="#5b9bf0", pos="230.0,0!"];
+  N22 [fillcolor="#8fd16f", color="#8fd16f", pos="276.0,0!"];
+  N23 [fillcolor="#8fd16f", color="#8fd16f", pos="322.0,0!"];
+  N24 [fillcolor="#8fd16f", color="#8fd16f", pos="368.0,0!"];
+  N25 [fillcolor="#888888", color="#888888", pos="414.0,0!"];
+  N26 [fillcolor="none", color="#888888", pos="460.0,0!"];
+  N27 [fillcolor="none", color="#888888", pos="506.0,0!"];
+  N28 [fillcolor="none", color="#888888", pos="552.0,0!"];
+  N29 [fillcolor="none", color="#888888", pos="598.0,0!"];
+  N30 [fillcolor="none", color="#888888", pos="644.0,0!"];
+  N31 [fillcolor="none", color="#888888", pos="690.0,0!"];
 
-  AB [label="AB = frontier[2]", fillcolor="#cfe8ff"];
-  GH [label="GH (pristine)",    fillcolor="#cccccc"];
-
-  C [fillcolor="#d8f5d0"]; D [fillcolor="#d8f5d0"];
-  E [fillcolor="#d8f5d0"]; F [fillcolor="#d8f5d0"];
-
-  ROOT -> ABCD; ROOT -> EFGH;
-  ABCD -> AB;   ABCD -> CD;
-  EFGH -> EF;   EFGH -> GH;
-  CD -> C; CD -> D;
-  EF -> E; EF -> F;
+  N1 -> N2; N1 -> N3;
+  N2 -> N4; N2 -> N5;
+  N3 -> N6; N3 -> N7;
+  N4 -> N8; N4 -> N9;
+  N5 -> N10; N5 -> N11;
+  N6 -> N12; N6 -> N13;
+  N7 -> N14; N7 -> N15;
+  N8 -> N16; N8 -> N17;
+  N9 -> N18; N9 -> N19;
+  N10 -> N20; N10 -> N21;
+  N11 -> N22; N11 -> N23;
+  N12 -> N24; N12 -> N25;
+  N13 -> N26; N13 -> N27;
+  N14 -> N28; N14 -> N29;
+  N15 -> N30; N15 -> N31;
 }
