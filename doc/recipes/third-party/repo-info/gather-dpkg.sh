@@ -186,6 +186,24 @@ for src in "${sortedSources[@]}"; do
 		done
 	fi
 
+	# Normalize the captured source URIs so the report stays byte-stable.
+	# apt prints whichever location currently serves each file. While a
+	# version is still in the pool that is the live mirror with a SHA256
+	# digest, and once it has been superseded it is the pinned snapshot
+	# host with a SHA512 digest. Neither the host nor the digest is needed
+	# to satisfy the source-distribution obligation, and the two digests
+	# cannot be reconciled because they use different algorithms. Rewrite
+	# every URL to the durable snapshot host and drop the digest field so
+	# the output changes only when the committed rootfs or the snapshot pin
+	# does.
+	if [ -n "$aptSource" ]; then
+		sedArgs=( -E -e 's/ [A-Za-z0-9]+:[0-9a-fA-F]+$//' )
+		if [ -n "${APT_SNAPSHOT:-}" ]; then
+			sedArgs+=( -e "s#'[^']*/pool/#'https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT}/pool/#" )
+		fi
+		aptSource="$(printf '%s\n' "$aptSource" | sed "${sedArgs[@]}")"
+	fi
+
 	if [ -n "$aptSource" ]; then
 		echo
 		echo 'Source:'
