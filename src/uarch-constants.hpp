@@ -75,10 +75,9 @@ enum uarch_machine_state_addresses : uint64_t {
 
 /// \brief ecall function codes
 enum uarch_ecall_functions : uint64_t {
-    UARCH_ECALL_FN_HALT = EXPAND_UINT64_C(UARCH_ECALL_FN_HALT_DEF),                       ///< halt uarch execution
-    UARCH_ECALL_FN_PUTCHAR = EXPAND_UINT64_C(UARCH_ECALL_FN_PUTCHAR_DEF),                 ///< putchar
-    UARCH_ECALL_FN_MARK_DIRTY_PAGE = EXPAND_UINT64_C(UARCH_ECALL_FN_MARK_DIRTY_PAGE_DEF), ///< mark_dirty_page
-    UARCH_ECALL_FN_WRITE_TLB = EXPAND_UINT64_C(UARCH_ECALL_FN_WRITE_TLB_DEF),             ///< write_tlb
+    UARCH_ECALL_FN_HALT = EXPAND_UINT64_C(UARCH_ECALL_FN_HALT_DEF),           ///< halt uarch execution
+    UARCH_ECALL_FN_PUTCHAR = EXPAND_UINT64_C(UARCH_ECALL_FN_PUTCHAR_DEF),     ///< putchar
+    UARCH_ECALL_FN_WRITE_TLB = EXPAND_UINT64_C(UARCH_ECALL_FN_WRITE_TLB_DEF), ///< write_tlb
 };
 
 } // namespace cartesi

@@ -26,7 +26,6 @@ extern "C" {
 
 void ua_halt_ECALL();
 void ua_putchar_ECALL(uint8_t c);
-void ua_mark_dirty_page_ECALL(uint64_t paddr, uint64_t pma_index);
 void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index);
 
 #ifdef __cplusplus

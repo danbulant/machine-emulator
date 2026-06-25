@@ -496,8 +496,6 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {}
-
     bool do_putchar(uint8_t c) const { // NOLINT(readability-convert-member-functions-to-static)
         return m_m.putchar(c);
     }

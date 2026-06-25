@@ -196,11 +196,6 @@ private:
         return false;
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        ua_mark_dirty_page_ECALL(paddr, pma_index);
-    }
-
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "uarch_bridge_state_access";
     }

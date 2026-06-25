@@ -30,6 +30,7 @@
 #include "compiler-defines.hpp"
 #include "host-addr.hpp"
 #include "i-accept-counters.hpp"
+#include "i-accept-dirty-pages.hpp"
 #include "i-accept-scoped-notes.hpp"
 #include "i-interactive-state-access.hpp"
 #include "i-state-access.hpp"
@@ -57,7 +58,8 @@ class state_access :
     public i_state_access<state_access>,
     public i_interactive_state_access<state_access>,
     public i_accept_scoped_notes<state_access>,
-    public i_accept_counters<state_access> {
+    public i_accept_counters<state_access>,
+    public i_accept_dirty_pages<state_access> {
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     //??(edubart): Storing reference to the processor state removes an extra indirection when accessing registers,
@@ -503,10 +505,6 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) const {
-        m_m.mark_dirty_page(haddr, pma_index);
-    }
-
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_putchar(uint8_t c) const {
         return m_m.putchar(c);
@@ -550,6 +548,15 @@ private:
 
     void do_write_counter(uint64_t val, const char *name, const char *domain) const {
         m_m.write_counter(val, name, domain);
+    }
+
+    // -----
+    // i_accept_dirty_pages interface implementation
+    // -----
+    friend i_accept_dirty_pages<state_access>;
+
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
+        m_m.mark_dirty_page(paddr, pma_index);
     }
 };
 

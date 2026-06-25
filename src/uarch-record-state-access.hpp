@@ -295,11 +295,6 @@ private:
         return false;
     }
 
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        // Forward to machine and no need to log
-        m_m.mark_dirty_page(paddr, pma_index);
-    }
-
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
         return "uarch_record_state_access";

@@ -32,10 +32,10 @@
 #define UARCH_CYCLE_MAX_DEF (1 << UARCH_LOG2_CYCLE_MAX_DEF)
 
 // microarchitecture ecall function codes
-#define UARCH_ECALL_FN_HALT_DEF 1            // halt uarch
-#define UARCH_ECALL_FN_PUTCHAR_DEF 2         // putchar
-#define UARCH_ECALL_FN_MARK_DIRTY_PAGE_DEF 3 // mark_dirty_page
-#define UARCH_ECALL_FN_WRITE_TLB_DEF 4       // write_tlb
+// function code 3 was mark_dirty_page, now removed, and the gap is intentional
+#define UARCH_ECALL_FN_HALT_DEF 1      // halt uarch
+#define UARCH_ECALL_FN_PUTCHAR_DEF 2   // putchar
+#define UARCH_ECALL_FN_WRITE_TLB_DEF 4 // write_tlb
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

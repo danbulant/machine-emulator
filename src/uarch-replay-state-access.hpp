@@ -370,11 +370,6 @@ private:
         return false;
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_mark_dirty_page(uint64_t /*paddr*/, uint64_t /*pma_index*/) const {
-        ; // do nothing
-    }
-
     void do_reset_uarch() const {
         check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, get_uarch_pristine_state_hash(),
             "uarch.state");

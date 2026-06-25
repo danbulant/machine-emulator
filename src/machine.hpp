@@ -550,6 +550,10 @@ public:
         return const_cast<address_range &>(std::as_const(*this).read_pma(index));
     }
 
+    /// \brief Mark as dirty the page currently mapped by a write TLB slot, if any.
+    /// \param slot_index Index of the write TLB slot to inspect.
+    void mark_write_tlb_dirty_page(uint64_t slot_index) const;
+
     /// \brief Go over the write TLB and mark as dirty all pages currently there.
     void mark_write_tlb_dirty_pages() const;
 
@@ -600,15 +604,7 @@ public:
     }
 
     /// \brief Marks a page as dirty
-    /// \param haddr Machine host address within page
-    /// \param pma_index Index of PMA where address falls
-    void mark_dirty_page(host_addr haddr, uint64_t pma_index) {
-        auto paddr = get_paddr(haddr, pma_index);
-        mark_dirty_page(paddr, pma_index);
-    }
-
-    /// \brief Marks a page as dirty
-    /// \param paddr Target phyislcal address within page
+    /// \param paddr Target physical address within page
     /// \param pma_index Index of PMA where address falls
     void mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
         auto &ar = read_pma(pma_index);
@@ -623,6 +619,10 @@ public:
     /// \param pma_index Index of PMA where address falls
     void write_verified_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
         uint64_t pma_index) {
+        // Mark the page currently mapped here dirty before we overwrite the slot
+        if (set_index == TLB_WRITE) {
+            mark_write_tlb_dirty_page(slot_index);
+        }
         m_s->penumbra.tlb[set_index][slot_index].vaddr_page = vaddr_page;
         m_s->penumbra.tlb[set_index][slot_index].vh_offset = vh_offset;
         m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
@@ -645,6 +645,10 @@ public:
         uint64_t pma_index) {
         if (slot_index >= TLB_SET_SIZE) {
             throw std::out_of_range{"TLB slot index out of bounds"};
+        }
+        // Mark the page currently mapped here dirty before we overwrite the slot
+        if (set_index == TLB_WRITE) {
+            mark_write_tlb_dirty_page(slot_index);
         }
         m_s->penumbra.tlb[set_index][slot_index].vaddr_page = TLB_UNVERIFIED_PAGE;
         m_s->penumbra.tlb[set_index][slot_index].vh_offset = host_addr{0};

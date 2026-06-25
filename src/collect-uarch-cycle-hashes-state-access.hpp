@@ -123,12 +123,6 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        (void) paddr;
-        (void) pma_index;
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
         return "collect_uarch_cycle_hashes_state_access";
     }

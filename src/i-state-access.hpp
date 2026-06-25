@@ -478,18 +478,6 @@ public:
         return val;
     }
 
-    /// \brief Marks a page as dirty
-    /// \param faddr Implementation-defined fast address.
-    /// \param pma_index Index of PMA where page falls
-    /// \details When there is a host machine, the hash tree only updates the hashes for pages that
-    /// have been modified. Pages can only be written to if they appear in the write TLB. Therefore,
-    /// the hash tree only considers the pages that are currently in the write TLB and those that
-    /// have been marked dirty. When a page leaves the write TLB, it is marked dirty.
-    /// If the state belongs to a host machine, then this call MUST be forwarded to machine::mark_dirty_page();
-    void mark_dirty_page(fast_addr faddr, uint64_t pma_index) const {
-        derived().do_mark_dirty_page(faddr, pma_index);
-    }
-
     /// \brief Writes a character to the console
     /// \param c Character to output
     /// \returns True if console output should be flushed.

@@ -331,7 +331,6 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, UARCH_RAM_START_ADDRESS, "UARCH_RAM_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_HALT, "UARCH_ECALL_FN_HALT", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_PUTCHAR, "UARCH_ECALL_FN_PUTCHAR", -1);
-    clua_setintegerfield(L, UARCH_ECALL_FN_MARK_DIRTY_PAGE, "UARCH_ECALL_FN_MARK_DIRTY_PAGE", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_WRITE_TLB, "UARCH_ECALL_FN_WRITE_TLB", -1);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     clua_setlstringfield(L, reinterpret_cast<const char *>(uarch_pristine_hash), uarch_pristine_hash_len,

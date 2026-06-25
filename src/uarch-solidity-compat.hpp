@@ -150,11 +150,6 @@ static inline void putCharECALL(const UarchState a, uint8 c) {
 }
 
 template <typename UarchState>
-static inline void markDirtyPageECALL(const UarchState a, uint64 paddr, uint64 pma_index) {
-    a.mark_dirty_page(paddr, pma_index);
-}
-
-template <typename UarchState>
 static inline void writeTlbECALL(const UarchState a, uint64 set_index, uint64 slot_index, uint64 vaddr_page,
     uint64 vp_offset, uint64 pma_index) {
     a.write_tlb(static_cast<TLB_set_index>(set_index), slot_index, vaddr_page, vp_offset, pma_index);

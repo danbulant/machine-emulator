@@ -159,10 +159,6 @@ public:
         return derived().do_putchar(c);
     }
 
-    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        return derived().do_mark_dirty_page(paddr, pma_index);
-    }
-
     void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) const {
         derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);

@@ -30,6 +30,7 @@
 #include "hash-tree-constants.hpp"
 #include "hash-tree.hpp"
 #include "host-addr.hpp"
+#include "i-accept-dirty-pages.hpp"
 #include "i-accept-scoped-notes.hpp"
 #include "i-prefer-shadow-state.hpp"
 #include "i-state-access.hpp"
@@ -61,6 +62,7 @@ struct i_state_access_fast_addr<record_step_state_access> {
 class record_step_state_access :
     public i_state_access<record_step_state_access>,
     public i_accept_scoped_notes<record_step_state_access>,
+    public i_accept_dirty_pages<record_step_state_access>,
     public i_prefer_shadow_state<record_step_state_access> {
 
     using page_data_type = std::array<uint8_t, HASH_TREE_PAGE_SIZE>;
@@ -351,17 +353,21 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) const {
-        // this is a noop in replay_step_state_access, so we do nothing else
-        m_m.mark_dirty_page(haddr, pma_index);
-    }
-
     bool do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
         return false;
     }
 
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "record_step_state_access";
+    }
+
+    // -----
+    // i_accept_dirty_pages interface implementation
+    // -----
+    friend i_accept_dirty_pages<record_step_state_access>;
+
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
+        m_m.mark_dirty_page(paddr, pma_index);
     }
 };
 

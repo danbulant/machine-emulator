@@ -100,12 +100,6 @@ private:
         return false;
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
-        // Forward to machine
-        m_m.mark_dirty_page(paddr, pma_index);
-    }
-
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) const {
         // Forward to machine

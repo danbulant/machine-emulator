@@ -872,22 +872,9 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
 /// \param slot_index Slot index
 template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_slot(const STATE_ACCESS a, uint64_t slot_index) {
-    // Make sure a valid page leaving the write TLB is marked as dirty
-    // We must do this BEFORE we modify the TLB entries themselves
-    // (Otherwise, we could stop uarch before it marks the page dirty but after
-    // the entry is no longer in the TLB, which would cause the hash tree to
-    // miss a dirty page.)
-    if constexpr (SET == TLB_WRITE) {
-        auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
-        if (old_vaddr_page == TLB_UNVERIFIED_PAGE) {
-            old_vaddr_page = a.template init_hot_tlb_slot<TLB_WRITE>(slot_index);
-        }
-        if (old_vaddr_page != TLB_INVALID_PAGE) {
-            auto old_pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
-            const auto old_faddr_page = old_vaddr_page + a.template read_tlb_vf_offset<TLB_WRITE>(slot_index);
-            a.mark_dirty_page(old_faddr_page, old_pma_index);
-        }
-    }
+    // A valid page leaving the write TLB is marked dirty by the machine itself,
+    // inside write_verified_tlb/write_unverified_tlb, before the outgoing slot is
+    // overwritten. The interpreter no longer marks it here.
     // We do not leave garbage behind in empty slots
     // (It would make state access classes trickier to implement)
     const auto vaddr_page = TLB_INVALID_PAGE;

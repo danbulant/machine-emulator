@@ -1463,25 +1463,29 @@ uint64_t machine::get_reg_address(reg r) {
     throw std::domain_error{"invalid register"};
 }
 
+void machine::mark_write_tlb_dirty_page(uint64_t slot_index) const {
+    auto vaddr_page = m_s->penumbra.tlb[TLB_WRITE][slot_index].vaddr_page;
+    if (vaddr_page == TLB_UNVERIFIED_PAGE) {
+        vaddr_page = init_hot_tlb_slot(TLB_WRITE, slot_index);
+    }
+    if (vaddr_page != TLB_INVALID_PAGE) {
+        const auto &shadow_slot = m_s->shadow.tlb[TLB_WRITE][slot_index];
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        auto &ar = const_cast<address_range &>(read_pma(shadow_slot.pma_index));
+        if (!ar.is_memory()) {
+            throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
+        }
+        auto paddr_page = vaddr_page + shadow_slot.vp_offset;
+        if (!ar.contains_absolute(paddr_page, AR_PAGE_SIZE)) {
+            throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
+        }
+        ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr_page - ar.get_start());
+    }
+}
+
 void machine::mark_write_tlb_dirty_pages() const {
     for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-        auto vaddr_page = m_s->penumbra.tlb[TLB_WRITE][slot_index].vaddr_page;
-        if (vaddr_page == TLB_UNVERIFIED_PAGE) {
-            vaddr_page = init_hot_tlb_slot(TLB_WRITE, slot_index);
-        }
-        if (vaddr_page != TLB_INVALID_PAGE) {
-            const auto &shadow_slot = m_s->shadow.tlb[TLB_WRITE][slot_index];
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            auto &ar = const_cast<address_range &>(read_pma(shadow_slot.pma_index));
-            if (!ar.is_memory()) {
-                throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
-            }
-            auto paddr_page = vaddr_page + shadow_slot.vp_offset;
-            if (!ar.contains_absolute(paddr_page, AR_PAGE_SIZE)) {
-                throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
-            }
-            ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr_page - ar.get_start());
-        }
+        mark_write_tlb_dirty_page(slot_index);
     }
 }
 

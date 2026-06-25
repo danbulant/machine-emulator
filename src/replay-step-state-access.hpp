@@ -604,10 +604,6 @@ private:
     }
     // LCOV_EXCL_STOP
 
-    void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {
-        // this is a noop since we have no host machine
-    }
-
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "replay_step_state_access";

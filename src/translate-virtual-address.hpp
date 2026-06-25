@@ -47,6 +47,7 @@
 
 #include "compiler-defines.hpp"
 #include "find-pma.hpp"
+#include "i-accept-dirty-pages.hpp"
 #include "riscv-constants.hpp"
 
 namespace cartesi {
@@ -68,7 +69,10 @@ static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val
     // log writes to memory
     a.write_memory_word(faddr, pma_index, val);
     // mark page as dirty so we know to update the hash tree
-    a.mark_dirty_page(faddr, pma_index);
+    // only state accesses with a deferred store need this, see i_accept_dirty_pages
+    if constexpr (is_an_i_accept_dirty_pages_v<STATE_ACCESS>) {
+        a.mark_dirty_page(paddr, pma_index);
+    }
     return true;
 }
 

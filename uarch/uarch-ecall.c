@@ -41,18 +41,6 @@ void ua_putchar_ECALL(uint8_t c) {
     );
 }
 
-void ua_mark_dirty_page_ECALL(uint64_t paddr, uint64_t pma_index) {
-    // NOLINTNEXTLINE(hicpp-no-assembler)
-    asm volatile("mv a7, %0\n"
-                 "mv a0, %1\n"
-                 "mv a1, %2\n"
-                 "ecall\n"
-                 : // no output
-                 : "r"(UARCH_ECALL_FN_MARK_DIRTY_PAGE_DEF), "r"(paddr), "r"(pma_index)
-                 : "a7", "a0", "a1" // clobbered registers
-    );
-}
-
 void ua_write_tlb_ECALL(uint64_t use, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
     uint64_t pma_index) {
     // NOLINTNEXTLINE(hicpp-no-assembler)
