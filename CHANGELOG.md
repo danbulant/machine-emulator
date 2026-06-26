@@ -6,16 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ## Added
-- Added `--nvram` command line option and `nvram_configs` machine configuration for UIO-backed memory ranges, exposed to the guest via `generic-uio`
-- Added `label` field to flash drive and nvram configurations, propagated to the guest through DTB properties
-- Added optional directory argument to `--dump-memory-ranges` to support read-only install locations
+- Added a user manual under `doc/`, generated from a template by a docgen pipeline that executes and verifies every code snippet against the locally built emulator
+- Added `--nvram` command line option and `nvram` machine configuration for UIO-backed memory ranges, exposed to the guest as `/dev/uio*` via `generic-uio`
+- Added a `label` field to memory range configurations, exposed to the guest through a standard DTB `/aliases` node (`flashdriveN`, `nvramN`, and any user label)
+- Added recording of a revert root hash as a logged input of `send_cmio_response`, with `read_revert_root_hash`/`write_revert_root_hash` accessors across all API layers
+- Added reversion to the recorded revert root hash for rollup inputs that end rejected, when logging steps, logging uarch resets, verifying, and collecting root hashes
+- Added emission of per-output proofs from `--cmio-advance-state`
+- Added an optional user schema dictionary argument to `cartesi.tojson`/`cartesi.fromjson` to name binary and compound fields of caller-defined message types
+- Added a `cartesi.hash-tree` Lua module for hash-tree slice/splice verification and building the output-hashes frontier behind the output proofs
+- Added `get_address_name` to resolve a physical address to a descriptive name, across the C, Lua, and JSON-RPC APIs
+- Added the ability for `--initial-hash` and `--final-hash` to write the hash to a file
+- Added an optional directory argument to `--dump-memory-ranges` to support read-only install locations
 - Added decoding of RISC-V Zcb compressed instructions (required by kernels built with GCC 14)
 - Added fallback to `read_reg` in the GDB stub so `monitor reg <name>` works for any named register
-- Added `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, and `CM_MEMORY_RANGE_LABEL_MAX` constants to the public C API
+- Added `--bash-completion` to print a bash completion script for `cartesi-machine`
+- Added public C API constants `CM_FLASH_DRIVE_MAX`, `CM_NVRAM_MAX`, `CM_MEMORY_RANGE_LABEL_MAX`, `CM_RTC_FREQ_DIV`, and `CM_CMIO_LOG2_MAX_OUTPUT_COUNT`
+- Added the peripheral `CM_AR_*` address range constants, the `CM_PMA_*_DID` driver id constants, the HTIF device, command, shift, and mask constants, and the `CM_DTB_BOOTARGS_*` macros to the public C API
 - Added LuaCov-based coverage tracking for Lua code, integrated with the gcov report pipeline
+- Added a JSON-RPC C API coverage suite and converted `test-cm-cli` and `test-evmu` to the lester spec format
 - Added `spec-cm-cli.lua` covering every command-line option of `cartesi-machine.lua`
 
 ## Fixed
+- Fixed leaf size in `cartesi-hash-tree-hash`, which was 8 instead of 32
+- Fixed read-only flash drives not being mounted with `-o ro`, which trapped guest writes and panicked init
 - Fixed missing `#address-cells` on the per-CPU `interrupt-controller` node in the DTB, silencing a `dtc` interrupt-provider lint warning
 - Fixed firmware reserved region in the DTB being too small for OpenSBI built with GCC 14
 - Fixed missing validation of memory range labels and of `replace_memory_range` arguments
@@ -24,14 +37,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `dump_pmas()` still calling the removed `get_memory_ranges()` method
 - Fixed unanchored patterns matching `--quiet` and `--assert-rolling-template`
 - Fixed `help()` internally calling `os.exit()`
+- Fixed a typo in the `cartesi-machine.lua` cmio handling
 
 ## Changed
-- Renamed `--dump-memory-ranges` to `--dump-address-ranges` for consistency with `get_address_ranges()`
+- Renamed the yield constants in `cm.h` and the Lua API from `CM_CMIO_YIELD_*` to `CM_HTIF_YIELD_*` (and the command suffix from `COMMAND` to `CMD`)
+- Renamed the PMA "device id" to "driver id" across the public API (`CM_PMA_*_DID` constants, `driver_id` in `get_address_ranges`)
+- Changed `get_address_ranges` to report per-range attributes (`is_memory`, `is_device`, `is_readable`, `is_writeable`, `is_executable`, `is_read_idempotent`, `is_write_idempotent`, and `driver_id`)
+- Replaced the `--store-json-config`/`--load-json-config` options with a `format:<lua|json>` sub-option on `--store-config`/`--load-config`, defaulting to the format inferred from the filename extension
+- Changed `--initial-proof`/`--final-proof` to default to Lua tables and accept `format:<lua|json>` and `label:` sub-options, where before they were dumped only as JSON
+- Reworked command-line option parsing so compound options such as `--volume` and `--port-forward` take `key:value` sub-options, and short options take a space-separated value (`-u <name>` instead of `-u=<name>`)
+- Changed memory ranges with an unset start to be placed past the end of RAM, rounded up to a power of two and aligned to their length, with flash drives and nvrams drawn from a shared pool
+- Changed `log_send_cmio_response` and `verify_send_cmio_response` to treat invalid responses and advance-state responses delivered outside an rx-accepted manual yield as no-ops, while the live `send_cmio_response` still rejects them as errors
+- Changed the uarch state-access layer to align misaligned accesses down to their natural size instead of rejecting them
+- Changed JSON-RPC error logs to omit the Boost `source_location` suffix at non-debug levels
 - Renamed all C++ headers from `.h` to `.hpp`, and renamed `machine-c-api.{h,cpp}` to `cm.{h,cpp}`
-- Bumped machine configuration archive version from 6 to 7 (for the new `nvram_configs` and `label` fields)
+- Bumped machine configuration archive version from 6 to 7 (for the new `nvram` and `label` fields)
 - Moved the `/run/cartesi/memoryranges/` sysfs setup from the DTB init script into `cartesi-init`
 - Updated guest bootargs to bind `uio_pdrv_genirq` to generic-uio nodes
 - Bumped test `linux.bin` and `rootfs.ext2` images
+
+## Removed
+- Removed the `--store-json-config` and `--load-json-config` options (folded into the `format:` sub-option of `--store-config`/`--load-config`)
+- Removed the `--replace-flash-drive` option, subsumed by `--replace-memory-range`
+- Removed `CM_ERROR_REGEX_ERROR` (covered by `CM_ERROR_RUNTIME_ERROR`) and `CM_ERROR_SYSTEM_ERROR`, and renumbered the error enum
+- Removed `machine_reg_get_name` in favor of `get_address_name`
+- Removed `mark_dirty_page` from the uarch and state-access interfaces
 
 ## [0.20.0] - 2026-04-09
 ## Added
