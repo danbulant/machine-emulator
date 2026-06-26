@@ -43,5 +43,5 @@ for x in ${TEST_LIST[@]}; do
         continue
     fi
     echo "Running $x"
-    echo -n 'CTSICTSI' | (bash -c "${LUA} $test_path local") || exit 1
+    bash -c "${LUA} $test_path local" || exit 1
 done

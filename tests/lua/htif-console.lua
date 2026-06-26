@@ -45,8 +45,21 @@ local function test(config, console_getchar_enable)
     config.htif = {
         console_getchar = console_getchar_enable,
     }
-    local machine <close> = cartesi.machine(config)
-    machine:run(math.maxinteger)
+    -- feed the test input through the runtime console buffer instead of host stdin
+    local runtime = {
+        console = {
+            input_source = "from_buffer",
+        },
+    }
+    local machine <close> = cartesi.machine(config, runtime)
+    if console_getchar_enable then
+        machine:write_console_input("CTSI")
+    end
+    -- run() breaks with BREAK_REASON_CONSOLE_INPUT when the input buffer drains,
+    -- so keep running until the machine halts
+    repeat
+        machine:run(math.maxinteger)
+    until machine:read_reg("iflags_H") ~= 0
 
     -- should be halted
     assert(machine:read_reg("iflags_H") ~= 0, "expected iflags_H set")
