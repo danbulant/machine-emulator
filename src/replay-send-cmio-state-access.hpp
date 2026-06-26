@@ -20,6 +20,7 @@
 /// \file
 /// \brief State access implementation that replays recorded state accesses
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <ios>
@@ -57,17 +58,16 @@ public:
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
         /// \param initial_hash Initial root hash
-        context(const access_log &log, const machine_hash &initial_hash, hash_function_type hash_function) :
+        context(const access_log &log, const_machine_hash_view initial_hash, hash_function_type hash_function) :
             accesses(log.get_accesses()),
-            root_hash(initial_hash),
             hash_function(hash_function) {
-            ;
+            std::ranges::copy(initial_hash, root_hash.begin());
         }
         const std::vector<access> &accesses; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
         ///< Index of next access to ne consumed
         unsigned int next_access{};
         ///< Root hash before next access
-        machine_hash root_hash;
+        machine_hash root_hash{};
         ///< Hash function type used for the log
         hash_function_type hash_function;
     };

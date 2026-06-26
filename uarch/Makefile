@@ -49,6 +49,7 @@ WARNFLAGS := -Wall -Wextra -Wpedantic -Wno-array-bounds -Werror
 
 BASEFLAGS := -march=rv64i -mabi=lp64 $(UBFLAGS) $(WARNFLAGS) \
 	-DMICROARCHITECTURE=1 \
+	-DNO_STD_VECTOR=1 \
 	-DAVOID_NATIVE_UINT128_T=1 \
 	-ffreestanding \
 	-nostartfiles \

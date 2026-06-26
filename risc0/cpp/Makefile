@@ -56,6 +56,7 @@ UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-ch
 
 CFLAGS := -march=rv32im -mabi=ilp32 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
 	-DZKARCHITECTURE=1 \
+	-DNO_STD_VECTOR=1 \
 	$(DUMP_DEFS) \
 	-DAVOID_NATIVE_UINT128_T=1 \
 	-ffreestanding \

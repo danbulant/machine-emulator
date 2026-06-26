@@ -61,16 +61,14 @@ public:
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
         /// \param initial_hash Initial root hash
-        context(const access_log &log, const machine_hash &initial_hash) :
-            accesses(log.get_accesses()),
-            root_hash(initial_hash) {
-            ;
+        context(const access_log &log, const_machine_hash_view initial_hash) : accesses(log.get_accesses()) {
+            std::ranges::copy(initial_hash, root_hash.begin());
         }
         const std::vector<access> &accesses; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
         ///< Index of next access to ne consumed
         unsigned int next_access{};
         ///< Root hash before next access
-        machine_hash root_hash;
+        machine_hash root_hash{};
         ///< Hasher needed to verify proofs
         keccak_256_hasher hasher;
     };

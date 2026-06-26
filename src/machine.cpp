@@ -1945,8 +1945,8 @@ access_log machine::log_send_cmio_response(const_machine_hash_view revert_root_h
 }
 
 void machine::verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) {
+    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+    const_machine_hash_view root_hash_after) {
     replay_send_cmio_state_access::context context{log, root_hash_before, hash_function_type::keccak256};
     // Verify all intermediate state transitions
     replay_send_cmio_state_access a(context);
@@ -1954,7 +1954,7 @@ void machine::verify_send_cmio_response(const_machine_hash_view revert_root_hash
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     auto obtained_root_hash = a.get_root_hash();
-    if (obtained_root_hash != root_hash_after) {
+    if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
 }
@@ -1997,8 +1997,8 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     return log;
 }
 
-void machine::verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) {
+void machine::verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    const_machine_hash_view root_hash_after) {
     // Verify all intermediate state transitions
     uarch_replay_state_access::context context{log, root_hash_before};
     uarch_replay_state_access a(context);
@@ -2006,7 +2006,7 @@ void machine::verify_reset_uarch(const machine_hash &root_hash_before, const acc
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     const machine_hash obtained_root_hash = a.get_root_hash();
-    if (obtained_root_hash != root_hash_after) {
+    if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
 }
@@ -2040,8 +2040,8 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
 // Declaration of explicit instantiation in module uarch-step.cpp
 extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
-void machine::verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) {
+void machine::verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    const_machine_hash_view root_hash_after) {
     // Verify all intermediate state transitions
     uarch_replay_state_access::context context{log, root_hash_before};
     uarch_replay_state_access a(context);
@@ -2049,7 +2049,7 @@ void machine::verify_step_uarch(const machine_hash &root_hash_before, const acce
     a.finish();
     // Make sure the access log ends at the same root hash as the state
     auto obtained_root_hash = a.get_root_hash();
-    if (obtained_root_hash != root_hash_after) {
+    if (!std::ranges::equal(obtained_root_hash, root_hash_after)) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
 }
@@ -2114,15 +2114,15 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     return break_reason;
 }
 
-interpreter_break_reason machine::verify_step(const machine_hash &root_hash_before, const std::string &filename,
-    uint64_t mcycle_count, const machine_hash &root_hash_after) {
+interpreter_break_reason machine::verify_step(const_machine_hash_view root_hash_before, const std::string &filename,
+    uint64_t mcycle_count, const_machine_hash_view root_hash_after) {
     auto data_length = os::file_size(filename);
     auto mapped_data = os::mapped_memory(data_length, os::mapped_memory_flags{}, filename);
     replay_step_state_access::context context;
     // Constructor reads log header, validates computed initial hash == logged initial hash
     replay_step_state_access a(context, mapped_data.get_ptr(), data_length);
     // logged initial hash matches computed initial hash
-    if (context.logged_root_hash_before != root_hash_before) {
+    if (!std::ranges::equal(context.logged_root_hash_before, root_hash_before)) {
         throw std::runtime_error("root hash before mismatch: argument does not match step log header");
     }
     if (context.logged_mcycle_count != mcycle_count) {
@@ -2131,7 +2131,7 @@ interpreter_break_reason machine::verify_step(const machine_hash &root_hash_befo
     const uint64_t mcycle_end = saturating_add(a.read_mcycle(), context.logged_mcycle_count);
     auto break_reason = interpret(a, mcycle_end);
     a.finish(); // validates computed final hash == logged final hash
-    if (context.logged_root_hash_after != root_hash_after) {
+    if (!std::ranges::equal(context.logged_root_hash_after, root_hash_after)) {
         throw std::runtime_error("root hash after mismatch: argument does not match step log header");
     }
     return break_reason;
