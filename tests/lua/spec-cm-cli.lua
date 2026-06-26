@@ -858,7 +858,7 @@ describe("cartesi-machine CLI", function()
     --
     -- What: --initial-hash, --final-hash, --periodic-hashes (positional period
     --       with and without a start: sub-key), --initial-proof, --final-proof,
-    --       --dense-uarch-hashes, and --dump-address-ranges.
+    --       --dense-uarch-hashes, and --dump-memory-ranges.
     -- How:  run_ok() each flag; regex-match 64-hex-digit lines in stderr to
     --       count hash emissions; open proof output files and assert they are
     --       non-empty.  Format-specific proof assertions live in the dedicated
@@ -895,24 +895,24 @@ describe("cartesi-machine CLI", function()
         -- --dense-uarch-hashes=N single-argument form
         run_ok({ "--dense-uarch-hashes=1", "--max-mcycle=0", "--no-init-splash", "--quiet" })
 
-        -- --dump-address-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
+        -- --dump-memory-ranges=<dir>: writes one <start>--<length>.bin per memory range under <dir>.
         -- The CLI creates the directory; we only own the cleanup.
         local dump_dir = filesystem.temp_pathname()
         local _ <close> = utils.scope_exit(function()
             os.remove(dump_dir)
         end)
-        run_ok({ "--dump-address-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
+        run_ok({ "--dump-memory-ranges=" .. dump_dir, "--max-mcycle=0", "--no-init-splash", "--quiet" })
         local cfg = config_for({})
         local m <close> = cartesi.machine(cfg)
         for _, v in ipairs(m:get_address_ranges()) do
             local filename = dump_dir .. "/" .. string.format("%016x--%016x.bin", v.start, v.length)
             local f = io.open(filename, "r")
             if v.is_memory then
-                assert(f, "--dump-address-ranges: expected file not created: " .. filename)
+                assert(f, "--dump-memory-ranges: expected file not created: " .. filename)
                 f:close()
                 assert(os.remove(filename))
             else
-                assert(not f, "--dump-address-ranges: file created for device range: " .. filename)
+                assert(not f, "--dump-memory-ranges: file created for device range: " .. filename)
             end
         end
     end)

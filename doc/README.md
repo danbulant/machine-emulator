@@ -820,7 +820,7 @@ in a *copy-on-write* fashion. When code running in the guest causes the
 emulator to write to a mapped image file, the operating system makes a
 copy of the page before modification and replaces the mapping to point
 to the fresh copy. The image files are never written to. (The
-`--dump-address-ranges` command-line option can be used to inspect the
+`--dump-memory-ranges` command-line option can be used to inspect the
 modified copies for debugging purposes. See below.)
 
 > [!NOTE]
@@ -2562,10 +2562,10 @@ Cycles: 62993917
 62993917: a7fdb74dcc67232f5b64b3b245972a6b30e6fde1f11c5a11ae16dec44bcc79ae
 ```
 
-The command-line option `--dump-address-ranges[=<dir>]` causes the
-emulator to dump the contents of all mapped spans in the address space
+The command-line option `--dump-memory-ranges[=<dir>]` causes the
+emulator to dump the contents of all memory ranges in the address space
 to files under `<dir>`. If `<dir>` is omitted, files are written to the
-current working directory. Each span produces a file
+current working directory. Each memory range produces a file
 `<start>--<length>.bin`. Every other byte in the address space has value
 0. This is useful to inspect the entire state of the machine from
 outside the emulator.

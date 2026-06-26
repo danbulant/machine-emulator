@@ -795,8 +795,8 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
-  --dump-address-ranges[=<dir>]
-    dump all address ranges to files under <dir>.
+  --dump-memory-ranges[=<dir>]
+    dump all memory ranges to files under <dir>.
     If <dir> is omitted, files are written to the current directory.
 
   --assert-rolling-template
@@ -972,7 +972,7 @@ local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
 local dense_uarch_hashes_start
 local dense_uarch_hashes_end
-local dump_address_ranges_dir = false
+local dump_memory_ranges_dir = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
 local log_step_uarch = false
@@ -1869,16 +1869,16 @@ options = {
         end,
     },
     {
-        "--dump-address-ranges",
+        "--dump-memory-ranges",
         function()
-            dump_address_ranges_dir = true
+            dump_memory_ranges_dir = true
             return true
         end,
     },
     {
-        "--dump-address-ranges=",
+        "--dump-memory-ranges=",
         function(_, _, v)
-            dump_address_ranges_dir = v
+            dump_memory_ranges_dir = v
             return true
         end,
         "dir",
@@ -2794,7 +2794,7 @@ local function store_machine(machine, config, dir, sharing)
     machine:store(name, sharing)
 end
 
-local function dump_address_ranges(machine, dir)
+local function dump_memory_ranges(machine, dir)
     local prefix = type(dir) == "string" and dir .. "/" or ""
     if prefix ~= "" then assertf(os.execute("mkdir " .. dir), "could not create directory %s", dir) end
     for _, v in ipairs(machine:get_address_ranges()) do
@@ -3101,7 +3101,7 @@ if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
     util.print_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if dump_address_ranges_dir then dump_address_ranges(machine, dump_address_ranges_dir) end
+if dump_memory_ranges_dir then dump_memory_ranges(machine, dump_memory_ranges_dir) end
 if final_hash then
     assert(initial_config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     if type(final_hash) == "string" then
