@@ -10,6 +10,7 @@ Specifically, it provides test coverage for:
 
 local lester = require("cartesi.third-party.lester")
 local cartesi = require("cartesi")
+local test_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
 local variants = {
@@ -161,6 +162,50 @@ for _, variant in ipairs(variants) do
                 expect.equal(machine:get_address_name(cartesi.AR_CMIO_TX_BUFFER_START), "cmio.tx_buffer")
                 expect.equal(machine:get_address_name(cartesi.AR_FIRST_VIRTIO_START), "virtio")
                 expect.equal(machine:get_address_name(cartesi.AR_LAST_VIRTIO_END - 1), "virtio")
+            end)
+        end)
+
+        describe("write_memory over shadow state", function()
+            -- Regression: overwriting the whole shadow state (its special case in
+            -- machine::write_memory) resets the hot TLB. Pages written by the guest
+            -- through the write TLB but not yet flushed into the dirty-page tree
+            -- would lose their pending dirty mark, so a later incremental hash would
+            -- not reflect them. write_memory must flush the write TLB dirty pages
+            -- before replacing the shadow.
+            it("should keep the root hash consistent with memory", function()
+                -- auipc t0, 0x2 ; addi t1, x0, 0x42 ; sd t1, 0(t0) ; jal x0, 0
+                -- The store dirties page RAM_START+0x2000 through the write TLB.
+                local program = string.char(
+                    0x97,
+                    0x22,
+                    0x00,
+                    0x00,
+                    0x13,
+                    0x03,
+                    0x20,
+                    0x04,
+                    0x23,
+                    0xb0,
+                    0x62,
+                    0x00,
+                    0x6f,
+                    0x00,
+                    0x00,
+                    0x00
+                )
+                local m <close> = variant.create({ ram = { length = 1 << 20 } })
+                m:write_memory(cartesi.AR_RAM_START, program)
+                -- Snapshot the shadow while its TLB references no written page.
+                local shadow = m:read_memory(cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_STATE_LENGTH)
+                -- Establish a baseline so the later hash update is incremental.
+                m:get_root_hash()
+                -- Execute the store, leaving the page dirty in host memory but only
+                -- tracked by the write TLB, not yet by the dirty-page tree.
+                m:run(100)
+                -- Overwrite the shadow with the snapshot, whose TLB no longer
+                -- references the written page.
+                m:write_memory(cartesi.AR_SHADOW_STATE_START, shadow)
+                expect.equal(m:get_root_hash(), test_util.calculate_emulator_hash(m))
             end)
         end)
     end)

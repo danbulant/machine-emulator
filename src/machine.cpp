@@ -1693,6 +1693,9 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
         // Overwrite the processor shadow state with the provided data
         static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
+        // Make sure we marked as dirty whatever pages were in the write TLB
+        mark_write_tlb_dirty_pages();
+        // Overwrite shadow
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         memcpy(reinterpret_cast<unsigned char *>(&m_s->shadow), data, sizeof(m_s->shadow));
         // Reinitialize the hot TLB to reflect changes in the shadow TLB
