@@ -64,7 +64,7 @@
     - [Slicing and splicing](#slicing-and-splicing)
     - [Template instantiation](#template-instantiation)
     - [Result extraction](#result-extraction)
-    - [The outputs tree](#the-outputs-tree)
+    - [The output hashes tree](#the-output-hashes-tree)
     - [Output verification](#output-verification)
   - [Verification game](#verification-game)
     - [Settling a dispute](#settling-a-dispute)
@@ -292,13 +292,14 @@ The advance-state requests serviced by a Rolling Cartesi Machine are
 grouped into *epochs*. At the end of an epoch, the state of the machine
 is finalized, so its state hash becomes known. From the finalized state
 one can read the *output hashes root hash*, a single hash that commits
-to every voucher and notice the machine has emitted since genesis. This
-hash is the root of a Merkle tree maintained inside the machine, where
-each leaf is the hash of one of the outputs, in the order they are
-emitted. Once an epoch is finalized, anyone can prove that a particular
-output is among those committed to by this hash, and therefore that the
-machine really did emit it. This is how Cartesi Rollups settles disputes
-over the vouchers and notices a Rolling Cartesi Machine produces.
+to every voucher and notice the machine has ever emitted. This hash is
+the root of a Merkle tree maintained inside the machine, where each leaf
+is the hash of one of the outputs, in the order they are emitted. (The
+index of an output is its leaf position.) Given the contents of an
+output, and a proof that its hash is the leaf at that index in the tree,
+it is therefore possible to verify that the machine has in fact produced
+that output. This is how Cartesi Rollups settles disputes over the
+vouchers and notices a Rolling Cartesi Machine produces.
 
 Between state advances, it is possible to inspect the state of a Rolling
 Cartesi Machine. This works by sending a query for processing inside the
@@ -1873,6 +1874,10 @@ and the output gives the index of the just-output notice as follows
 }
 ```
 
+The `report` command takes the same input format as `notice`. However,
+since reports are not verifiable, there is no associated index to print
+out.
+
 Shell scripts become surprisingly powerful with the help of the
 `rollup`, `hex`, and `jq` command-line utilities. A `bc`-based arbitrary
 precision application, for example, might look like this:
@@ -2178,7 +2183,8 @@ makes to the machine state is reverted afterward. The client saves the
 report as `query-report-0.bin`.
 
 The hash operations behind the output proofs are explained later, under
-[The outputs tree](#the-outputs-tree) in the Blockchain perspective.
+[The output hashes tree](#the-output-hashes-tree) in the Blockchain
+perspective.
 
 The server shell shows only the error message output by `bc` and
 `rollup`. In production, these error messages should have been captured
@@ -4786,16 +4792,17 @@ guest writes it to the CMIO tx buffer on every accept, so it is part of
 the machine state.
 
 Disputes are settled over the machine state hash at the end of an epoch.
-Because the output hashes root hash sits in that state, a [state value
-proof](#state-value-proofs-1) of the tx-buffer word it occupies ties it
-to the state hash, so once the [verification game](#verification-game)
-settles the state hash, the output hashes root hash is settled with it.
-The blockchain then verifies any output with its *output proof* alone,
-checking that the leaf `keccak256(<output>)` rolls up to the settled
-output hashes root hash from its global output index.
+The latest output hashes root hash sits in the tx-buffer in that state.
+A [state value proof](#state-value-proofs-1) of the tx-buffer word it
+occupies ties it to the state hash. Therefore, once the [verification
+game](#verification-game) settles the state hash, the output hashes root
+hash is settled with it. The blockchain then verifies any output with
+its *output proof* alone, checking that the leaf `keccak256(<output>)`
+rolls up to the settled output hashes root hash from its global output
+index.
 
-The `hash-tree.lua` sample module accumulates the outputs tree with an
-incremental keccak Merkle accumulator whose leaves are
+The `hash-tree.lua` sample module accumulates the output hashes tree
+with an incremental keccak Merkle accumulator whose leaves are
 `keccak256(<output>)`. A *frontier* captures the outputs accepted so
 far. At genesis, the frontier is
 `hash_tree.frontier(<log2_max_leaves>)`. The frontier for a later epoch
@@ -4806,10 +4813,10 @@ and `hash_tree.frontier_get_root_hash(<frontier>)` yields the output
 hashes root hash to check against the one the guest wrote. Once the
 epoch closes, `hash_tree.frontier_next_proofs(<frontier>, <leaves>)`
 returns one proof per new output, all against the single final root.
-These helpers are shown and explained under [The outputs
-tree](#the-outputs-tree) in the Blockchain perspective.
+These helpers are shown and explained under [The output hashes
+tree](#the-output-hashes-tree) in the Blockchain perspective.
 
-The following script extends the rolling calculator
+The following script extends the Rolling Cartesi Machine calculator
 [example](#rolling-cartesi-machines-1) to collect output proofs and the
 state-value proof for the output hashes root hash. It buffers the
 outputs of each input until the input’s verdict is known. On accept, it
@@ -6500,10 +6507,10 @@ The raw `/dev/cmio` character device file is the kernel-level interface
 to the HTIF yield sub-device. Most users should not interact with it
 directly. Language bindings should be built on top of libcmt rather than
 `/dev/cmio` directly, because libcmt does more than carry traffic
-through the device. It also maintains the merkle tree of output hashes
-that the host needs in order to validate the application’s outputs. The
-notes below are useful for the curious and for tooling that needs to
-talk to the device directly for testing or debugging.
+through the device. It also maintains the output hashes tree that
+Cartesi Rollups relies on to validate the application’s outputs. The
+information that follows is useful for the curious and for tooling that
+needs to talk to the device directly for testing or debugging.
 
 The kernel UAPI header is `<linux/cartesi/cmio.h>`, whose struct
 definitions are the source of truth. The device exposes two `ioctl`
@@ -7001,7 +7008,7 @@ The low-level view of what happens inside the machine is as follows:
             Process advance-state request
             For each output to emit (voucher, delegate-call voucher, or notice)
                 Write ABI-encoded output to CMIO TX buffer and its length to `length`
-                Add output hash to output-hashes Merkle tree
+                Add output hash to output hashes tree
                 Yield automatic with HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT as `REASON` and `length` as `DATA` in `tohost`
             End
             For each report to emit
@@ -7015,7 +7022,7 @@ The low-level view of what happens inside the machine is as follows:
                 `length` = 0
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_REJECTED
             Else
-                Write output-hashes Merkle root to CMIO TX buffer
+                Write output hashes root hash to CMIO TX buffer
                 `length` = hash size
                 `reason` = HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
             End
@@ -7044,9 +7051,9 @@ supported by the libcmt library or by even higher-level interfaces based
 on it, such as the `/usr/bin/rollup` command-line utility, the HTTP API
 exposed by the `/usr/bin/rollup-http-server` command-line utility, or a
 language-specific framework. The libcmt library handles ABI encoding and
-decoding, maintains the output-hashes Merkle tree in userspace, and uses
-the `/dev/cmio` device driver to move data to and from the CMIO buffers
-and perform the required yields. See [The libcmt
+decoding, maintains the output hashes tree in userspace, and uses the
+`/dev/cmio` device driver to move data to and from the CMIO buffers and
+perform the required yields. See [The libcmt
 library](#the-libcmt-library), [The /dev/cmio
 device](#the-devcmio-device), [The rollup command-line
 utility](#the-rollup-command-line-utility), and [The rollup HTTP
@@ -7063,14 +7070,14 @@ ABI-encoded input from the CMIO RX buffer. While processing
 advance-state requests, the application can emit outputs (vouchers,
 delegate-call vouchers, or notices) and reports, in any order. Outputs
 and reports are written to the CMIO TX buffer. Outputs contribute to the
-output-hashes Merkle tree maintained by libcmt. When the application is
-ready to accept the next input, libcmt writes the current output-hashes
-Merkle root to the CMIO TX buffer as part of the accept yield.
+output hashes tree maintained by libcmt. When the application is ready
+to accept the next input, libcmt writes the current output hashes root
+hash to the CMIO TX buffer as part of the accept yield.
 
 When an application identifies an inspect-state request, it reads the
 raw query from the CMIO RX buffer. While processing inspect-state
 requests, the application can emit reports. Reports are written to the
-CMIO TX buffer and do not affect the output-hashes Merkle tree.
+CMIO TX buffer and do not affect the output hashes tree.
 
 Instead of accepting or rejecting a request, the application can emit an
 exception to signal some unrecoverable error. The exception is also
@@ -7115,7 +7122,7 @@ In the host, the loop is as follows:
                 End
                 If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
                     `length` = `DATA` from `tohost` (length of hash)
-                    Read output-hashes Merkle root from CMIO TX buffer using `length`
+                    Read output hashes root hash from CMIO TX buffer using `length`
                     Replace snapshot with fresh fork of machine
                 End
                 If `REASON` in `tohost` is HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
@@ -7163,7 +7170,7 @@ time it yields automatic. The guest application is eventually done with
 the input. If it rejects the input, the host drops the current machine
 and replaces it with a copy of the snapshot. If it accepts the input,
 the host replaces the snapshot with a copy of the current machine, and
-collects the new output-hashes Merkle root. If it threw an exception or
+collects the new output hashes root hash. If it threw an exception or
 halted, the host aborts.
 
 For an inspect-state request, the loop is very similar. The differences
@@ -7856,26 +7863,28 @@ Extraction by proof works!
 36036892526733668721977278692363075584
 ```
 
-### The outputs tree
+### The output hashes tree
 
 The operations so far concern the word-leaf tree of the machine state.
 The same slicing idea applies to another Merkle tree the project uses,
-the *outputs tree*, introduced in the Lua [Output
-proofs](#output-proofs) section. Its leaves are output hashes, each one
-`cartesi.keccak256` of a single output, rather than the bytes of a fixed
-address range. Its height is fixed at 63, so it can hold up to
-2<sup>63</sup> outputs. A leaf for an output not yet produced is
-pristine, literally 32 zero bytes, rather than the hash of a pristine
-word. A Rolling Cartesi Machine grows this one tree from genesis, across
-all of its epochs, one output at a time.
+the *output hashes tree*, introduced under [Rolling Cartesi Machines and
+Cartesi Rollups](#rolling-cartesi-machines-and-cartesi-rollups). Its
+leaves are output hashes, each one `cartesi.keccak256` of a single
+output, rather than the bytes of a fixed address range. Its height is
+fixed at 63, so it can hold up to 2<sup>63</sup> outputs. A leaf for an
+output not yet produced is pristine, literally 32 zero bytes, rather
+than the hash of a pristine word. A Rolling Cartesi Machine grows this
+one tree from genesis, across all of its epochs, one output at a time.
 
-Every operation the outputs tree needs can be carried out from a compact
-summary of it, called a *frontier*, without ever materializing the whole
-tree. This matters at both ends of the system. Inside the Cartesi
-Machine, outputs accumulate across an unbounded number of epochs, so
-holding the complete tree would eventually exhaust the memory available
-to the guest. Outside, as we will see, even the output proofs can be
-generated holding only the frontier.
+Every operation the output hashes tree needs can be carried out from a
+compact summary of it, called a *frontier*, without ever materializing
+the whole tree. This matters at both ends of the system. Inside the
+Cartesi Machine, outputs accumulate across an unbounded number of
+epochs, so holding the complete tree would eventually exhaust the memory
+available to the guest. Outside, as we will see, even the output proofs
+can be generated holding only the frontier. The outputs themselves and
+their proofs are kept outside the machine, by the Cartesi Node. The
+machine state commits to them through the output hashes root hash alone.
 
 The frontier after *c* outputs captures the complete left subtrees
 standing over the leaves in the range \[0, *c*), each by its root hash.
@@ -7887,10 +7896,9 @@ are present. The module stores it as a fixed-length array with one slot
 per level, holding that level’s subtree root hash, or `false` where its
 bit is clear.
 
-The shared accessor is `frontier_node`, which reads the hash of a node
-at one level from three regions that sit left to right in the tree, the
-frontier, an active region of nodes being worked on, and pristine
-padding:
+The accessor `frontier_node` reads the hash of a node at one level from
+three regions that sit left to right in the tree, the frontier, an
+active region of nodes being worked on, and pristine padding:
 
 ``` lua
 local function frontier_node(frontier_entry, base, active, pristine_entry, index)
@@ -7908,30 +7916,34 @@ end
 A node index that falls to the left of the active region is supplied by
 the frontier, a complete left subtree’s root hash. One that falls to the
 right is the root hash of an all-pristine subtree. One inside is taken
-straight from the active region. Both maintaining the frontier and
-emitting proofs go through this accessor.
+straight from the active region. In the excerpt, `<index>` is the node’s
+position within the level, `<base>` is where the active region begins
+and `<active>` holds its nodes, and `<frontier_entry>` and
+`<pristine_entry>` are that level’s frontier and pristine subtree roots.
+Both maintaining the frontier and emitting proofs go through this
+accessor.
 
 <figure>
 <img src="images/outputs-tree.svg"
-alt="Outputs tree partitioned into frontier, active region, and pristine padding" />
-<figcaption aria-hidden="true">Outputs tree partitioned into frontier,
-active region, and pristine padding</figcaption>
+alt="Output hashes tree partitioned into frontier, active region, and pristine padding" />
+<figcaption aria-hidden="true">Output hashes tree partitioned into
+frontier, active region, and pristine padding</figcaption>
 </figure>
 
 The figure shows the tree mid-stream, scaled down to height four while
-the real outputs tree has height 63. Six earlier outputs sit to the left
-under the frontier, which holds them as two complete subtrees, one of
-four leaves and one of two, filled blue at their roots. The three new
-outputs of this epoch form the active region in the middle, filled
-green, and the seven leaves to the right are pristine padding, held as a
+the real output hashes tree has height 63. Six earlier outputs sit to
+the left under the frontier, which holds them as two complete subtrees,
+one of four leaves and one of two, filled blue at their roots. The three
+new outputs of this epoch form the active region in the middle, filled
+green. The seven leaves to the right are pristine padding, held as a
 four-leaf, a two-leaf, and a single-leaf subtree, filled gray at their
 roots. Only the hashes actually held are filled, so every node below a
 frontier or pristine root is left empty, outlined in its subtree’s
 color, because the frontier keeps each whole subtree as that one root
 hash and never materializes the leaves under it.
 
-The running accumulator is `frontier_push_back`, which folds one new
-output leaf into the frontier:
+The function `frontier_push_back` folds one new output leaf into the
+frontier:
 
 ``` lua
 local function frontier_push_back(frontier, hash)
@@ -7956,8 +7968,8 @@ output, the frontier entry the carry creates. A level is combined only
 once every 2<sup>*l*</sup> outputs, so a long run of outputs costs
 constant work each, amortized.
 
-The matching reader is `frontier_get_root_hash`, which pads the frontier
-out to the full tree root:
+The function `frontier_get_root_hash` returns the root hash of the tree,
+padded with zero leaves to completion:
 
 ``` lua
 local function frontier_get_root_hash(frontier)
@@ -8016,15 +8028,18 @@ local function frontier(log2_max_leaves_or_last_proof)
 end
 ```
 
-Given the tree height, it returns the empty frontier of a genesis epoch.
-Given the previous epoch’s last output proof instead, it rebuilds the
-frontier as it stood after that output. The last output is the rightmost
-leaf in the range \[0, *c*), so at every level where *c* has a set bit
-that leaf is a right child, and its proof sibling there is exactly the
-root hash the frontier stores for that level. The lowest such entry is
-recovered by rolling the leaf up through its siblings below. A single
-proof, the one already saved for an epoch’s last output, is therefore
-all the next epoch needs to resume the same genesis-rooted tree.
+It distinguishes two cases with `is_proof`, which checks whether the
+argument is a proof table rather than a height. Given the tree height,
+it returns the empty frontier of a genesis epoch, the all-`false`
+frontier for the given height. Given the previous epoch’s last output
+proof instead, it rebuilds the frontier as it stood after that output.
+The last output is the rightmost leaf in the range \[0, *c*), so at
+every level where *c* has a set bit that leaf is a right child, and its
+proof sibling there is exactly the root hash the frontier stores for
+that level. The lowest such entry is recovered by rolling the leaf up
+through its siblings below. A single proof, the one already saved for an
+epoch’s last output, is therefore all the next epoch needs to resume the
+same genesis-rooted tree.
 
 Finally, `frontier_next_proofs` produces an epoch’s output proofs:
 
@@ -8090,7 +8105,11 @@ leaves up one level at a time, reading each proof sibling through
 `frontier_node`, which supplies a frontier entry or pristine padding at
 the boundaries. The proofs are built together, in one batch at the end
 of the epoch, because an early output’s low siblings are later outputs
-of the same epoch.
+of the same epoch. Note that proofs issued for outputs in previous
+epochs are produced and stored by the Cartesi Node as soon as those
+epochs were finalized. They are checked against the state hash (and
+output hashes root hash) finalized then, not against what gets finalized
+in later epochs.
 
 Generating these proofs is shown in the Lua [Output
 proofs](#output-proofs) section. Checking an output against them, from a
@@ -8111,14 +8130,14 @@ a Merkle tree. Its leaves are the hashes of all outputs ever produced,
 in order. A second slicing operation, in that tree, then proves the
 output’s hash is one of its leaves.
 
-When the [rolling calculator](#rolling-cartesi-machines) processed its
-first epoch, it saved more than the outputs themselves. For each
-accepted input, it saved a proof that the output hashes root hash
-occupied the CMIO tx buffer. For each output, it saved an output proof.
-Through `--final-hash`, it also saved the machine state hash the epoch
-settled on. The output proofs are built against the epoch’s final output
-hashes root hash. They therefore pair with the output hashes root hash
-proof from the last accepted input, input 3. The following script
+When the [Rolling Cartesi Machine calculator](#rolling-cartesi-machines)
+processed its first epoch, it saved more than the outputs themselves.
+For each accepted input, it saved a proof that the output hashes root
+hash occupied the CMIO tx buffer. For each output, it saved an output
+proof. Through `--final-hash`, it also saved the machine state hash the
+epoch settled on. The output proofs are built against the epoch’s final
+output hashes root hash. They therefore pair with the output hashes root
+hash proof from the last accepted input, input 3. The following script
 verifies output 0 from the settled state hash and those artifacts alone,
 without instantiating any machine.
 
@@ -8161,7 +8180,8 @@ the two trees. It then hashes the output’s bytes and matches them
 against the leaf the output proof locates, pinning down this exact
 output.
 
-Running the script over the artifacts the rolling calculator saved
+Running the script over the artifacts the Rolling Cartesi Machine
+calculator saved
 
 ``` bash
 lua5.4 verify-output-proof.lua \
