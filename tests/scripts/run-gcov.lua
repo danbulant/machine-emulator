@@ -22,23 +22,29 @@ Runs gcov on each .gcda file individually and merges the resulting .gcov files.
 llvm-cov gcov overwrites .gcov files when processing multiple .gcda files that
 share headers, losing coverage data from earlier runs. This script works around
 the problem by processing each .gcda separately, saving the .gcov files aside
-after each run, then merging all versions by taking the maximum count per line.
+after each run, then merging all versions by summing the counts per line.
 
 GNU gcov does not have this problem (it accumulates counts), but this script
 works correctly with both.
 
+Extra .gcda files may be given after the gcov command. They are merged in just
+like those in <src-dir>, summing their counts into the same .gcov files. gcov is
+always run from <src-dir> so sources resolve there; the caller must have symlinked
+each extra .gcda's matching .gcno next to it beforehand.
+
 Usage:
-  lua5.4 run-gcov.lua <src-dir> <gcov-command>
+  lua5.4 run-gcov.lua <src-dir> <gcov-command> [<extra.gcda> ...]
 
   <src-dir>       directory containing .gcda files (output .gcov files go here)
   <gcov-command>  gcov command to use (e.g. "gcov" or "llvm-cov gcov")
+  <extra.gcda>    additional .gcda files (absolute paths) to merge in
 ]]
 
 local src_dir = arg[1]
 local gcov_cmd = arg[2]
 
 if not src_dir or not gcov_cmd then
-    io.stderr:write("Usage: lua5.4 run-gcov.lua <src-dir> <gcov-command>\n")
+    io.stderr:write("Usage: lua5.4 run-gcov.lua <src-dir> <gcov-command> [<extra.gcda> ...]\n")
     os.exit(1)
 end
 
@@ -59,12 +65,17 @@ local function write_lines(path, lines)
     f:write(table.concat(lines, "\n"), "\n")
 end
 
--- Collect all .gcda basenames
+-- Collect the .gcda to process: basenames found in src_dir, plus any extra paths
+-- passed as arguments (merged in the same way).
 local gcda_files = {}
 local n = 0
 for f in popen("ls %s/*.gcda 2>/dev/null", src_dir) do
     n = n + 1
     gcda_files[n] = f:match("([^/]+)$")
+end
+for i = 3, #arg do
+    n = n + 1
+    gcda_files[n] = arg[i]
 end
 
 if n == 0 then
@@ -78,9 +89,9 @@ end
 --   max_lineno: highest line number seen
 local merged = {}
 
--- Process each .gcda file from src_dir
+-- Process each .gcda file (a basename in src_dir, or an absolute path)
 for _, gcda in ipairs(gcda_files) do
-    -- Run gcov from src_dir so Source: paths and filenames are consistent
+    -- Run gcov from src_dir so Source: paths, filenames, and source text are consistent
     os.execute(string.format(
         "cd %s && %s --demangled-names --relative-only --branch-probabilities %s 2>/dev/null >/dev/null",
         src_dir, gcov_cmd, gcda

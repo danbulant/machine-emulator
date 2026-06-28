@@ -70,6 +70,11 @@ LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
 LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
 export LUACOV_STATS
 export LUACOV_CONFIG
+# Forked jsonrpc servers redirect their gcov counters here, one directory per
+# child pid, so concurrent parent and child dumps do not race the shared .gcda
+# files in ../src. The coverage report merges these subtrees back in.
+COVERAGE_FORK_DIR := $(BUILDDIR)/coverage-forks
+export CARTESI_COVERAGE_FORK_DIR := $(COVERAGE_FORK_DIR)
 endif
 
 ifeq ($(TARGET_OS),Darwin)
@@ -333,7 +338,14 @@ GCOVR_FLAGS=--gcov-ignore-parse-errors --use-gcov-files \
 	--exclude-lines-by-pattern '\s*contract_assert.*'
 
 coverage-report: $(COVERAGE_OUTPUT_DIR)
-	$(LUA) ./scripts/run-gcov.lua ../src '$(GCOV)'
+	@# Colocate each redirected child .gcda with its matching .gcno so gcov can read it
+	@if [ -d "$(COVERAGE_FORK_DIR)" ]; then \
+		for d in $(COVERAGE_FORK_DIR)/*/; do \
+			[ -d "$$d" ] && ln -sf $(MACHINE_EMULATOR_SRC_DIR)/*.gcno "$$d"; \
+		done; \
+	fi
+	$(LUA) ./scripts/run-gcov.lua $(MACHINE_EMULATOR_SRC_DIR) '$(GCOV)' $$(ls $(COVERAGE_FORK_DIR)/*/*.gcda 2>/dev/null)
+	@rm -rf $(COVERAGE_FORK_DIR)
 	$(UARCH_PCS_TO_GCOV_CMD)
 	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi-machine.lua ../src
 	$(LUA) ./scripts/luacov-to-gcov.lua $(LUACOV_STATS) ../src/cartesi/evmu.lua ../src

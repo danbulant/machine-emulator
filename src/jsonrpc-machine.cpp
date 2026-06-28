@@ -485,6 +485,15 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
         throw std::system_error{errno, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
 
+#ifdef CODE_COVERAGE
+    // In a coverage build, the child flushes its gcov counters to the .gcda files shared by
+    // every instrumented process when it exits. A signal that lands during the flush kills
+    // the child in the middle of a file rewrite and corrupts the shared counters. Once the
+    // child has acknowledged a shutdown request it is already exiting on its own, so we
+    // skip signaling it and simply wait.
+    bool child_shutdown_requested = false;
+#endif
+
     // Create a scope exit handler to ensure child processes are properly cleaned up
     // This prevents zombie processes by making sure we wait for the child to exit
     auto child_waiter = make_scope_exit([&] {
@@ -493,8 +502,15 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
             shutdown_and_close_socket(m_stream->socket());
         }
 
+#ifdef CODE_COVERAGE
+        const bool signal_child = !child_shutdown_requested;
+#else
+        const bool signal_child = true;
+#endif
         // Attempt to gracefully terminate the child process
-        std::ignore = kill(child_pid, SIGTERM);
+        if (signal_child) {
+            std::ignore = kill(child_pid, SIGTERM);
+        }
 
         // Wait for the child process to fully exit
         while (true) {
@@ -505,7 +521,9 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
             if (wait_ret == -1 && errno == EINTR) {
                 // Send SIGILL to ensure child process termination
                 // This helps in case the interrupting signal affected the child's state
-                std::ignore = kill(child_pid, SIGILL);
+                if (signal_child) {
+                    std::ignore = kill(child_pid, SIGILL);
+                }
                 continue;
             }
 
@@ -547,6 +565,9 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
     // Shutdown the original child server process now that we have a forked grand-child
     bool shutdown_result = false;
     request("shutdown", std::tie(), shutdown_result, timeout_at, false);
+#ifdef CODE_COVERAGE
+    child_shutdown_requested = true;
+#endif
     m_address = forked_grand_child.address;
 
     // Rebind the forked server to listen on the originally requested address
