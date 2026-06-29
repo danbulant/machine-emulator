@@ -37,7 +37,13 @@ SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu
 OPTFLAGS=-O2 -g0
 GC_SECTIONS=-Wl,--gc-sections
 
-COV_OPTFLAGS=-O0 -g -DCODE_COVERAGE -Wno-stringop-overread
+# -ffunction-sections + -fno-inline keep every function out-of-line in its own
+# section so each uarch PC resolves to exactly one function/line. Without them,
+# -O0 still folds duplicate template instantiations and produces overlapping
+# symbol ranges, which makes addr2line misattribute PCs (e.g. crediting unrelated
+# handlers) when merging uarch coverage. This binary is only used to collect PCs
+# for coverage, never for proofs, so layout changes here are safe.
+COV_OPTFLAGS=-O0 -g -DCODE_COVERAGE -Wno-stringop-overread -ffunction-sections -fno-inline -fno-inline-functions-called-once
 COV_GC_SECTIONS=
 
 # Asserts are always enabled by now, but in the far future we should disable them
@@ -110,7 +116,14 @@ CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wno-unused-command-line-
 coverage?=no
 
 ifeq ($(coverage),yes)
-all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
+# Under coverage we also build the instrumented uarch and a matching pristine
+# ram/hash pair generated from it. The coverage PC-collection test relinks the
+# emulator with these so reset_uarch restores the instrumented binary (the one
+# addr2line resolves PCs against) for every machine instruction. They are
+# coverage-only and never used for proofs. The default pristine stays stock so
+# the functional uarch tests keep running the fast optimized binary.
+all: uarch-ram.bin uarch-ram-coverage.bin uarch-pristine-ram.c uarch-pristine-hash.c \
+	uarch-pristine-ram-coverage.c uarch-pristine-hash-coverage.c validate-instruction-set
 else
 all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
 endif
@@ -122,6 +135,23 @@ uarch-pristine-hash.c: compute-uarch-pristine-hash
 	./compute-uarch-pristine-hash > $@
 
 uarch-pristine-ram.c: uarch-ram.bin
+	@(echo '// This file is auto-generated and should not be modified'; \
+		echo '#include <stddef.h>'; \
+		xxd -i -n uarch_pristine_ram $<) > $@ || rm $@
+
+# Coverage pristine ram/hash, generated from the instrumented uarch binary.
+# Same symbol names as the stock pair, so relinking with these objects swaps the
+# embedded pristine without recompiling any instrumented object.
+COMPUTE_COVERAGE_OBJS = $(filter-out uarch-pristine-ram.compute_c.o,$(COMPUTE_OBJS)) \
+	uarch-pristine-ram-coverage.compute_c.o
+
+compute-uarch-pristine-hash-coverage: $(COMPUTE_COVERAGE_OBJS)
+	$(HOST_CXX) $(HOST_CFLAGS) $(HOST_CXXFLAGS) -o $@ $^
+
+uarch-pristine-hash-coverage.c: compute-uarch-pristine-hash-coverage
+	./compute-uarch-pristine-hash-coverage > $@
+
+uarch-pristine-ram-coverage.c: uarch-ram-coverage.bin
 	@(echo '// This file is auto-generated and should not be modified'; \
 		echo '#include <stddef.h>'; \
 		xxd -i -n uarch_pristine_ram $<) > $@ || rm $@
@@ -200,10 +230,11 @@ uarch-ram-coverage.bin: uarch-ram-coverage.elf
 	$(OBJCOPY) -S -O binary $^ $@
 
 clean-executables:
-	@rm -f compute-uarch-pristine-hash
+	@rm -f compute-uarch-pristine-hash compute-uarch-pristine-hash-coverage
 
 clean-auto-generated:
-	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
+	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c \
+		uarch-pristine-hash-coverage.c uarch-pristine-ram-coverage.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) $(COV_UARCH_OBJS) $(COV_EMULATOR_OBJS) $(COV_THIRDPARTY_OBJS)
+	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(UARCH_THIRDPARTY_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) $(COMPUTE_COVERAGE_OBJS) $(COV_UARCH_OBJS) $(COV_EMULATOR_OBJS) $(COV_THIRDPARTY_OBJS)

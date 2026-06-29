@@ -370,7 +370,7 @@ hash: cartesi-hash-tree-hash
 
 c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC)
 
-.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt
+.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage
 
 LIBCARTESI_OBJS:= \
 	base64.o \
@@ -496,6 +496,18 @@ $(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) $(LIBCARTESI)
 
 cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
+
+# Relink cartesi.so with the coverage uarch embedded as the pristine state, so
+# reset_uarch restores the instrumented binary (the one PCs are resolved against)
+# for the whole run instead of reverting to the stock uarch after the first
+# instruction. Only the pristine ram/hash objects change; no instrumented object
+# is recompiled, so the collected gcov data set is unaffected. Used by the
+# coverage PC-collection test (tests/Makefile test-coverage-uarch-pcs).
+swap-uarch-pristine-coverage:
+	@rm -f uarch-pristine-ram.o uarch-pristine-hash.o
+	@$(MAKE) cartesi.so coverage=yes \
+		UARCH_PRISTINE_RAM_C=../uarch/uarch-pristine-ram-coverage.c \
+		UARCH_PRISTINE_HASH_C=../uarch/uarch-pristine-hash-coverage.c
 
 cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a cartesi.so
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LUACARTESI_JSONRPC_LDFLAGS) $(SOLDFLAGS)

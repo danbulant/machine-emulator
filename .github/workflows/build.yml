@@ -599,7 +599,10 @@ jobs:
 
       - name: Run coverage
         run: |
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch test-coverage-uarch-pcs test-machine-with-log-step coverage-report coverage=yes
+          # test-coverage-uarch-pcs relinks the emulator to embed the instrumented
+          # (slow) uarch as the pristine, so it must run last among the uarch tests;
+          # the others keep the fast stock uarch. coverage-report only post-processes.
+          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch test-machine-with-log-step test-coverage-uarch-pcs coverage-report coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report
 

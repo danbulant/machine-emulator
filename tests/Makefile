@@ -299,10 +299,15 @@ test-coverage-uarch:
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_host_and_uarch
 	$(LUA) ./lua/htif-yield.lua --uarch
 
+# Relink the emulator so reset_uarch restores the instrumented uarch for the
+# whole run, then collect the executed uarch PCs. This permanently swaps the
+# embedded pristine in the build tree, so this target must run last among the
+# tests that execute the uarch (see the CI ordering in .github/workflows).
 test-coverage-uarch-pcs:
 	mkdir -p $(UARCH_PCS_DIR)
-	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-ram-image=$(UARCH_COV_BIN) --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
-	$(LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-ram-image=$(UARCH_COV_BIN) --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+	$(MAKE) -C ../src swap-uarch-pristine-coverage
+	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
+	$(LUA) ./lua/cartesi-machine-tests.lua --test="thrash%-tlb.bin" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
 
 ifeq ($(COVERAGE_TOOLCHAIN),clang)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
