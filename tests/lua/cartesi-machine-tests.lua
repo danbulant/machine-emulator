@@ -293,6 +293,7 @@ local riscv_tests = {
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },
     { "compressed.bin", 374 },
+    { "zcb.bin", 172 },
     { "thrash-tlb.bin", 3363 },
     { "thrash-tlb.bin", 3363, nil, { "pre-thrash-tlb.lua", "post-thrash-tlb.lua" } },
 }
