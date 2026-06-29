@@ -132,6 +132,38 @@ execute_FEQ_D:
 	feq.d x0, f1, f1;
 	bnez x0, fail;
 
+execute_DIV:
+	div x0, t0, t1;
+	bnez x0, fail;
+
+execute_DIVU:
+	divu x0, t0, t1;
+	bnez x0, fail;
+
+execute_REM:
+	rem x0, t0, t1;
+	bnez x0, fail;
+
+execute_REMU:
+	remu x0, t0, t1;
+	bnez x0, fail;
+
+execute_DIVW:
+	divw x0, t0, t1;
+	bnez x0, fail;
+
+execute_DIVUW:
+	divuw x0, t0, t1;
+	bnez x0, fail;
+
+execute_REMW:
+	remw x0, t0, t1;
+	bnez x0, fail;
+
+execute_REMUW:
+	remuw x0, t0, t1;
+	bnez x0, fail;
+
 success:
 	exit_imm(0);
 
