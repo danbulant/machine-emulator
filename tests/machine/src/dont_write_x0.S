@@ -78,7 +78,19 @@ execute_arithmetic_imm:
 	bnez x0, fail;
 
 execute_L:
-	lb x0, (t1)
+	lb x0, (t1);
+	bnez x0, fail;
+	lbu x0, (t1);
+	bnez x0, fail;
+	lh x0, (t1);
+	bnez x0, fail;
+	lhu x0, (t1);
+	bnez x0, fail;
+	lw x0, (t1);
+	bnez x0, fail;
+	lwu x0, (t1);
+	bnez x0, fail;
+	ld x0, (t1);
 	bnez x0, fail;
 
 execute_LUI:
@@ -184,4 +196,4 @@ exit:
 	j 1b; // Should not be necessary
 
 .data
-foo: .word 0;
+foo: .dword 0;

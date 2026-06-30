@@ -277,7 +277,7 @@ local riscv_tests = {
     { "pte_reserved_exception.bin", 30 },
     { "sd_pma_overflow.bin", 12 },
     { "xpie_exceptions.bin", 47 },
-    { "dont_write_x0.bin", 80 },
+    { "dont_write_x0.bin", 92 },
     { "mcycle_write.bin", 14 },
     { "lrsc_semantics.bin", 31 },
     { "csr_counters.bin", 737 },
