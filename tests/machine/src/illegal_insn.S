@@ -98,6 +98,17 @@ _start:
     // Privileged instruction with invalid funct7
     TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b1111111 << SHIFT_FUNCT7))
 
+    // Float load/store and fused-multiply instructions are illegal while FS is OFF
+    TEST_ILLEGAL_INSN((0b0000111 << SHIFT_OPCODE) | (0b010 << SHIFT_FUNCT3))  // FLW
+    TEST_ILLEGAL_INSN((0b0000111 << SHIFT_OPCODE) | (0b011 << SHIFT_FUNCT3))  // FLD
+    TEST_ILLEGAL_INSN((0b0100111 << SHIFT_OPCODE) | (0b010 << SHIFT_FUNCT3))  // FSW
+    TEST_ILLEGAL_INSN((0b0100111 << SHIFT_OPCODE) | (0b011 << SHIFT_FUNCT3))  // FSD
+    TEST_ILLEGAL_INSN((0b1000011 << SHIFT_OPCODE))                            // FMADD
+    TEST_ILLEGAL_INSN((0b1000111 << SHIFT_OPCODE))                            // FMSUB
+    TEST_ILLEGAL_INSN((0b1001011 << SHIFT_OPCODE))                            // FNMSUB
+    TEST_ILLEGAL_INSN((0b1001111 << SHIFT_OPCODE))                            // FNMADD
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE))                            // OP-FP (FADD.S)
+
     // Enable float state
     li t0, MSTATUS_FS_MASK
     csrs mstatus, t0

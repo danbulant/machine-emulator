@@ -122,7 +122,7 @@ local phys_tests = {
     { "amo.bin", 162 },
     { "csr_semantics.bin", 378 },
     { "csr_counters.bin", 737 },
-    { "illegal_insn.bin", 972 },
+    { "illegal_insn.bin", 1080 },
     { "access.bin", 97 },
     { "clint_ops.bin", 133 },
     { "shadow_ops.bin", 78 },
