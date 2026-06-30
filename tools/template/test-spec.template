@@ -3,4 +3,11 @@ export LUA_PATH_5_4="ARG_LUA_PATH;${LUA_PATH_5_4:-;}"
 export LUA_CPATH_5_4="ARG_LUA_CPATH;${LUA_CPATH_5_4:-;}"
 export CM_CLI="${CM_CLI:-ARG_CM_CLI}"
 export CARTESI_IMAGES_PATH="${CARTESI_IMAGES_PATH:-ARG_IMAGES_PATH}"
-lua5.4 "ARG_LUA_RUNTIME_PATH/test-spec.lua" "$@"
+# Run every spec suite, each as its own process, forwarding any arguments
+# (e.g. --filter=<pattern>) to each. Fails if any spec fails.
+status=0
+for spec in "ARG_LUA_RUNTIME_PATH"/spec-*.lua; do
+    echo "Running $(basename "$spec")"
+    lua5.4 "$spec" "$@" || status=1
+done
+exit $status

@@ -1,20 +1,21 @@
 #!/bin/bash
-# Run the coverage pipeline locally on Ubuntu 24.04, outside Docker.
+# Run the coverage pipeline locally, outside the coverage Docker image.
 #
-# This reproduces what CI does in the "coverage" job.
+# This reproduces what CI does in the "coverage" job. It works on Linux
+# (gcc) and macOS (clang/llvm-cov); the toolchain picks GCOV automatically.
 #
-# Dependencies (install via apt):
-#   build-essential gcc g++ gcovr
-#   libomp-dev libboost-dev libssl-dev libslirp-dev
-#   lua5.4 liblua5.4-dev lua-posix lua-socket lua-lpeg luarocks
-#   xxd pkg-config
-#   luarocks packages: luacov cluacov (install via: sudo luarocks --lua-version 5.4 install luacov && sudo luarocks --lua-version 5.4 install cluacov)
-#   g++-14-riscv64-linux-gnu gcc-riscv64-unknown-elf
-#   stress-ng (for the coverage workload test)
+# Docker must be running: the *-with-toolchain test builds and the uarch PC
+# resolution in coverage-report run through `make toolchain-exec`. Everything
+# else builds natively.
 #
-# The riscv64 cross-compiler packages may require the Debian trixie repos
-# or equivalent. On Ubuntu 24.04, you may need to add a PPA or download
-# the packages manually.
+# Native dependencies:
+#   Linux (apt): build-essential gcc g++ gcovr libomp-dev libboost-dev
+#     libssl-dev libslirp-dev lua5.4 liblua5.4-dev lua-socket lua-lpeg
+#     luarocks xxd pkg-config stress-ng
+#   macOS (macports): clang gcovr boost openssl libslirp lua54 luarocks
+#     pkgconfig stress-ng (llvm provides llvm-cov)
+#   luarocks (both): luacov cluacov luaposix
+#     (luarocks --lua-version 5.4 install <pkg>)
 #
 # You must have already initialized submodules:
 #   git submodule update --init --recursive
@@ -44,42 +45,30 @@ done
 # Step 1: build everything with coverage instrumentation
 if [ "$SKIP_BUILD" = false ]; then
     echo "=== Building emulator with coverage ==="
-    make -j"$(nproc)" coverage=yes
+    make -j"$(getconf _NPROCESSORS_ONLN)" coverage=yes
 
     echo "=== Building tests ==="
-    make -j"$(nproc)" build-tests-machine-with-toolchain coverage=yes
-    make -j"$(nproc)" build-tests-misc coverage=yes
-    make -j"$(nproc)" build-tests-uarch-with-toolchain coverage=yes
-    make -j"$(nproc)" build-tests-images coverage=yes
+    make -j"$(getconf _NPROCESSORS_ONLN)" build-tests-machine-with-toolchain coverage=yes
+    make -j"$(getconf _NPROCESSORS_ONLN)" build-tests-misc coverage=yes
+    make -j"$(getconf _NPROCESSORS_ONLN)" build-tests-uarch-with-toolchain coverage=yes
+    make -j"$(getconf _NPROCESSORS_ONLN)" build-tests-images coverage=yes
 fi
 
 # Step 2: set up the environment (paths for Lua, shared libs, etc.)
 eval "$(make env)"
 cd tests
 
-# Step 3: run the test suite (same targets as CI)
+# Step 3: run the test suite and generate the report (same as CI). coverage-all
+# runs the parallel test group, then the in-place pristine-swap uarch collection,
+# then the report, sequenced by order-only prerequisites in the Makefile.
 if [ "$SKIP_TESTS" = false ]; then
-    echo "=== Running tests ==="
-    make -j1 \
-        test-save-and-load \
-        test-machine \
-        test-lua \
-        test-jsonrpc \
-        test-c-api \
-        test-c-api-remote \
-        test-c-jsonrpc-api \
-        test-coverage-machine \
-        test-uarch-rv64ui \
-        test-uarch-interpreter \
-        test-coverage-uarch \
-        test-machine-with-log-step \
-        test-coverage-uarch-pcs \
-        coverage=yes
+    echo "=== Running tests and generating coverage report ==="
+    make clean-coverage
+    make -j"$(getconf _NPROCESSORS_ONLN)" coverage-all coverage=yes
+else
+    echo "=== Generating coverage report from existing coverage data ==="
+    make coverage-report coverage=yes
 fi
-
-# Step 4: generate the coverage report
-echo "=== Generating coverage report ==="
-make coverage-report coverage=yes
 
 echo ""
 echo "=== Coverage summary ==="

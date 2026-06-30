@@ -6,6 +6,7 @@ Specifically, it provides test coverage for:
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
@@ -102,3 +103,6 @@ describe("tojson / fromjson schema dictionary", function()
         end, "NoSuchType")
     end)
 end)
+
+lester.report()
+lester.exit()

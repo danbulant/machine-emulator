@@ -370,7 +370,7 @@ hash: cartesi-hash-tree-hash
 
 c-api: $(LIBCARTESI) $(LIBCARTESI_HASH_TREE) $(LIBCARTESI_JSONRPC)
 
-.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage
+.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt swap-uarch-pristine-coverage swap-uarch-pristine-stock
 
 LIBCARTESI_OBJS:= \
 	base64.o \
@@ -508,6 +508,13 @@ swap-uarch-pristine-coverage:
 	@$(MAKE) cartesi.so coverage=yes \
 		UARCH_PRISTINE_RAM_C=../uarch/uarch-pristine-ram-coverage.c \
 		UARCH_PRISTINE_HASH_C=../uarch/uarch-pristine-hash-coverage.c
+
+# Undo swap-uarch-pristine-coverage by relinking with the stock pristine, leaving
+# the build tree ready for the next run. Only the pristine ram/hash objects
+# change, so the collected gcov data set is unaffected.
+swap-uarch-pristine-stock:
+	@rm -f uarch-pristine-ram.o uarch-pristine-hash.o
+	@$(MAKE) cartesi.so coverage=yes
 
 cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a cartesi.so
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LUACARTESI_JSONRPC_LDFLAGS) $(SOLDFLAGS)

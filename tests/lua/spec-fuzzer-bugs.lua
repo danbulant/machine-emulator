@@ -6,6 +6,7 @@ or incorrect behavior before the corresponding fix was applied.
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local cartesi = require("cartesi")
 local describe, it, expect = lester.describe, lester.it, lester.expect
 
@@ -323,3 +324,6 @@ describe("fuzzer bugs", function()
         expect.equal(br, cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     end)
 end)
+
+lester.report()
+lester.exit()

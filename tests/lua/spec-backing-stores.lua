@@ -3,6 +3,7 @@ Test suite for loading and storing machines.
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
 local utils = require("cartesi.utils")
@@ -455,3 +456,6 @@ describe("backing stores", function()
         expect.equal(filesystem.get_file_size(ram_filename), expected_ram_size)
     end)
 end)
+
+lester.report()
+lester.exit()

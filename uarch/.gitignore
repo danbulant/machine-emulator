@@ -7,6 +7,9 @@
 .vscode
 uarch-pristine-hash.c
 uarch-pristine-ram.c
+uarch-pristine-hash-coverage.c
+uarch-pristine-ram-coverage.c
 compute-uarch-pristine-hash
+compute-uarch-pristine-hash-coverage
 *.insn.txt
 *.objdump

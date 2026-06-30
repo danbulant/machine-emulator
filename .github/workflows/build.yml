@@ -599,19 +599,16 @@ jobs:
 
       - name: Run coverage
         run: |
-          # test-coverage-uarch-pcs relinks the emulator to embed the instrumented
-          # (slow) uarch as the pristine, so it must run last among the uarch tests;
-          # the others keep the fast stock uarch. coverage-report only post-processes.
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch test-machine-with-log-step test-coverage-uarch-pcs coverage-report coverage=yes
+          # coverage-all runs the parallel test group, then the pristine-swap uarch-pc
+          # collection, then the report, sequenced by order-only prerequisites in the
+          # Makefile (test-coverage-uarch-pcs relinks the emulator in place, so it must
+          # not overlap any test; coverage-report reads every .gcda last).
+          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j$(nproc) coverage-all coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report
 
       - name: Show coverage summary
         run: cat coverage/coverage.txt
-
-      - name: Show uncovered lines
-        if: false
-        run: grep -F -e "=====:" -e "#####:" coverage/gcc/*.gcov
 
       - name: Upload coverage detailed report
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
@@ -686,7 +683,9 @@ jobs:
 
       - name: Run tests with sanitizer
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-lua test-jsonrpc test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine test-uarch-rv64ui test-uarch-interpreter test-coverage-uarch
+          # test-parallel is the same concurrency-safe group the coverage job runs
+          # (defined in tests/Makefile), minus the coverage-only tail steps.
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make -j$(nproc) sanitize=yes test-parallel
 
   docs:
     name: Docs

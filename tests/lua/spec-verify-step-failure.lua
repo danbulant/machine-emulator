@@ -22,6 +22,7 @@ This exercises the validation error paths in replay-step-state-access.h
 
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local test_util = require("cartesi.tests.util")
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -549,3 +550,6 @@ describe("verify_step (remote)", function()
         jsonrpc.spawn_server():set_cleanup_call(jsonrpc.SHUTDOWN):create({ ram = { length = 0x1000 } })
     register_verify_step_tests(machine)
 end)
+
+lester.report()
+lester.exit()

@@ -16,13 +16,18 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
+# Runs the standalone lua test programs and every spec suite serially. The make
+# targets run the same programs in parallel; this script is the entry point for
+# the installed tests package (which has no make), so it stays sequential.
+
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 LUA=${1:-lua5.4}
 
-TEST_LIST=(
+# Plain test programs, run with the "local" machine type.
+PROGRAMS=(
 htif-console.lua
 htif-cmio.lua
 htif-yield.lua
@@ -31,12 +36,11 @@ machine-bind.lua
 machine-test.lua
 mcycle-overflow.lua
 mtime-interrupt.lua
-test-spec.lua
 )
 
-
 cd $SCRIPT_DIR/../lua
-for x in ${TEST_LIST[@]}; do
+
+for x in ${PROGRAMS[@]}; do
     test_path="$SCRIPT_DIR/../lua/$x"
     if [ ! -f "$test_path" ]; then
         echo "Skipping $x (not installed)"
@@ -44,4 +48,11 @@ for x in ${TEST_LIST[@]}; do
     fi
     echo "Running $x"
     bash -c "${LUA} $test_path local" || exit 1
+done
+
+# Lester spec suites, each a standalone program.
+for test_path in "$SCRIPT_DIR"/../lua/spec-*.lua; do
+    [ -f "$test_path" ] || continue
+    echo "Running $(basename "$test_path")"
+    bash -c "${LUA} $test_path" || exit 1
 done

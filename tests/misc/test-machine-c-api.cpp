@@ -38,6 +38,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 
 #include <cm-jsonrpc.h>
 #include <cm.h>
@@ -46,6 +48,19 @@
 
 #include "test-utils.h"
 #include "uarch-solidity-compat.hpp"
+
+// Returns a path (under a per-process temp directory created once via mkdtemp), so concurrent
+// runs of this binary (test-c-api and test-c-api-remote) do not collide on shared files.
+static std::string unique_temp_path(const std::string &name) {
+    static const std::filesystem::path base = [] {
+        std::string tmpl = (std::filesystem::temp_directory_path() / "cartesi-c-api-XXXXXX").string();
+        if (mkdtemp(tmpl.data()) == nullptr) {
+            throw std::runtime_error("mkdtemp failed");
+        }
+        return std::filesystem::path(tmpl);
+    }();
+    return (base / name).string();
+}
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)
 
@@ -377,7 +392,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_too_many_test, incomplete_machine_fix
 // from the file on disk. The readback confirms the file's contents landed
 // in memory.
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_length_auto_detect_from_file_test, incomplete_machine_fixture) {
-    const auto flash_file = (std::filesystem::temp_directory_path() / "flash_autolen.bin").string();
+    const auto flash_file = unique_temp_path("flash_autolen.bin");
     const std::string flash_data(0x1000, 'F');
     {
         std::ofstream s(flash_file, std::ios::binary);
@@ -405,7 +420,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_length_auto_detect_from_file_test, in
 // target directory. The readback proves the file-backed content was
 // propagated through the share path.
 BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machine_fixture) {
-    const auto flash_file = (std::filesystem::temp_directory_path() / "flash_on_disk_share.bin").string();
+    const auto flash_file = unique_temp_path("flash_on_disk_share.bin");
     const std::string flash_data(0x1000, 'D');
     {
         std::ofstream s(flash_file, std::ios::binary);
@@ -414,7 +429,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(flash_drive_on_disk_share_test, incomplete_machin
     _machine_config["flash_drive"] = {{{"label", "shared-fd"}, {"start", 0x80000000000000}, {"length", 0x1000},
         {"backing_store", {{"shared", false}, {"data_filename", flash_file}}}}};
     const auto dumped_config = _machine_config.dump();
-    const auto dir = (std::filesystem::temp_directory_path() / "flash_on_disk_share").string();
+    const auto dir = unique_temp_path("flash_on_disk_share");
     std::filesystem::remove_all(dir);
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -574,7 +589,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_read_only_test, incomplete_machine_fixture)
 // the file on disk. The readback confirms the file's contents landed in
 // memory.
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomplete_machine_fixture) {
-    const auto nvram_file = (std::filesystem::temp_directory_path() / "nvram_autolen.bin").string();
+    const auto nvram_file = unique_temp_path("nvram_autolen.bin");
     const std::string nvram_data(0x1000, 'A');
     {
         std::ofstream s(nvram_file, std::ios::binary);
@@ -602,7 +617,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_length_auto_detect_from_file_test, incomple
 BOOST_FIXTURE_TEST_CASE_NOLINT(on_disk_unreproducible_rejected_test, incomplete_machine_fixture) {
     _machine_config["processor"]["registers"]["iunrep"] = 1;
     const auto dumped_config = _machine_config.dump();
-    const auto dir = (std::filesystem::temp_directory_path() / "on_disk_unrep").string();
+    const auto dir = unique_temp_path("on_disk_unrep");
     std::filesystem::remove_all(dir);
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -617,7 +632,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(on_disk_unreproducible_rejected_test, incomplete_
 // directory. The readback proves the file-backed content was propagated
 // through the share path.
 BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixture) {
-    const auto nvram_file = (std::filesystem::temp_directory_path() / "nvram_on_disk_share.bin").string();
+    const auto nvram_file = unique_temp_path("nvram_on_disk_share.bin");
     const std::string nvram_data(0x1000, 'S');
     {
         std::ofstream s(nvram_file, std::ios::binary);
@@ -626,7 +641,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixt
     _machine_config["nvram"] = {{{"label", "shared-nv"}, {"start", 0x70000000}, {"length", 0x1000},
         {"backing_store", {{"shared", false}, {"data_filename", nvram_file}}}}};
     const auto dumped_config = _machine_config.dump();
-    const auto dir = (std::filesystem::temp_directory_path() / "nvram_on_disk_share").string();
+    const auto dir = unique_temp_path("nvram_on_disk_share");
     std::filesystem::remove_all(dir);
     cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, dir.c_str(), &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -645,7 +660,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(nvram_on_disk_share_test, incomplete_machine_fixt
 class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
-        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+        _machine_dir_path = unique_temp_path("661b6096c377cdc07756df488059f4407c8f4");
         const auto dumped_config = _machine_config.dump();
         test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
     }
@@ -666,7 +681,7 @@ protected:
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class serialized_machine_fixture : public ordinary_machine_fixture {
 public:
-    serialized_machine_fixture() : _machine_config_path{std::filesystem::temp_directory_path() / "machine"} {
+    serialized_machine_fixture() : _machine_config_path{unique_temp_path("machine")} {
         cm_error error_code = cm_store(_machine, _machine_config_path.string().c_str(), CM_SHARING_ALL);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
         BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
@@ -724,7 +739,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
 
 class store_file_fixture : public ordinary_machine_fixture {
 public:
-    store_file_fixture() : _broken_machine_path{(std::filesystem::temp_directory_path() / "machine").string()} {}
+    store_file_fixture() : _broken_machine_path{unique_temp_path("machine")} {}
 
     ~store_file_fixture() {
         std::filesystem::remove_all(_broken_machine_path);
@@ -1344,9 +1359,9 @@ class flash_drive_machine_fixture : public machine_flash_simple_fixture {
 public:
     flash_drive_machine_fixture() :
         _flash_size{0x3c00000},
-        _flash_file{"/tmp/data.bin"},
+        _flash_file{unique_temp_path("data.bin")},
         _flash_data{"test data 1234567890"} {
-        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+        _machine_dir_path = unique_temp_path("661b6096c377cdc07756df488059f4407c8f4");
         const auto dumped_config = _machine_config.dump();
         cm_error error_code = test_create_new(dumped_config.c_str(), nullptr, nullptr, &_machine);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1482,7 +1497,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_mach
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class nvram_machine_fixture : public incomplete_machine_fixture {
 public:
-    nvram_machine_fixture() : _nvram_size{0x1000}, _nvram_file{"/tmp/nvram_test.bin"}, _nvram_data(0x1000, 'N') {
+    nvram_machine_fixture() :
+        _nvram_size{0x1000},
+        _nvram_file{unique_temp_path("nvram_test.bin")},
+        _nvram_data(0x1000, 'N') {
         _machine_config["nvram"] = {
             {{"label", "nvramtest"}, {"start", 0x70000000}, {"length", _nvram_size}, {"read_only", false},
                 {"backing_store",
@@ -1590,7 +1608,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_nvram_label_length_mismatch_
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class serde_nvram_fixture : public nvram_machine_fixture {
 public:
-    serde_nvram_fixture() : _machine_dir_path{(std::filesystem::temp_directory_path() / "serde_nvram_test").string()} {}
+    serde_nvram_fixture() : _machine_dir_path{unique_temp_path("serde_nvram_test")} {}
     ~serde_nvram_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
     }
@@ -1750,7 +1768,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_mach
 class access_log_machine_fixture : public incomplete_machine_fixture {
 public:
     access_log_machine_fixture() : _log_type(CM_ACCESS_LOG_TYPE_ANNOTATIONS) {
-        _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
+        _machine_dir_path = unique_temp_path("661b6096c377cdc07756df488059f4407c8f4");
 
         uint32_t test_uarch_ram[] = {
             0x07b00513,                                                            //  li	a0,123
@@ -1779,7 +1797,7 @@ public:
 
 protected:
     std::string _machine_dir_path;
-    const std::string _uarch_ram_path = "/tmp/test-uarch-ram.bin";
+    const std::string _uarch_ram_path = unique_temp_path("test-uarch-ram.bin");
     const char *_access_log{};
     int _log_type{};
 };

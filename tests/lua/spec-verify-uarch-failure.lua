@@ -22,6 +22,7 @@ uarch-replay-state-access.h and replay-send-cmio-state-access.h.
 
 local cartesi = require("cartesi")
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local test_util = require("cartesi.tests.util")
 
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -669,3 +670,6 @@ describe("verify_send_cmio_response", function()
         end)
     end)
 end)
+
+lester.report()
+lester.exit()

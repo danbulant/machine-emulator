@@ -346,8 +346,8 @@ test_util.make_do_test(build_machine, machine_type, {
     },
 })("should replace flash drive and read something", function(machine)
     local rootfs = machine:get_initial_config().flash_drive[1]
-    -- Create temp flash file
-    local input_path = test_path .. "input.raw"
+    -- Create temp flash file (unique per process so concurrent test runs do not collide)
+    local input_path = os.tmpname()
     local replaced_data = "test data 1234567890"
     local command = string.format("echo '%s' > ", replaced_data)
         .. input_path

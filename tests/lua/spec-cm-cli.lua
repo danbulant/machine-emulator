@@ -21,6 +21,7 @@
 -- CLI -> machine builder -> get_initial_config() pipeline.
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local filesystem = require("cartesi.filesystem")
 local utils = require("cartesi.utils")
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -2369,3 +2370,6 @@ describe("cartesi-machine CLI", function()
         end
     end)
 end)
+
+lester.report()
+lester.exit()

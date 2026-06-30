@@ -7,6 +7,7 @@ Can be run independently during development the mentioned files.
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local util = require("cartesi.tests.util")
@@ -374,3 +375,6 @@ describe("hash tree", function()
         end
     end
 end)
+
+lester.report()
+lester.exit()

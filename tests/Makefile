@@ -45,14 +45,12 @@ TARGET_OS ?= $(shell uname -s)
 ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
-
-NUM_JOBS ?= $(shell sysctl -n hw.ncpu)
 else
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
-
-NUM_JOBS ?= $(shell nproc)
 endif
+
+NUM_JOBS ?= $(shell getconf _NPROCESSORS_ONLN)
 
 LUAROCKS_PATH := $(shell luarocks --lua-version 5.4 path --lr-path 2>/dev/null)
 LUAROCKS_CPATH := $(shell luarocks --lua-version 5.4 path --lr-cpath 2>/dev/null)
@@ -62,18 +60,31 @@ export LUA_CPATH_5_4 := $(LUA_CPATH_5_4);$(LUAROCKS_CPATH)
 export CM_CLI ?= $(abspath ../src/cartesi-machine.lua)
 LUA_CLI ?= $(LUA)
 
-ifeq ($(coverage),yes)
-NUM_JOBS = 1
-export LUA_CLI = $(LUA) -lluacov
+# Filter forwarded to a spec run. Empty matches all tests. Example:
+#   make run-lua-spec-collect-hashes SPEC_FILTER='dense uarch'
+SPEC_FILTER ?=
+
 LUACOV_DIR := $(BUILDDIR)/luacov
+COVERAGE_FORK_DIR := $(BUILDDIR)/coverage-forks
+
+ifeq ($(coverage),yes)
+# The lua test runners fork workers whose duplicate counter dumps would race the
+# shared .gcda files. Parallelism comes from make -j across test targets instead.
+override NUM_JOBS = 1
+export LUA_CLI = $(LUA) -lluacov
 LUACOV_STATS := $(LUACOV_DIR)/luacov.stats.out
 LUACOV_CONFIG := $(abspath ./scripts/luacov.lua)
 export LUACOV_STATS
 export LUACOV_CONFIG
+$(LUACOV_DIR):
+	mkdir -p $@
+# spec-cm-cli's CLI children and test-evmu write luacov.stats.out under this dir,
+# so it must exist before them. They are also ordered so their writes do not race.
+LUACOV_DIR_ORDER := $(LUACOV_DIR)
+TEST_EVMU_ORDER := $(LUACOV_DIR) run-lua-spec-cm-cli
 # Forked jsonrpc servers redirect their gcov counters here, one directory per
 # child pid, so concurrent parent and child dumps do not race the shared .gcda
 # files in ../src. The coverage report merges these subtrees back in.
-COVERAGE_FORK_DIR := $(BUILDDIR)/coverage-forks
 export CARTESI_COVERAGE_FORK_DIR := $(COVERAGE_FORK_DIR)
 endif
 
@@ -244,28 +255,41 @@ test-uarch-interpreter:
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
-test-evmu:
-ifeq ($(coverage),yes)
-	mkdir -p $(LUACOV_DIR)
-endif
-	$(LUA_CLI) lua/test-spec.lua --filter='cartesi evmu'
+# Plain lua test programs, each run as its own process with the "local" machine type.
+LUA_PROGRAMS = htif-console htif-cmio htif-yield log-with-mtime-transition \
+	machine-bind machine-test mcycle-overflow mtime-interrupt
 
-test-cm-cli: | $(CARTESI_IMAGES)
-ifeq ($(coverage),yes)
-	mkdir -p $(LUACOV_DIR)
-endif
-	$(LUA) lua/test-spec.lua --filter='cartesi%-machine CLI'
+# Lester spec suites, each run as its own process so they parallelize. cm-cli and
+# evmu are excluded here because they need the luacov-aware rules below.
+LUA_SPECS := $(filter-out cm-cli evmu,$(patsubst lua/spec-%.lua,%,$(wildcard lua/spec-*.lua)))
 
-test-lua: | $(CARTESI_IMAGES)
-ifeq ($(coverage),yes)
-	mkdir -p $(LUACOV_DIR)
-endif
-	./scripts/run-lua-tests.sh '$(LUA)'
+run-lua-program-%: | $(CARTESI_IMAGES)
+	$(LUA) lua/$*.lua local
+
+run-lua-spec-%: | $(CARTESI_IMAGES)
+	$(LUA) lua/spec-$*.lua --filter='$(SPEC_FILTER)'
+
+# spec-cm-cli runs the CLI as child processes under LUA_CLI (lua -lluacov under
+# coverage), which write luacov.stats.out, so its directory must exist first.
+run-lua-spec-cm-cli: | $(CARTESI_IMAGES) $(LUACOV_DIR_ORDER)
+	$(LUA) lua/spec-cm-cli.lua --filter='$(SPEC_FILTER)'
+
+test-lua: $(addprefix run-lua-program-,$(LUA_PROGRAMS)) \
+	$(addprefix run-lua-spec-,$(LUA_SPECS)) run-lua-spec-cm-cli test-evmu
+
+# Convenience alias for running just the cartesi-machine CLI spec.
+test-cm-cli: run-lua-spec-cm-cli
+
+# The evmu spec exercises Lua-only code, so it runs under LUA_CLI to measure its
+# coverage with luacov. Ordered after spec-cm-cli so their luacov.stats.out
+# writes do not race (only relevant under coverage).
+test-evmu: | $(TEST_EVMU_ORDER)
+	$(LUA_CLI) lua/spec-evmu.lua --filter='$(SPEC_FILTER)'
 
 test-c-api: | $(CARTESI_IMAGES)
 	./build/misc/test-machine-c-api
 
-test-c-api-remote: | test-c-api $(CARTESI_IMAGES)
+test-c-api-remote: | $(CARTESI_IMAGES)
 	CARTESI_JSONRPC_TEST_REMOTE=../src/cartesi-jsonrpc-machine ./build/misc/test-machine-c-api
 
 test-c-jsonrpc-api: | $(CARTESI_IMAGES)
@@ -304,11 +328,21 @@ test-coverage-uarch:
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" run_host_and_uarch
 	$(LUA) ./lua/htif-yield.lua --uarch
 
+# Tests that may run concurrently under make -j. Under coverage they share only
+# the .gcda files, which libgcov merges under a lock. Excludes the two coverage
+# tail steps ordered below.
+PARALLEL_TESTS = test-save-and-load test-machine test-lua test-jsonrpc \
+	test-c-api test-c-api-remote test-c-jsonrpc-api test-coverage-machine \
+	test-uarch-rv64ui test-uarch-interpreter test-machine-with-log-step \
+	test-coverage-uarch
+
+test-parallel: $(PARALLEL_TESTS)
+
 # Relink the emulator so reset_uarch restores the instrumented uarch for the
 # whole run, then collect the executed uarch PCs. This permanently swaps the
-# embedded pristine in the build tree, so this target must run last among the
-# tests that execute the uarch (see the CI ordering in .github/workflows).
-test-coverage-uarch-pcs:
+# embedded pristine in the build tree, so it must not overlap any test that
+# executes the emulator. It is ordered after the whole parallel group.
+test-coverage-uarch-pcs: | test-parallel
 	mkdir -p $(UARCH_PCS_DIR)
 	$(MAKE) -C ../src swap-uarch-pristine-coverage
 	$(LUA) ./lua/cartesi-machine-tests.lua --test=".*csr.*" --uarch-pc-output-dir=$(UARCH_PCS_DIR) --jobs=$(NUM_JOBS) run_uarch_coverage
@@ -352,6 +386,22 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
 	cd ../src && gcovr $(GCOVR_FLAGS) --root . --filter '$(abspath ../src)' --filter '$(abspath ../uarch)' --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html --txt $(COVERAGE_OUTPUT_DIR)/coverage.txt --print-summary
 
+# Remove all collected coverage data so the next run starts from scratch.
+# Otherwise .gcda counters, luacov stats, and uarch PC files accumulate across
+# runs and inflate the report.
+clean-coverage:
+	@rm -f ../src/*.gcda ../src/*.gcov
+	@rm -rf $(COVERAGE_FORK_DIR) $(LUACOV_DIR) $(UARCH_PCS_DIR) $(COVERAGE_OUTPUT_DIR)
+
+# Full coverage run. It runs the parallel test group, then the in-place pristine-swap
+# uarch collection (both sequenced by order-only prerequisites), then the report. Run with
+# -j. coverage-report itself carries no prerequisites so it can also be run alone to
+# regenerate the report from existing coverage data. Ends by relinking the stock
+# pristine so the build tree is ready for the next run.
+coverage-all: | test-coverage-uarch-pcs
+	$(MAKE) coverage-report
+	$(MAKE) -C ../src swap-uarch-pristine-stock
+
 test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-cmio test-machine-with-log-step
 
 lint format check-format:
@@ -367,3 +417,5 @@ check-lua:
 	luacheck lua/
 
 .PHONY: machine uarch misc riscv-tests riscv-arch-test build-tests-fuzz build-tests-fuzz-seed-corpus test-fuzz
+.PHONY: $(PARALLEL_TESTS) test-parallel test test-misc test-lua test-cm-cli test-evmu run-lua-spec-cm-cli \
+	test-coverage-uarch-pcs coverage-report coverage-all clean-coverage

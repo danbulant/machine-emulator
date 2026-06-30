@@ -3,6 +3,7 @@ Test suite for runtime console input/output configuration.
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local filesystem = require("cartesi.filesystem")
@@ -413,3 +414,6 @@ describe("runtime console io", function()
         end)
     end
 end)
+
+lester.report()
+lester.exit()

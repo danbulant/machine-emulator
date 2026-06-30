@@ -15,6 +15,7 @@
 --
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local describe, it = lester.describe, lester.it
 
 describe("cartesi evmu", function()
@@ -843,3 +844,6 @@ describe("cartesi evmu", function()
 
     -- luacheck: pop
 end)
+
+lester.report()
+lester.exit()

@@ -9,6 +9,7 @@ Specifically, it provides test coverage for:
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local describe, it, expect = lester.describe, lester.it, lester.expect
@@ -286,3 +287,6 @@ for _, variant in ipairs(variants) do
         end)
     end)
 end
+
+lester.report()
+lester.exit()

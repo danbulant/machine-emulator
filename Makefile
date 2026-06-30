@@ -189,6 +189,7 @@ help:
 	@echo '  test-misc                           - Run miscellaneous tests'
 	@echo '  test-fuzz                           - Run fuzz tests (requires Clang with libFuzzer)'
 	@echo '  test                                - Run all tests'
+	@echo '  coverage-all                        - Run all tests and generate the coverage report (requires coverage=yes builds, see tests/scripts/run-coverage-local.sh)'
 	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
 	@echo 'Docker images targets:'
 	@echo '  build-emulator-image                - Build the machine-emulator debian based docker image'
@@ -197,6 +198,7 @@ help:
 	@echo '  create-generated-files-patch        - Create patch that adds generated files to source tree'
 	@echo 'Cleaning targets:'
 	@echo '  clean                               - Clean the src/ artifacts'
+	@echo '  clean-coverage                      - Remove collected coverage data'
 	@echo '  depclean                            - Clean + dependencies'
 	@echo '  distclean                           - Depclean + profile information and downloads'
 
@@ -250,6 +252,9 @@ test-risc0:
 
 test% coverage% build-tests%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
+
+clean-coverage:
+	@$(MAKE) -C tests $@
 
 build-tests-misc-with-builder-image: build-emulator-builder-image
 

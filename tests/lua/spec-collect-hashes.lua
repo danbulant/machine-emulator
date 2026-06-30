@@ -3,6 +3,7 @@ Test suite for collecting root hashes.
 ]]
 
 local lester = require("cartesi.third-party.lester")
+lester.parse_args()
 local describe, it, expect = lester.describe, lester.it, lester.expect
 local cartesi = require("cartesi")
 local tabular = require("cartesi.tabular")
@@ -1276,3 +1277,6 @@ describe("collect hashes", function()
         end) -- descibre hash function
     end -- for hash function
 end) -- describe collect hashes
+
+lester.report()
+lester.exit()
