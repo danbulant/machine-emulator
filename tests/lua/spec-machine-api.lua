@@ -1,7 +1,7 @@
 --[[
 Test suite for machine API surface.
 Specifically, it provides test coverage for:
-    machine.cpp (get_address_name, get_reg_address)
+    machine.cpp (get_address_name, get_reg_address, read_reg, write_reg, write_word)
     shadow-registers.hpp (shadow_registers_get_what, shadow_registers_get_what_name)
     shadow-tlb.hpp (shadow_tlb_get_what, shadow_tlb_get_what_name)
     shadow-uarch-state.hpp (shadow_uarch_state_get_what, shadow_uarch_state_get_what_name)
@@ -162,6 +162,82 @@ for _, variant in ipairs(variants) do
                 expect.equal(machine:get_address_name(cartesi.AR_CMIO_TX_BUFFER_START), "cmio.tx_buffer")
                 expect.equal(machine:get_address_name(cartesi.AR_FIRST_VIRTIO_START), "virtio")
                 expect.equal(machine:get_address_name(cartesi.AR_LAST_VIRTIO_END - 1), "virtio")
+            end)
+        end)
+
+        describe("read_reg and write_reg", function()
+            -- Registers whose write must be rejected.
+            local read_only = { x0 = true, mvendorid = true, marchid = true, mimpid = true }
+
+            it("should round-trip every shadow register through read_reg/write_reg", function()
+                -- Walk the shadow register page (it ends where the shadow TLB
+                -- begins) and name each slot through get_address_name. Its dotted
+                -- names map to read_reg/write_reg names by turning each "." into
+                -- "_" (e.g. "iflags.X" -> "iflags_X").
+                local value = 0xfedcba9876543210
+                for addr = cartesi.AR_SHADOW_STATE_START, cartesi.AR_SHADOW_TLB_START - 8, 8 do
+                    local addr_name = machine:get_address_name(addr)
+                    if addr_name ~= "state.unknown_" then
+                        local name = addr_name:gsub("%.", "_")
+                        if read_only[name] then
+                            expect.fail(function()
+                                machine:write_reg(name, 1)
+                            end, "register is read-only")
+                            machine:read_reg(name)
+                        else
+                            machine:write_reg(name, value)
+                            expect.equal(machine:read_reg(name), value)
+                        end
+                    end
+                end
+            end)
+
+            it("should round-trip a value through each htif field alias", function()
+                -- These aliases share the htif.tohost/htif.fromhost words, so they
+                -- have no address of their own and only preserve their sub-field.
+                -- A value that fits the narrowest (8-bit) field round-trips.
+                local field_aliases = {
+                    "htif_tohost_dev",
+                    "htif_tohost_cmd",
+                    "htif_tohost_reason",
+                    "htif_tohost_data",
+                    "htif_fromhost_dev",
+                    "htif_fromhost_cmd",
+                    "htif_fromhost_reason",
+                    "htif_fromhost_data",
+                }
+                for _, name in ipairs(field_aliases) do
+                    machine:write_reg(name, 0x5)
+                    expect.equal(machine:read_reg(name), 0x5)
+                end
+            end)
+        end)
+
+        describe("write_word", function()
+            it("should reject unmapped shadow state addresses", function()
+                -- Aligned address inside the shadow register page but past the
+                -- register layout, so it forwards to no register.
+                expect.fail(function()
+                    machine:write_word(cartesi.AR_SHADOW_STATE_START + 0xff8, 0)
+                end, "unhandled write to shadow state")
+            end)
+
+            it("should reject writes to protected memory ranges", function()
+                -- The shadow TLB is in the protected shadow state range, outside
+                -- the register page that write_word forwards to write_reg.
+                expect.fail(function()
+                    machine:write_word(cartesi.AR_SHADOW_TLB_START, 0)
+                end, "protected memory range")
+            end)
+
+            it("should reject writes to read-only memory ranges", function()
+                local ro <close> = variant.create({
+                    ram = { length = 0x1000 },
+                    nvram = { { start = 0x70000000, length = 0x1000, read_only = true } },
+                })
+                expect.fail(function()
+                    ro:write_word(0x70000000, 0x1234)
+                end, "read-only")
             end)
         end)
 
