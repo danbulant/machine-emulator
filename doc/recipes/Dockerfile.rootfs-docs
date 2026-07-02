@@ -19,7 +19,7 @@ ARG UBUNTU_SNAPSHOT
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
     apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
-    apt-get install -y --no-install-recommends g++-14-riscv64-linux-gnu && \
+    apt-get install -y --no-install-recommends --snapshot=${UBUNTU_SNAPSHOT} g++-14-riscv64-linux-gnu && \
     rm -rf /var/lib/apt/lists/*
 ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_TARGZ_SHA256} \
     https://github.com/cartesi/machine-guest-tools/releases/download/v${MACHINE_GUEST_TOOLS_VERSION}/machine-guest-tools_riscv64.tar.gz \
@@ -69,7 +69,7 @@ ADD --checksum=sha256:${MACHINE_GUEST_TOOLS_DEB_SHA256} \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
     apt-get update --snapshot=${UBUNTU_SNAPSHOT} && \
-    apt-get install -y --no-install-recommends \
+    apt-get install -y --no-install-recommends --snapshot=${UBUNTU_SNAPSHOT} \
         /tmp/machine-guest-tools_riscv64.deb \
         libstdc++6 \
         bc curl device-tree-compiler gforth jq lua5.4 lua-socket \

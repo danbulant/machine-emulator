@@ -289,12 +289,12 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/coreutils/coreutils_9.4-3ubuntu6.2.dsc' coreutils_9.4-3ubuntu6.2.dsc 2030
 ```
 
-### `dpkg` source package: `curl=8.5.0-2ubuntu10.9`
+### `dpkg` source package: `curl=8.5.0-2ubuntu10.8`
 
 Binary Packages:
 
-- `curl:riscv64=8.5.0-2ubuntu10.9`
-- `libcurl4t64:riscv64=8.5.0-2ubuntu10.9`
+- `curl:riscv64=8.5.0-2ubuntu10.8`
+- `libcurl4t64:riscv64=8.5.0-2ubuntu10.8`
 
 Licenses: (parsed from: `/usr/share/doc/curl/copyright`, `/usr/share/doc/libcurl4t64/copyright`)
 
@@ -314,10 +314,10 @@ Licenses: (parsed from: `/usr/share/doc/curl/copyright`, `/usr/share/doc/libcurl
 Source:
 
 ```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris curl=8.5.0-2ubuntu10.9
+$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris curl=8.5.0-2ubuntu10.8
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/curl/curl_8.5.0-2ubuntu10.8.dsc' curl_8.5.0-2ubuntu10.8.dsc 3051
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/curl/curl_8.5.0.orig.tar.gz' curl_8.5.0.orig.tar.gz 4372979
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/curl/curl_8.5.0-2ubuntu10.9.debian.tar.xz' curl_8.5.0-2ubuntu10.9.debian.tar.xz 76576
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/curl/curl_8.5.0-2ubuntu10.9.dsc' curl_8.5.0-2ubuntu10.9.dsc 3051
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/c/curl/curl_8.5.0-2ubuntu10.8.debian.tar.xz' curl_8.5.0-2ubuntu10.8.debian.tar.xz 68580
 ```
 
 ### `dpkg` source package: `cyrus-sasl2=2.1.28+dfsg1-5ubuntu3.1`
@@ -892,12 +892,12 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/i/init-system-helpers/init-system-helpers_1.66ubuntu1.tar.xz' init-system-helpers_1.66ubuntu1.tar.xz 45100
 ```
 
-### `dpkg` source package: `jq=1.7.1-3ubuntu0.24.04.2`
+### `dpkg` source package: `jq=1.7.1-3ubuntu0.24.04.1`
 
 Binary Packages:
 
-- `jq:riscv64=1.7.1-3ubuntu0.24.04.2`
-- `libjq1:riscv64=1.7.1-3ubuntu0.24.04.2`
+- `jq:riscv64=1.7.1-3ubuntu0.24.04.1`
+- `libjq1:riscv64=1.7.1-3ubuntu0.24.04.1`
 
 Licenses: (parsed from: `/usr/share/doc/jq/copyright`, `/usr/share/doc/libjq1/copyright`)
 
@@ -910,10 +910,10 @@ Licenses: (parsed from: `/usr/share/doc/jq/copyright`, `/usr/share/doc/libjq1/co
 Source:
 
 ```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris jq=1.7.1-3ubuntu0.24.04.2
+$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris jq=1.7.1-3ubuntu0.24.04.1
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/j/jq/jq_1.7.1-3ubuntu0.24.04.1.dsc' jq_1.7.1-3ubuntu0.24.04.1.dsc 2139
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/j/jq/jq_1.7.1.orig.tar.gz' jq_1.7.1.orig.tar.gz 1323338
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/j/jq/jq_1.7.1-3ubuntu0.24.04.2.debian.tar.xz' jq_1.7.1-3ubuntu0.24.04.2.debian.tar.xz 22008
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/j/jq/jq_1.7.1-3ubuntu0.24.04.2.dsc' jq_1.7.1-3ubuntu0.24.04.2.dsc 1965
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/j/jq/jq_1.7.1-3ubuntu0.24.04.1.debian.tar.xz' jq_1.7.1-3ubuntu0.24.04.1.debian.tar.xz 18772
 ```
 
 ### `dpkg` source package: `keyutils=1.6.3-3build1`
@@ -1583,11 +1583,11 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nettle/nettle_3.9.1-2.2build1.1.dsc' nettle_3.9.1-2.2build1.1.dsc 2325
 ```
 
-### `dpkg` source package: `nghttp2=1.59.0-1ubuntu0.3`
+### `dpkg` source package: `nghttp2=1.59.0-1ubuntu0.2`
 
 Binary Packages:
 
-- `libnghttp2-14:riscv64=1.59.0-1ubuntu0.3`
+- `libnghttp2-14:riscv64=1.59.0-1ubuntu0.2`
 
 Licenses: (parsed from: `/usr/share/doc/libnghttp2-14/copyright`)
 
@@ -1601,10 +1601,10 @@ Licenses: (parsed from: `/usr/share/doc/libnghttp2-14/copyright`)
 Source:
 
 ```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris nghttp2=1.59.0-1ubuntu0.3
+$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris nghttp2=1.59.0-1ubuntu0.2
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nghttp2/nghttp2_1.59.0-1ubuntu0.2.dsc' nghttp2_1.59.0-1ubuntu0.2.dsc 2624
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nghttp2/nghttp2_1.59.0.orig.tar.gz' nghttp2_1.59.0.orig.tar.gz 1055492
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nghttp2/nghttp2_1.59.0-1ubuntu0.3.debian.tar.xz' nghttp2_1.59.0-1ubuntu0.3.debian.tar.xz 16364
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nghttp2/nghttp2_1.59.0-1ubuntu0.3.dsc' nghttp2_1.59.0-1ubuntu0.3.dsc 2669
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/n/nghttp2/nghttp2_1.59.0-1ubuntu0.2.debian.tar.xz' nghttp2_1.59.0-1ubuntu0.2.debian.tar.xz 14204
 ```
 
 ### `dpkg` source package: `npth=1.6-3.1build1`
@@ -1863,12 +1863,12 @@ $ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3-defaults/python3-defaults_3.12.3-0ubuntu2.1.dsc' python3-defaults_3.12.3-0ubuntu2.1.dsc 3116
 ```
 
-### `dpkg` source package: `python3.12=3.12.3-1ubuntu0.13`
+### `dpkg` source package: `python3.12=3.12.3-1ubuntu0.12`
 
 Binary Packages:
 
-- `libpython3.12-minimal:riscv64=3.12.3-1ubuntu0.13`
-- `python3.12-minimal:riscv64=3.12.3-1ubuntu0.13`
+- `libpython3.12-minimal:riscv64=3.12.3-1ubuntu0.12`
+- `python3.12-minimal:riscv64=3.12.3-1ubuntu0.12`
 
 Licenses: (parsed from: `/usr/share/doc/libpython3.12-minimal/copyright`, `/usr/share/doc/python3.12-minimal/copyright`)
 
@@ -1893,10 +1893,10 @@ Licenses: (parsed from: `/usr/share/doc/libpython3.12-minimal/copyright`, `/usr/
 Source:
 
 ```console
-$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris python3.12=3.12.3-1ubuntu0.13
+$ apt-get -o APT::Architecture=riscv64 -o APT::Architectures=riscv64 --snapshot=20260421T000000Z source -qq --print-uris python3.12=3.12.3-1ubuntu0.12
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3.12/python3.12_3.12.3-1ubuntu0.12.dsc' python3.12_3.12.3-1ubuntu0.12.dsc 3311
 'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3.12/python3.12_3.12.3.orig.tar.xz' python3.12_3.12.3.orig.tar.xz 20625068
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3.12/python3.12_3.12.3-1ubuntu0.13.debian.tar.xz' python3.12_3.12.3-1ubuntu0.13.debian.tar.xz 271684
-'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3.12/python3.12_3.12.3-1ubuntu0.13.dsc' python3.12_3.12.3-1ubuntu0.13.dsc 3879
+'https://snapshot.ubuntu.com/ubuntu/20260421T000000Z/pool/main/p/python3.12/python3.12_3.12.3-1ubuntu0.12.debian.tar.xz' python3.12_3.12.3-1ubuntu0.12.debian.tar.xz 271148
 ```
 
 ### `dpkg` source package: `readline=8.2-4build1`
