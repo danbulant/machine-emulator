@@ -82,13 +82,10 @@ public:
         ;
     }
 
-    void finish() {
+    machine_hash finish() {
         if (m_context.next_access != m_context.accesses.size()) {
             throw std::invalid_argument{"access log was not fully consumed"};
         }
-    }
-
-    machine_hash get_root_hash() const {
         return m_context.root_hash;
     }
 

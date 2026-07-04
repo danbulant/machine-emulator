@@ -995,29 +995,34 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, const cm_hash *revert_r
 /// \param root_hash_before State hash before step.
 /// \param log_filename Path to the step log file to be verified.
 /// \param mcycle_count Number of mcycles in the step.
-/// \param root_hash_after State hash after step.
-/// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
+/// \param root_hash_after State hash to check against the state after step (can be NULL,
+/// in which case no check is performed).
+/// \param obtained_root_hash Receives the state hash after step (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
-    const cm_hash *root_hash_after, cm_break_reason *break_reason);
+    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before step.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash after step.
+/// \param root_hash_after State hash to check against the state after step (can be NULL,
+/// in which case no check is performed).
+/// \param obtained_root_hash Receives the state hash after step (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after);
+    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_reset_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before reset.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash after reset.
+/// \param root_hash_after State hash to check against the state after reset (can be NULL,
+/// in which case no check is performed).
+/// \param obtained_root_hash Receives the state hash after reset (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after);
+    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
 
 /// \brief Checks the validity of a state transition produced by cm_log_send_cmio_response.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
@@ -1027,11 +1032,13 @@ CM_API cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_h
 /// \param length Length of response.
 /// \param root_hash_before State hash before response.
 /// \param log State access log to be verified as a JSON object in a string.
-/// \param root_hash_after State hash after response.
+/// \param root_hash_after State hash to check against the state after response (can be NULL,
+/// in which case no check is performed).
+/// \param obtained_root_hash Receives the state hash after response (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, const cm_hash *revert_root_hash, uint16_t reason,
     const uint8_t *data, uint64_t length, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after);
+    const cm_hash *root_hash_after, cm_hash *obtained_root_hash);
 
 // ------------------------------------
 // Integrity checking

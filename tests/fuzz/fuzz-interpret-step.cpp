@@ -180,7 +180,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_step_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_step_uarch(m3, &hb, log, &ha) != CM_ERROR_OK) {
+            if (cm_verify_step_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step_uarch failed");
             }
             uint64_t halt = 0;
@@ -204,7 +204,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_reset_uarch failed");
             }
             cm_get_root_hash(m3, &ha);
-            if (cm_verify_reset_uarch(m3, &hb, log, &ha) != CM_ERROR_OK) {
+            if (cm_verify_reset_uarch(m3, &hb, log, &ha, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_reset_uarch failed");
             }
         }
@@ -219,8 +219,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
                 fuzz_abort("cm_log_step failed");
             }
             cm_get_root_hash(m4, &ha);
-            cm_break_reason br4v{};
-            if (cm_verify_step(&hb, log_file.c_str(), 1, &ha, &br4v) != CM_ERROR_OK) {
+            if (cm_verify_step(&hb, log_file.c_str(), 1, &ha, nullptr) != CM_ERROR_OK) {
                 fuzz_abort("cm_verify_step failed");
             }
             // Remove log file so the next iteration can create it

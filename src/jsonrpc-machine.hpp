@@ -159,15 +159,15 @@ private:
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
     std::string do_get_address_name(uint64_t paddr) const override;
-    interpreter_break_reason do_verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const machine_hash &root_hash_after) const override;
-    void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const override;
-    void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const override;
-    void do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const override;
+    machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const override;
+    machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const override;
+    machine_hash do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const override;
+    machine_hash do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const override;
     bool do_is_jsonrpc_machine() const override;
 
     void check_server_version(std::chrono::time_point<std::chrono::steady_clock> timeout_at) const;

@@ -1987,24 +1987,27 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             assert(machine:read_reg("mcycle") == mcycle_count)
             local root_hash_after = machine:get_root_hash()
             assert(root_hash_before ~= root_hash_after)
-            -- verify step should pass
-            status = machine:verify_step(root_hash_before, filename1, mcycle_count, root_hash_after)
-            assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+            -- verify step should pass and return the obtained root hash
+            local obtained_root_hash = machine:verify_step(root_hash_before, filename1, mcycle_count, root_hash_after)
+            assert(obtained_root_hash == root_hash_after)
+            -- without root_hash_after, verify step should return the obtained root hash unchecked
+            obtained_root_hash = machine:verify_step(root_hash_before, filename1, mcycle_count)
+            assert(obtained_root_hash == root_hash_after)
             -- with incorrect hash args, verify step should fail
             local bad_hash = string.rep("\0", 32)
             _, err = pcall(function()
                 machine:verify_step(bad_hash, filename1, mcycle_count, root_hash_after)
             end)
-            check_error_find(err, "root hash before mismatch")
+            check_error_find(err, "root hash before does not match")
             _, err = pcall(function()
                 machine:verify_step(root_hash_before, filename1, mcycle_count, bad_hash)
             end)
-            check_error_find(err, "root hash after mismatch")
+            check_error_find(err, "root hash after does not match")
             -- with incorrect mcycle_count arg, verify step should fail (Layer 2)
             _, err = pcall(function()
                 machine:verify_step(root_hash_before, filename1, mcycle_count + 1, root_hash_after)
             end)
-            check_error_find(err, "mcycle count mismatch")
+            check_error_find(err, "mcycle count does not match")
             -- corrupt header root_hash_before, verify step should fail (Layer 1 - log integrity)
             copy_step_log(filename1, filename2, function(log_data)
                 log_data.root_hash_before = bad_hash
@@ -2028,7 +2031,7 @@ for _, hash_fn in pairs({ "keccak256", "sha256" }) do
             _, err = pcall(function()
                 machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
             end)
-            check_error_find(err, "mcycle count mismatch")
+            check_error_find(err, "mcycle count does not match")
             -- ensure that copy_step_log() works
             copy_step_log(filename1, filename2, function()
                 -- copy original file without modifications
@@ -2172,7 +2175,7 @@ do_test("log_step from a rejected input state verifies against the revert root h
     machine:verify_step(root_hash_before, filename, 1, revert_hash)
     -- the machine's actual root hash is not accepted
     local _, err = pcall(machine.verify_step, machine, root_hash_before, filename, 1, root_hash_before)
-    check_error_find(err, "root hash after mismatch")
+    check_error_find(err, "root hash after does not match")
 end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

@@ -317,28 +317,29 @@ public:
     }
 
     /// \brief Checks the validity of a state transition caused by log_step.
-    interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const machine_hash &root_hash_after) const {
+    machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after = {}) const {
         return do_verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
     }
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
-    void verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const {
-        do_verify_step_uarch(root_hash_before, log, root_hash_after);
+    machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after = {}) const {
+        return do_verify_step_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
-    void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const {
-        do_verify_reset_uarch(root_hash_before, log, root_hash_after);
+    machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after = {}) const {
+        return do_verify_reset_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
-    void verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason, const unsigned char *data,
-        uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const {
-        do_verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
+    machine_hash verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after = {}) const {
+        return do_verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log,
+            root_hash_after);
     }
 
     /// \brief Checks if implementation is jsorpc-machine
@@ -396,15 +397,15 @@ private:
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
     virtual std::string do_get_address_name(uint64_t paddr) const = 0;
-    virtual interpreter_break_reason do_verify_step(const machine_hash &root_hash_before,
-        const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const = 0;
-    virtual void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const = 0;
-    virtual void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const = 0;
-    virtual void do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-        const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-        const machine_hash &root_hash_after) const = 0;
+    virtual machine_hash do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const = 0;
+    virtual machine_hash do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const = 0;
+    virtual machine_hash do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const = 0;
+    virtual machine_hash do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+        const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after) const = 0;
     virtual bool do_verify_hash_tree() const = 0;
     virtual bool do_is_jsonrpc_machine() const {
         return false;

@@ -84,15 +84,12 @@ public:
         }
     }
 
-    machine_hash get_root_hash() const {
-        return m_context.root_hash;
-    }
-
-    /// \brief Checks if access log was fully consumed after reset operation is finished
-    void finish() {
+    /// \brief Checks if access log was fully consumed and returns the obtained root hash after
+    machine_hash finish() {
         if (m_context.next_access != m_context.accesses.size()) {
             throw std::invalid_argument{"access log was not fully consumed"};
         }
+        return m_context.root_hash;
     }
 
 private:

@@ -1248,13 +1248,16 @@ static int machine_obj_index_verify_step(lua_State *L) {
     cm_hash root_hash_before{};
     clua_check_cm_hash(L, 2, &root_hash_before);
     cm_hash root_hash_after{};
-    clua_check_cm_hash(L, 5, &root_hash_after);
-    cm_break_reason break_reason{};
-    if (cm_verify_step(&root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4), &root_hash_after,
-            &break_reason) != 0) {
+    const bool has_root_hash_after = !lua_isnoneornil(L, 5);
+    if (has_root_hash_after) {
+        clua_check_cm_hash(L, 5, &root_hash_after);
+    }
+    cm_hash obtained_root_hash{};
+    if (cm_verify_step(&root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4),
+            has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
+    clua_push_cm_hash(L, &obtained_root_hash);
     return 1;
 }
 
@@ -1263,15 +1266,21 @@ static int machine_obj_index_verify_step(lua_State *L) {
 static int machine_obj_index_verify_step_uarch(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 2, &root_hash);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 2, &root_hash_before);
     const char *log = clua_tojson(L, 3, -1, "AccessLog");
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 4, &target_hash);
-    if (cm_verify_step_uarch(m.get(), &root_hash, log, &target_hash) != 0) {
+    cm_hash root_hash_after{};
+    const bool has_root_hash_after = !lua_isnoneornil(L, 4);
+    if (has_root_hash_after) {
+        clua_check_cm_hash(L, 4, &root_hash_after);
+    }
+    cm_hash obtained_root_hash{};
+    if (cm_verify_step_uarch(m.get(), &root_hash_before, log, has_root_hash_after ? &root_hash_after : nullptr,
+            &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    return 0;
+    clua_push_cm_hash(L, &obtained_root_hash);
+    return 1;
 }
 
 /// \brief This is the machine:verify_reset_uarch() method implementation.
@@ -1279,15 +1288,21 @@ static int machine_obj_index_verify_step_uarch(lua_State *L) {
 static int machine_obj_index_verify_reset_uarch(lua_State *L) {
     lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 2, &root_hash);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 2, &root_hash_before);
     const char *log = clua_tojson(L, 3, -1, "AccessLog");
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 4, &target_hash);
-    if (cm_verify_reset_uarch(m.get(), &root_hash, log, &target_hash) != 0) {
+    cm_hash root_hash_after{};
+    const bool has_root_hash_after = !lua_isnoneornil(L, 4);
+    if (has_root_hash_after) {
+        clua_check_cm_hash(L, 4, &root_hash_after);
+    }
+    cm_hash obtained_root_hash{};
+    if (cm_verify_reset_uarch(m.get(), &root_hash_before, log, has_root_hash_after ? &root_hash_after : nullptr,
+            &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    return 0;
+    clua_push_cm_hash(L, &obtained_root_hash);
+    return 1;
 }
 
 /// \brief This is the machine:verify_send_cmio_response() method implementation.
@@ -1301,16 +1316,21 @@ static int machine_obj_index_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 4, &length));
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 5, &root_hash);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 5, &root_hash_before);
     const char *log = clua_tojson(L, 6, -1, "AccessLog");
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 7, &target_hash);
-    if (cm_verify_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, &root_hash, log, &target_hash) !=
-        0) {
+    cm_hash root_hash_after{};
+    const bool has_root_hash_after = !lua_isnoneornil(L, 7);
+    if (has_root_hash_after) {
+        clua_check_cm_hash(L, 7, &root_hash_after);
+    }
+    cm_hash obtained_root_hash{};
+    if (cm_verify_send_cmio_response(m.get(), &revert_root_hash, reason, data, length, &root_hash_before, log,
+            has_root_hash_after ? &root_hash_after : nullptr, &obtained_root_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    return 0;
+    clua_push_cm_hash(L, &obtained_root_hash);
+    return 1;
 }
 
 /// \brief This is the machine:swap() method implementation.

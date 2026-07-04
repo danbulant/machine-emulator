@@ -257,9 +257,10 @@ public:
     /// \param root_hash_before Hash of the state before the step.
     /// \param log_filename Name of the file containing the log.
     /// \param mcycle_count Number of mcycles the machine was run for.
-    /// \param root_hash_after Hash of the state after the step.
-    static interpreter_break_reason verify_step(const_machine_hash_view root_hash_before,
-        const std::string &log_filename, uint64_t mcycle_count, const_machine_hash_view root_hash_after);
+    /// \param root_hash_after Hash to check against the state after the step (optional).
+    /// \returns Hash of the state after the step.
+    static machine_hash verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
@@ -308,17 +309,19 @@ public:
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
-    /// \param root_hash_after State hash after step.
-    static void verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        const_machine_hash_view root_hash_after);
+    /// \param root_hash_after Hash to check against the state after the step (optional).
+    /// \returns State hash after step.
+    static machine_hash verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
-    /// \param root_hash_after State hash after uarch reset. When the machine has rejected an input,
+    /// \param root_hash_after Hash to check against the state after the step (optional).
+    /// \returns State hash after uarch reset. When the machine has rejected an input,
     /// this is the recorded revert root hash.
-    static void verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
-        const_machine_hash_view root_hash_after);
+    static machine_hash verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+        std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
@@ -707,10 +710,11 @@ public:
     /// \param length Length of response
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
-    /// \param root_hash_after State hash after response was sent.
-    static void verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    /// \param root_hash_after Hash to check against the state after the response was sent (optional).
+    /// \returns State hash after response was sent.
+    static machine_hash verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
         const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
-        const_machine_hash_view root_hash_after);
+        std::optional<const_machine_hash_view> root_hash_after = {});
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

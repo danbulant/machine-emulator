@@ -240,25 +240,26 @@ std::string local_machine::do_get_address_name(uint64_t paddr) const {
     return machine::get_address_name(paddr);
 }
 
-interpreter_break_reason local_machine::do_verify_step(const machine_hash &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
+machine_hash local_machine::do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+    uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const {
     return machine::verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
 }
 
-void local_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    machine::verify_step_uarch(root_hash_before, log, root_hash_after);
+machine_hash local_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    return machine::verify_step_uarch(root_hash_before, log, root_hash_after);
 }
 
-void local_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
+machine_hash local_machine::do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    return machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
 }
 
-void local_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    machine::verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log, root_hash_after);
+machine_hash local_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    return machine::verify_send_cmio_response(revert_root_hash, reason, data, length, root_hash_before, log,
+        root_hash_after);
 }
 
 } // namespace cartesi

@@ -269,21 +269,16 @@ public:
         }
     }
 
-    // \brief Finish the replay and check the final machine root hash
-    // \throw runtime_error if the final root hash does not match
+    // \brief Finish the replay and return the obtained root hash after
     // \details When the machine has rejected an input (a manual yield with reason
     // rx-rejected is pending), the canonical root hash after the step is the recorded
     // revert root hash. Otherwise it is the computed machine root hash.
-    void finish() {
-        machine_hash expected_root_hash_after{};
-        if (is_rejected_manual_yield(*this)) {
-            expected_root_hash_after = read_revert_root_hash();
-        } else {
-            expected_root_hash_after = compute_root_hash();
-        }
-        if (expected_root_hash_after != m_context.logged_root_hash_after) {
+    machine_hash finish() {
+        auto obtained_root_hash = is_rejected_manual_yield(*this) ? read_revert_root_hash() : compute_root_hash();
+        if (!std::ranges::equal(obtained_root_hash, m_context.logged_root_hash_after)) {
             THROW(std::runtime_error, "final root hash mismatch");
         }
+        return obtained_root_hash;
     }
 
 private:

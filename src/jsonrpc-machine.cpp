@@ -956,42 +956,62 @@ std::string jsonrpc_machine::do_get_address_name(uint64_t paddr) const {
     return result;
 }
 
-interpreter_break_reason jsonrpc_machine::do_verify_step(const machine_hash &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
-    interpreter_break_reason result = interpreter_break_reason::failed;
+machine_hash jsonrpc_machine::do_verify_step(const_machine_hash_view root_hash_before, const std::string &log_filename,
+    uint64_t mcycle_count, std::optional<const_machine_hash_view> root_hash_after) const {
+    machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count, b64_root_hash_after),
-        result);
+    if (root_hash_after.has_value()) {
+        auto b64_root_hash_after = encode_base64(*root_hash_after);
+        request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count, b64_root_hash_after),
+            result);
+    } else {
+        request("machine.verify_step", std::tie(b64_root_hash_before, log_filename, mcycle_count), result);
+    }
     return result;
 }
 
-void jsonrpc_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    bool result = false;
+machine_hash jsonrpc_machine::do_verify_step_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
+    if (root_hash_after.has_value()) {
+        auto b64_root_hash_after = encode_base64(*root_hash_after);
+        request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
+    } else {
+        request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log), result);
+    }
+    return result;
 }
 
-void jsonrpc_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    bool result = false;
+machine_hash jsonrpc_machine::do_verify_reset_uarch(const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    machine_hash result;
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
+    if (root_hash_after.has_value()) {
+        auto b64_root_hash_after = encode_base64(*root_hash_after);
+        request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
+    } else {
+        request("machine.verify_reset_uarch", std::tie(b64_root_hash_before, log), result);
+    }
+    return result;
 }
 
-void jsonrpc_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
-    const unsigned char *data, uint64_t length, const machine_hash &root_hash_before, const access_log &log,
-    const machine_hash &root_hash_after) const {
-    bool result = false;
+machine_hash jsonrpc_machine::do_verify_send_cmio_response(const_machine_hash_view revert_root_hash, uint16_t reason,
+    const unsigned char *data, uint64_t length, const_machine_hash_view root_hash_before, const access_log &log,
+    std::optional<const_machine_hash_view> root_hash_after) const {
+    machine_hash result;
     auto b64_revert_root_hash = encode_base64(revert_root_hash);
     std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    request("machine.verify_send_cmio_response",
-        std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
+    if (root_hash_after.has_value()) {
+        auto b64_root_hash_after = encode_base64(*root_hash_after);
+        request("machine.verify_send_cmio_response",
+            std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
+    } else {
+        request("machine.verify_send_cmio_response",
+            std::tie(b64_revert_root_hash, reason, b64_data, b64_root_hash_before, log), result);
+    }
+    return result;
 }
 
 bool jsonrpc_machine::do_is_jsonrpc_machine() const {
