@@ -1169,15 +1169,12 @@ function Pandoc(doc)
         local v = pandoc.utils.stringify(dr)
         default_enabled = v == "true" or v == "yes" or v == "1"
     end
+    -- Idempotent like every cache write: globals are prerequisites of README.md,
+    -- so an unchanged -M value must keep its mtime across pandoc runs.
     local globals_dir = REPLACE_CACHE_DIR .. "/globals"
-    os.execute("mkdir -p '" .. globals_dir .. "'")
     for k, v in pairs(doc.meta) do
         if k:match("^[%a_][%w_%-]*$") then
-            local f = io.open(globals_dir .. "/" .. k, "w")
-            if f then
-                f:write(pandoc.utils.stringify(v))
-                f:close()
-            end
+            write_idempotent(globals_dir .. "/" .. k, pandoc.utils.stringify(v))
         end
     end
     defined["globals"] = true
