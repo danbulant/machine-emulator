@@ -225,8 +225,13 @@ README.md: | check-docs-image
 	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
 	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.md DEV_ENV_HAS_DOCGEN=yes"
 
-README.html: README.md
-	$(MAKE) docs-image-exec CONTAINER_COMMAND="make README.html DEV_ENV_HAS_DOCGEN=yes"
+# Inside, README.html depends on README.md, so one container invocation builds
+# both. Splitting them across two invocations lets the bind mount's attribute
+# cache serve the second one stale mtimes for files the first one touched,
+# which redoes work that is already up to date.
+README.html: | check-docs-image
+	@jobs=$(if $(JOBS),$(JOBS),$$(docker run --rm $(DOCS_IMAGE):$(TAG) nproc)); \
+	$(MAKE) docs-image-exec CONTAINER_COMMAND="make -j$$jobs README.html DEV_ENV_HAS_DOCGEN=yes"
 endif
 
 clean:

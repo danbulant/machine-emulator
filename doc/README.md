@@ -72,6 +72,14 @@
     - [Verifying the state transition](#verifying-the-state-transition)
     - [Verifying the result](#verifying-the-result)
     - [Running the game](#running-the-game)
+  - [Rolling verification game](#rolling-verification-game)
+    - [Settling a dispute](#settling-a-dispute-1)
+    - [Bisecting over inputs](#bisecting-over-inputs)
+    - [Bisecting within an input](#bisecting-within-an-input)
+    - [Verifying the disputed
+      transition](#verifying-the-disputed-transition)
+    - [Verifying an epoch result](#verifying-an-epoch-result)
+    - [Running the rolling game](#running-the-rolling-game)
 
 # Introduction
 
@@ -1778,7 +1786,7 @@ notices, reports, exceptions, and delegate-call vouchers from files. The
 calculator we will run treats the payload of each advance-state request
 as an arbitrary-precision arithmetic expression and emits the result as
 a notice. The following commands encode six such requests as
-`input-1.bin` through `input-6.bin`, sharing their common structure
+`input-0.bin` through `input-5.bin`, sharing their common structure
 through a small `encode_input` shell function, and one inspect-state
 query as `query.bin`:
 
@@ -1797,12 +1805,12 @@ encode_input() {
 }
 EOF
 }
-encode_input 1 '6*2^1024 + 3*2^512' > input-1.bin
-encode_input 2 'invalid input' > input-2.bin
-encode_input 3 '2^2048' > input-3.bin
-encode_input 4 '(2^256 - 1) * (2^256 - 1)' > input-4.bin
-encode_input 5 'scale=80; sqrt(2)' > input-5.bin
-encode_input 6 'scale=100; 355/113' > input-6.bin
+encode_input 0 '6*2^1024 + 3*2^512' > input-0.bin
+encode_input 1 'invalid input' > input-1.bin
+encode_input 2 '2^2048' > input-2.bin
+encode_input 3 '(2^256 - 1) * (2^256 - 1)' > input-3.bin
+encode_input 4 'scale=80; sqrt(2)' > input-4.bin
+encode_input 5 'scale=100; 355/113' > input-5.bin
 cartesi-rollup-data.lua encode inspect > query.bin <<EOF
 {
   "payload": "$(printf 'scale=70; (1+sqrt(5))/2\n' | hex --encode)"
@@ -1813,12 +1821,12 @@ EOF
 Listing the files created with `ls *.bin`, we see
 
 ``` text
+input-0.bin
 input-1.bin
 input-2.bin
 input-3.bin
 input-4.bin
 input-5.bin
-input-6.bin
 query.bin
 ```
 
@@ -1972,13 +1980,13 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-destroy \
     --flash-drive=label:calc,data_filename:calc.ext2,user:dapp \
-    --cmio-advance-state=input_index_begin:1,input_index_end:4,hashes \
-    --final-hash=epoch-1-state-hash.bin \
+    --cmio-advance-state=input_index_begin:0,input_index_end:3,hashes \
+    --final-hash=epoch-0-state-hash.bin \
     -- /mnt/calc/calc.sh
 ```
 
 This run instantiates the machine from the `calc.ext2` flash drive and
-advances inputs 1 to 3. Passing `--no-remote-destroy` and omitting
+advances inputs 0 to 2. Passing `--no-remote-destroy` and omitting
 `--remote-shutdown` leaves both the server and the machine it holds
 alive for the next epoch.
 
@@ -1990,44 +1998,44 @@ Connected to JSONRPC remote cartesi machine at '127.0.0.1:8082'
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 65021521
 
-Before input 1
+Before input 0
 65021521: 214dbc9a05e7f95996ab5f8443be24f3f974d618ae9d1dd66f8e18f1250f077a
-65021521: 12dfdc7da186c0a5682a4513360f3d417061327706c704c4b7d989b5e7c257c8
+65021521: 0c1fd7582d373256ffd90e06391f45d668370de8189ecae4262923f0d086f356
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 110102257
+Cycles: 110102253
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 117064505
-Storing output-0-input-1.bin
-Storing input-1-output-hashes-root-hash.bin
-Storing input-1-output-hashes-root-hash-proof.lua
+Cycles: 117064501
+Storing output-0-input-0.bin
+Storing input-0-output-hashes-root-hash.bin
+Storing input-0-output-hashes-root-hash-proof.lua
 
-Before input 2
-117064505: c08127c14fb82e7f37c53036e4a4e797db2d9c164e850d0561da095045b395d1
-117064505: 9d4e9a7db6d29335ce172aff52e74ad458c6724366141ce5d7d0b8e1bcb74ebe
+Before input 1
+117064501: 67764fceed3fe7ad48cdfa18e94613e176c73969475f5d203114f95b318a55ec
+117064501: c81b1007f0b1188efd881e65d635635ac1b731d3d4dffdb70ccf8c4074489b12
 
 Automatic yield tx-output (2) (0x000044 data)
-Cycles: 159400753
+Cycles: 159400749
 
 Manual yield rx-rejected (2) (0x000000 data)
-Cycles: 164038569
-Storing rejected-output-1-input-2.bin
+Cycles: 164038565
+Storing rejected-output-1-input-1.bin
 
-Before input 3
-117064505: c08127c14fb82e7f37c53036e4a4e797db2d9c164e850d0561da095045b395d1
-117064505: 677a0f6b8afb6e4b6eaa7fb34f4c1d6b3d115b82c2cc2237498ae34494862abf
+Before input 2
+117064501: 67764fceed3fe7ad48cdfa18e94613e176c73969475f5d203114f95b318a55ec
+117064501: 23b1310063a22b8a09520b151f6a1933205569d6f07c910f5ccb2229646bb1ee
 
 Automatic yield tx-output (2) (0x0002c4 data)
-Cycles: 161579769
+Cycles: 161579761
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 168093692
-Storing output-1-input-3.bin
-Storing input-3-output-hashes-root-hash.bin
-Storing input-3-output-hashes-root-hash-proof.lua
-Storing output-0-input-1-proof.lua
-Storing output-1-input-3-proof.lua
+Cycles: 168093684
+Storing output-1-input-2.bin
+Storing input-2-output-hashes-root-hash.bin
+Storing input-2-output-hashes-root-hash-proof.lua
+Storing output-0-input-0-proof.lua
+Storing output-1-input-2-proof.lua
 Left alive JSONRPC remote cartesi machine at '127.0.0.1:8082'
 ```
 
@@ -2037,44 +2045,44 @@ transferring information in and out. The first
 `manual yield rx-accepted`, at cycle `65021521`, is the point at which
 the calculator attempted to obtain its first request.
 
-Upon receiving control back, the client prints input index 1 and the
-state hash `214dbc9a…`. It loads `input-1.bin` as the next request,
-prints the modified state hash `12dfdc7d…`, and resumes the machine. The
+Upon receiving control back, the client prints input index 0 and the
+state hash `214dbc9a…`. It loads `input-0.bin` as the next request,
+prints the modified state hash `0c1fd758…`, and resumes the machine. The
 calculator evaluates `6*2^1024 + 3*2^512` and emits the result as a
 notice. That emission is an `automatic yield tx-output` at cycle
-`110102257`, which returns control to the client. The client collects
-the emitted output and stores it as `output-0-input-1.bin`. The
-`manual yield rx-accepted` at cycle `117064505` signals that input index
-1 was accepted. At this point the client also stores the output hashes
-root hash the guest reported, as `input-1-output-hashes-root-hash.bin`,
+`110102253`, which returns control to the client. The client collects
+the emitted output and stores it as `output-0-input-0.bin`. The
+`manual yield rx-accepted` at cycle `117064501` signals that input index
+0 was accepted. At this point the client also stores the output hashes
+root hash the guest reported, as `input-0-output-hashes-root-hash.bin`,
 and double-checks it against its own local computation of the same hash.
 This hash commits to every output the machine has emitted so far.
 
-The client then loads input index 2 and resumes the machine. The payload
+The client then loads input index 1 and resumes the machine. The payload
 `invalid input` is not an expression that `bc` understands, so the
 calculator rejects the request. An empty notice is still emitted just
 before the rejection. Shell pipelines run concurrently, so
 `rollup notice` has already run by the time `bc`’s failure is detected.
 Rejection discards all outputs, such as this notice. For debugging
 purposes, the client saves the notice contents as
-`rejected-output-1-input-2.bin`. The resulting
-`manual yield rx-rejected` at cycle `164038569` rolls the machine state
+`rejected-output-1-input-1.bin`. The resulting
+`manual yield rx-rejected` at cycle `164038565` rolls the machine state
 back to what it was before the input was processed. The state hash
-before input 3, `c08127c1…`, is identical to the hash after input 1 was
+before input 2, `67764fce…`, is identical to the hash after input 0 was
 accepted, which confirms the rejected input left no trace.
 
-Input index 3, with payload `2^2048`, is accepted like the first, so the
-client stores `output-1-input-3.bin` and
-`input-3-output-hashes-root-hash.bin`. On each accept the client also
+Input index 2, with payload `2^2048`, is accepted like the first, so the
+client stores `output-1-input-2.bin` and
+`input-2-output-hashes-root-hash.bin`. On each accept the client also
 writes the proof that the output hashes root hash occupied the machine’s
-CMIO tx buffer, as `input-1-output-hashes-root-hash-proof.lua` and
-`input-3-output-hashes-root-hash-proof.lua`. The two output proofs for
-this epoch, `output-0-input-1-proof.lua` and
-`output-1-input-3-proof.lua`, are written at the end, once all of the
+CMIO tx buffer, as `input-0-output-hashes-root-hash-proof.lua` and
+`input-2-output-hashes-root-hash-proof.lua`. The two output proofs for
+this epoch, `output-0-input-0-proof.lua` and
+`output-1-input-2-proof.lua`, are written at the end, once all of the
 epoch’s outputs are known. Each proves that one of the epoch’s outputs
 belongs to the tree the final output hashes root hash commits to. The
 `--final-hash` option saves the machine state hash at the end of the
-epoch, as `epoch-1-state-hash.bin`, the state a dispute over this epoch
+epoch, as `epoch-0-state-hash.bin`, the state a dispute over this epoch
 would settle on.
 
 Now run the client to process the second epoch in the same server
@@ -2085,14 +2093,14 @@ cartesi-machine \
     --remote-address=127.0.0.1:8082 \
     --no-remote-create \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:4,input_index_end:7,last_output_proof:output-1-input-3-proof.lua,hashes \
+    --cmio-advance-state=input_index_begin:3,input_index_end:6,last_output_proof:output-1-input-2-proof.lua,hashes \
     --cmio-inspect-state=query:query.bin,hashes
 ```
 
 The command-line option `--no-remote-create` reuses the machine where
 the first epoch left off. The output hashes tree inside the machine
 keeps growing across the epoch boundary on its own. The
-`last_output_proof:output-1-input-3-proof.lua` option is there for the
+`last_output_proof:output-1-input-2-proof.lua` option is there for the
 `cartesi-machine` command-line-utility alone, which uses the first
 epoch’s last output proof to rebuild its own copy of the output hashes
 tree as it stood at the end of that epoch. With this copy, the output
@@ -2115,60 +2123,60 @@ The client shell now shows
 Connected to JSONRPC remote cartesi machine at '127.0.0.1:8082'
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 168093692
+Cycles: 168093684
 
-Before input 4
-168093692: 7d1351820467b8b04bcd8e4c9f8f9da0db8323ca4d86f5a914dc928911b5d84a
-168093692: 7b76321490d4628c76ef1b0bb2de64f63ea88c711a4ff0c4617987ff35f5c2ca
+Before input 3
+168093684: 42f585d3a46be80ceefbb8b966c4477ae832eb14ddc895c201259915719453be
+168093684: 65303733bcff3e86f0bc97e9ff9f0cbadd07b44791de4b23c0fef839406df341
 
 Automatic yield tx-output (2) (0x0000e4 data)
-Cycles: 210706528
+Cycles: 210706520
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 217387736
-Storing output-2-input-4.bin
+Cycles: 217387728
+Storing output-2-input-3.bin
+Storing input-3-output-hashes-root-hash.bin
+Storing input-3-output-hashes-root-hash-proof.lua
+
+Before input 4
+217387728: e22a39916744390190b5dd2ad3e831c0e67b997e187e5fc2e68dfb6e242df09e
+217387728: 009a9ab1b7982d5dba525fa08a20a42aeaa140458eec81d75dbafc9ee323118c
+
+Automatic yield tx-output (2) (0x0000a4 data)
+Cycles: 260280768
+
+Manual yield rx-accepted (1) (0x000020 data)
+Cycles: 267072123
+Storing output-3-input-4.bin
 Storing input-4-output-hashes-root-hash.bin
 Storing input-4-output-hashes-root-hash-proof.lua
 
 Before input 5
-217387736: c3bfb8d5e616b1419e7ef429b491b8b7c4cc374f086ca043c684c11226d12f0a
-217387736: 47f9c7f249bd9fab5aeda9dbb68f1c9748f382d5f0454ce26b8ba2fd83997b69
-
-Automatic yield tx-output (2) (0x0000a4 data)
-Cycles: 260280709
-
-Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 267072060
-Storing output-3-input-5.bin
-Storing input-5-output-hashes-root-hash.bin
-Storing input-5-output-hashes-root-hash-proof.lua
-
-Before input 6
-267072060: a68249e0a3244127c50b7941561c0c9b3b1d0782319bc82696c0c4390b952cbf
-267072060: 600f410731934cdeae22b31796081d83ffcadd1670fd8c6b0f5ccd3c28a92ab1
+267072123: e34f79995ee165faa54538b16820653c202e2ccab59ad58c0099d15a47bf3dc9
+267072123: 0f65ffc9762b1eaafddd0d96fdc1aa74db516a4501ec3a94a0bd76fcfaaab4c4
 
 Automatic yield tx-output (2) (0x0000c4 data)
-Cycles: 309565030
+Cycles: 309565093
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 316271263
-Storing output-4-input-6.bin
-Storing input-6-output-hashes-root-hash.bin
-Storing input-6-output-hashes-root-hash-proof.lua
-Storing output-2-input-4-proof.lua
-Storing output-3-input-5-proof.lua
-Storing output-4-input-6-proof.lua
+Cycles: 316271326
+Storing output-4-input-5.bin
+Storing input-5-output-hashes-root-hash.bin
+Storing input-5-output-hashes-root-hash-proof.lua
+Storing output-2-input-3-proof.lua
+Storing output-3-input-4-proof.lua
+Storing output-4-input-5-proof.lua
 
 Before query
-316271263: 3d50ee8a888ca45b3e4b25b4a3ed939f7b2d7cfb0d9cedfc977af89d450a43b2
-316271263: e277beef2c0ceef7945f7a62d58b733231b42f35b3be492735b795aa091dca67
+316271326: 03d17b4f3cd7573f6f0d13be9326107c5f144193d7891891c208b329e7e00114
+316271326: d5a0b21f240eb4d2f9e8da19b9eeaaef675ce7ba0518b0b03792e5a6505889b4
 
 Automatic yield tx-report (4) (0x000048 data)
-Cycles: 358930041
+Cycles: 358930035
 Storing query-report-0.bin
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 365562080
+Cycles: 365562074
 
 After query
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8082'
@@ -2204,7 +2212,7 @@ For example, to see the value of `sqrt(2)` computed in the second epoch,
 decode its notice with the command
 
 ``` bash
-cartesi-rollup-data.lua decode notice < output-3-input-5.bin | \
+cartesi-rollup-data.lua decode notice < output-3-input-4.bin | \
     jq -j .payload | \
     hex --decode | \
     fold -w 68
@@ -2312,7 +2320,7 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8083 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:1,input_index_end:7,output_proof:,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:6,output_proof:,hashes \
     --load="rolling-calculator-template"
 ```
 
@@ -2326,24 +2334,24 @@ Loading machine: please wait
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 65021521
 
-Before input 1
+Before input 0
 65021521: 214dbc9a05e7f95996ab5f8443be24f3f974d618ae9d1dd66f8e18f1250f077a
-65021521: 12dfdc7da186c0a5682a4513360f3d417061327706c704c4b7d989b5e7c257c8
+65021521: 0c1fd7582d373256ffd90e06391f45d668370de8189ecae4262923f0d086f356
 
 Automatic yield tx-output (2) (0x000184 data)
-Cycles: 110102257
+Cycles: 110102253
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 117064505
-Storing output-0-input-1.bin
+Cycles: 117064501
+Storing output-0-input-0.bin
 ...
-Cycles: 309565030
+Cycles: 309565093
 
 Manual yield rx-accepted (1) (0x000020 data)
-Cycles: 316271263
-Storing output-4-input-6.bin
-Storing input-6-output-hashes-root-hash.bin
-Storing input-6-output-hashes-root-hash-proof.lua
+Cycles: 316271326
+Storing output-4-input-5.bin
+Storing input-5-output-hashes-root-hash.bin
+Storing input-5-output-hashes-root-hash-proof.lua
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8083'
 ```
 
@@ -4665,13 +4673,13 @@ repeat
                 break
             end
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
-            i = i + 1
             snapshot()
             machine:send_cmio_response(
                 machine:get_root_hash(),
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
                 encode_advance(expr, i)
             )
+            i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             rollback()
@@ -4953,7 +4961,7 @@ repeat
             commit()
             -- the just-run input was accepted, so close it out before feeding the next one
             if i > 0 then
-                flush_accepted(i, data)
+                flush_accepted(i - 1, data)
             end
             stderr("type expression\n")
             local expr = io.read()
@@ -4961,13 +4969,13 @@ repeat
                 break
             end
             stderr("%s\n", expr) -- echo the input so non-tty transcripts make sense
-            i = i + 1
             snapshot()
             machine:send_cmio_response(
                 machine:get_root_hash(),
                 cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
                 encode_advance(expr, i)
             )
+            i = i + 1
         elseif i > 0 and yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
             stderr("input rejected\n")
             pending_outputs = {} -- discard the rejected input's outputs; the tree is left untouched
@@ -5027,9 +5035,9 @@ result is
 73495708458383684478649003115037698421037988831222501494715481595948
 96901677837132352593468675094844090688678579236903861342030923488978
 36036892526733668721977278692363075584
-saved input-1-output-hashes-root-hash-proof.lua
+saved input-0-output-hashes-root-hash-proof.lua
 type expression
-saved output-0-input-1-proof.lua
+saved output-0-input-0-proof.lua
 ```
 
 The same proofs are what the `cartesi-machine` command-line utility
@@ -5244,12 +5252,13 @@ state hash. Doing this for each access in sequence yields the state hash
 at the end of the step.
 
 The method
-`machine:verify_step_uarch(<state_hash_before>, <access_log>, <state_hash_after>)`
+`machine:verify_step_uarch(<state_hash_before>, <access_log>[, <state_hash_after>])`
 performs this verification, additionally checking that the accesses
 correspond to the operation of the Cartesi Machine uarch starting from
-`<state_hash_before>`. Note there is no need for a Cartesi Machine
-instance to verify a transition: all required state information is in
-the access log.
+`<state_hash_before>`. It returns the state hash at the end of the step,
+and checks it against `<state_hash_after>` when the optional argument is
+given. Note there is no need for a Cartesi Machine instance to verify a
+transition: all required state information is in the access log.
 
 The following script illustrates the verification of a state transition.
 
@@ -6212,6 +6221,18 @@ Machines](#rolling-cartesi-machines). First, encode two advance-state
 requests and one inspect-state query:
 
 ``` bash
+cartesi-rollup-data.lua encode advance > input-0.bin <<EOF
+{
+  "chain_id": 0,
+  "app_contract": "0x0000000000000000000000000000000000000000",
+  "msg_sender": "$(printf '0x%040d' 0)",
+  "block_number": 0,
+  "block_timestamp": 0,
+  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "index": 0,
+  "payload": "$(printf 'notice:hello from input 0' | hex --encode)"
+}
+EOF
 cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
 {
   "chain_id": 0,
@@ -6221,18 +6242,6 @@ cartesi-rollup-data.lua encode advance > input-1.bin <<EOF
   "block_timestamp": 0,
   "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
   "index": 1,
-  "payload": "$(printf 'notice:hello from input 1' | hex --encode)"
-}
-EOF
-cartesi-rollup-data.lua encode advance > input-2.bin <<EOF
-{
-  "chain_id": 0,
-  "app_contract": "0x0000000000000000000000000000000000000000",
-  "msg_sender": "$(printf '0x%040d' 2)",
-  "block_number": 0,
-  "block_timestamp": 0,
-  "prev_randao": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index": 2,
   "payload": "$(printf 'something the puppet does not understand' | hex --encode)"
 }
 EOF
@@ -6266,14 +6275,14 @@ cartesi-machine \
     --no-init-splash \
     --remote-address=127.0.0.1:8086 \
     --remote-shutdown \
-    --cmio-advance-state=input_index_begin:1,input_index_end:3,hashes \
+    --cmio-advance-state=input_index_begin:0,input_index_end:2,hashes \
     --cmio-inspect-state=hashes \
     --final-hash \
     -- /home/dapp/puppet
 ```
 
-The payload of `input-1.bin` is `notice:hello from input 1`, so the
-`puppet` emits a single notice and accepts. The payload of `input-2.bin`
+The payload of `input-0.bin` is `notice:hello from input 0`, so the
+`puppet` emits a single notice and accepts. The payload of `input-1.bin`
 does not match any known verb, so the `puppet` rejects the advance-state
 request and the client rolls the machine state back, discarding any
 side-effects from its processing. The contents of `query.bin` are echoed
@@ -6288,30 +6297,30 @@ Connected to JSONRPC remote cartesi machine at '127.0.0.1:8086'
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 48382208
 
-Before input 1
+Before input 0
 48382208: 5f4ad6f759ce8ad60abe2bb090860365f04d1b160d97f4c35ed94cffe1b2aa83
-48382208: 7da018fc4e2a12d57824abb383d1a16febc8064d34e1ac60b347bbc948c76e22
+48382208: 7c69273fd8ca1837fea1650fe3d1cfe7fba946140c87d48f25a3c0bec8130f9f
 
 Automatic yield tx-output (2) (0x000064 data)
 Cycles: 48400380
 
 Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 50514460
-Storing output-0-input-1.bin
-Storing input-1-output-hashes-root-hash.bin
-Storing input-1-output-hashes-root-hash-proof.lua
+Storing output-0-input-0.bin
+Storing input-0-output-hashes-root-hash.bin
+Storing input-0-output-hashes-root-hash-proof.lua
 
-Before input 2
-50514460: 342173927e81422ade8629498d2f66244facf600aea30638bf7cda20c2b92de3
-50514460: 087dd54a60b7b82e96afa14289889f6e8de462fea4b35bf36fc0e938f68c4072
+Before input 1
+50514460: 9c906340f96ad871fd0d0fb721262f72aebcfa47048555aeeb8355785ad09f4c
+50514460: 9f6bea31aa00e5073a55fe929013be28c5a02eb74b71e87eafd2d3b47004e2e7
 
 Manual yield rx-rejected (2) (0x000000 data)
 Cycles: 50518409
-Storing output-0-input-1-proof.lua
+Storing output-0-input-0-proof.lua
 
 Before query
-50514460: 342173927e81422ade8629498d2f66244facf600aea30638bf7cda20c2b92de3
-50514460: 83c7adc1847622baada5bf72b840080aa3c0b42e8f3d1749a3203166957d36a3
+50514460: 9c906340f96ad871fd0d0fb721262f72aebcfa47048555aeeb8355785ad09f4c
+50514460: bc087724f1f75f02e6e79cb97d11c36de7148c91f19415fe8f074a4defcadc7e
 
 Automatic yield tx-report (4) (0x000011 data)
 Cycles: 50515672
@@ -6321,7 +6330,7 @@ Manual yield rx-accepted (1) (0x000020 data)
 Cycles: 50516762
 
 After query
-50514460: 342173927e81422ade8629498d2f66244facf600aea30638bf7cda20c2b92de3
+50514460: 9c906340f96ad871fd0d0fb721262f72aebcfa47048555aeeb8355785ad09f4c
 Shutdown JSONRPC remote cartesi machine at '127.0.0.1:8086'
 ```
 
@@ -6334,34 +6343,34 @@ produced. The advance-state request carries the command `puppet` acted
 on
 
 ``` bash
-cartesi-rollup-data.lua decode advance < input-1.bin
+cartesi-rollup-data.lua decode advance < input-0.bin
 ```
 
 ``` js
 {
   "chain_id":0,
   "app_contract":"0x0000000000000000000000000000000000000000",
-  "msg_sender":"0x0000000000000000000000000000000000000001",
+  "msg_sender":"0x0000000000000000000000000000000000000000",
   "block_number":0,
   "block_timestamp":0,
   "prev_randao":"0x0000000000000000000000000000000000000000000000000000000000000000",
-  "index":1,
-  "payload":"0x6e6f746963653a68656c6c6f2066726f6d20696e7075742031"
+  "index":0,
+  "payload":"0x6e6f746963653a68656c6c6f2066726f6d20696e7075742030"
 }
 ```
 
 The payload field carries the hex encoding of the bytes
-`notice:hello from input 1`, which the `puppet` parsed as a command to
-emit a notice with payload `hello from input 1`.
+`notice:hello from input 0`, which the `puppet` parsed as a command to
+emit a notice with payload `hello from input 0`.
 
 Notices and reports carry only a payload, which we recover with
 
 ``` bash
-cartesi-rollup-data.lua decode notice < output-0-input-1.bin | jq -j .payload | hex --decode
+cartesi-rollup-data.lua decode notice < output-0-input-0.bin | jq -j .payload | hex --decode
 ```
 
 ``` text
-hello from input 1
+hello from input 0
 ```
 
 ``` bash
@@ -8137,7 +8146,7 @@ hash occupied the CMIO tx buffer. For each output, it saved an output
 proof. Through `--final-hash`, it also saved the machine state hash the
 epoch settled on. The output proofs are built against the epoch’s final
 output hashes root hash. They therefore pair with the output hashes root
-hash proof from the last accepted input, input 3. The following script
+hash proof from the last accepted input, input 2. The following script
 verifies output 0 from the settled state hash and those artifacts alone,
 without instantiating any machine.
 
@@ -8185,10 +8194,10 @@ calculator saved
 
 ``` bash
 lua5.4 verify-output-proof.lua \
-    epoch-1-state-hash.bin \
-    input-3-output-hashes-root-hash-proof.lua \
-    output-0-input-1-proof.lua \
-    output-0-input-1.bin
+    epoch-0-state-hash.bin \
+    input-2-output-hashes-root-hash-proof.lua \
+    output-0-input-0-proof.lua \
+    output-0-input-0.bin
 ```
 
 produces the output
@@ -8202,20 +8211,23 @@ output 0 verified against the machine state hash
 The question now becomes how the blockchain can identify the honest
 party when there are two opinions on the final state hash of a Cartesi
 Machine, for a computation the blockchain itself is unable to perform.
-This is the role of the verification game, an [established
-technique](https://doi.org/10.1016/j.ic.2013.03.003) on which our
-original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds.
-It rests on one assumption, that at least one of the two parties is
-honest.
+Cartesi is based on *fraud proofs*, a group of approaches through which
+a an honest party can show, publicly, that a dishonest party has not
+performed the expected computation correctly by pinpointing an incorrect
+state transition within it. The [verification
+game](https://doi.org/10.1016/j.ic.2013.03.003) technique, on which our
+original [whitepaper](https://cartesi.io/cartesi_whitepaper.pdf) builds,
+is a well-established fraud proof strategy. It rests on one assumption,
+that at least one of the two parties is honest.
 
-The `verification-game.lua` recipe is a self-contained model of it. A
-referee, standing in for the Cartesi contracts deployed on the
-blockchain, mediates a dispute between two players, each standing in for
-a Cartesi Node that ran the computation off-chain. The three are
-separate processes that communicate over the network, which here stands
-in for blockchain transactions. The referee never trusts a player. The
-two players run identical code and differ only in the machine they hold.
-One is honest, the other cheats past a chosen point by switching to a
+The `verification-game.lua` script implements this strategy. A referee,
+standing in for the Cartesi contracts deployed on the blockchain,
+mediates a dispute between two players, each standing in for a Cartesi
+Node that ran the computation off-chain. The three are separate
+processes that communicate over the network, which here stands in for
+blockchain transactions. The referee never trusts a player. The two
+players run identical code and differ only in the machine they hold. One
+is honest, the other cheats past a chosen point by switching to a
 machine that ran a different expression.
 
 The game opens with each player committing the final state hash of its
@@ -8248,16 +8260,18 @@ local function adjudicate_dispute(players, initial_hash)
 
     -- Bisect to the disputed main-processor instruction.
     bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, state)
+    local mcycle = state.lo
     -- Narrow down to the microarchitecture instruction.
     bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
+    local uarch_cycle = state.lo
 
-    -- A converged cycle of UARCH_CYCLE_MAX-1 means the disputed transition is the reset, else a step.
+    -- A converged cycle of UARCH_CYCLE_MAX-1 means the disputed transition ends in the reset, else it is a step.
     phase("verdict")
-    local log = wait_for_log(players[1], state.branch, state.lo)
+    local log = wait_for_log(players[1], state.branch, mcycle, uarch_cycle)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(state.lo, state.last_agreed_hash, log, state.hash_after) and players[1]
+    local winner = verify_state_transition(uarch_cycle, state.last_agreed_hash, log, state.hash_after) and players[1]
         or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
@@ -8293,38 +8307,43 @@ end
 The main processor has a fixed-point property once the machine halts.
 Running it for more `mcycle`s leaves the state, and therefore the hash,
 unchanged. Likewise, the uarch has a fixed-point property once it halts.
-Running it for more `uarch_cycle`s leaves the state unchanged, until a
-reset begins the next main processor instruction. This is what lets each
-bisection range over the full cycle ceiling without knowing in advance
-where either machine halts. A midpoint past a halt simply repeats the
-final hash, and the disagreement is still found at the cycle where the
-two computations diverge.
+Running it for more `uarch_cycle`s leaves the state unchanged. This is
+what lets each bisection range over the full cycle ceiling without
+knowing in advance where either machine halts. A midpoint past a halt
+simply repeats the final hash, and the disagreement is still found at
+the cycle where the two computations diverge.
 
 ### Verifying the state transition
 
 Once a single `uarch_cycle` is in dispute, the referee asks the player
-on the disagreeing side for the access log of the transition out of it,
-and verifies that log without ever instantiating a machine. This stands
-for a Cartesi contract that can verify such logs directly on the
-blockchain. The transition is either an ordinary uarch step or the
-terminal reset that begins the next main processor instruction. Which
-one it is depends only on the agreed cycle, since the only transition
-out of `cartesi.UARCH_CYCLE_MAX - 1` is the reset, so the referee checks
-the log with `verify_reset_uarch` at that boundary and
-`verify_step_uarch` everywhere else. If the log proves that the agreed
-before-hash advances to the player’s committed after-hash, that player
-was honest, otherwise the other one is assumed to be.
+on the disagreeing side for the access logs of the transition out of it,
+and verifies them without ever instantiating a machine. This stands for
+a Cartesi contract that can verify such logs directly on the blockchain.
+The transition is either a single ordinary uarch step or, out of
+`cartesi.UARCH_CYCLE_MAX - 1`, when the uarch has long since halted, an
+additional uarch reset that prepares the next main processor
+instruction. Which form applies depends only on the agreed cycle, so the
+referee always checks the step with `verify_step_uarch`, chaining
+`verify_reset_uarch` after it for the transition that closes the
+instruction. Each verification starts from a state hash and returns the
+hash the log provably advances it to, which is what lets the reset
+verification start where the step verification ended. If the logs prove
+that the agreed before-hash advances to the player’s committed
+after-hash, that player was honest, otherwise, by assumption, the other
+one is.
 
 ``` lua
 local function verify_state_transition(uarch_cycle, state_hash_before, log, state_hash_after)
-    local pass
-    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
-        eventf("Verifying uarch reset log!")
-        pass = pcall(cartesi.machine.verify_reset_uarch, cartesi.machine, state_hash_before, log, state_hash_after)
-    else
+    local machine = cartesi.machine
+    local pass = pcall(function()
         eventf("Verifying uarch step log!")
-        pass = pcall(cartesi.machine.verify_step_uarch, cartesi.machine, state_hash_before, log, state_hash_after)
-    end
+        local hash = machine:verify_step_uarch(state_hash_before, log.step_log)
+        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+            eventf("Verifying uarch reset log!")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
+        end
+        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+    end)
     eventf("Log is %s!", pass and "valid" or "invalid")
     return pass
 end
@@ -8435,15 +8454,16 @@ before the true one is accepted.
 That dispute resolved on an ordinary uarch step, since the cheat point
 fell early in the disputed instruction’s uarch cycles. Cheating instead
 at the last uarch cycle, `cartesi.UARCH_CYCLE_MAX - 1`, moves the
-disagreement onto the terminal reset that begins the next instruction,
-the case the referee checks with `verify_reset_uarch`:
+disagreement onto the transition that closes the instruction, the case
+the referee checks with `verify_step_uarch` followed by
+`verify_reset_uarch`:
 
 ``` bash
 lua5.4 verification-game.lua dishonest 127.0.0.1:8088 "6*2^1024 + 3*2^512" 25 "$last_uarch_cycle" "2+2"
 ```
 
 This time the uarch bisection climbs to the reset boundary and the
-honest player’s reset log verifies just the same:
+honest player’s step and reset logs verify just the same:
 
 ``` text
 uarch_cycle bisection round 1, interval of disagreement is [0x80000, 0x100000]
@@ -8454,10 +8474,532 @@ uarch_cycle bisection round 18, interval of disagreement is [0xffffc, 0x100000]
 uarch_cycle bisection round 19, interval of disagreement is [0xffffe, 0x100000]
 uarch_cycle bisection round 20, interval of disagreement is [0xfffff, 0x100000]
 Player 1 posted log
+Verifying uarch step log!
 Verifying uarch reset log!
 Log is valid!
 Player 1 wins! Final state hash is 0x4007fa51....
 ```
+
+## Rolling verification game
+
+The verification game above settles the result of a single computation
+executed inside a Cartesi Machine that runs until it halts. We will now
+show how to settle an entire epoch of a Rolling Cartesi Machine. The
+`rolling-verification-game.lua` script extends the game to this setting.
+The referee, the players, and the network between them stand in for the
+same parties as before, and the referee still never trusts a player.
+
+The state an epoch starts from is settled. It is either the stored
+[template](#rolling-cartesi-machine-templates) at genesis or the settled
+result of the previous epoch. All advance-state inputs in an epoch are
+posted to the blockchain. These include not only the payload, but also
+the other fields in the ABI-encoded `EvmAdvance`, which are set by the
+blockchain itself. The referee therefore knows the agreed initial state
+hash and the contents of every input in the epoch.
+
+As before, the game opens with each player committing a final state
+hash, now the hash of the state in which the epoch’s last input is done
+processing. We again assume one of the players is honest.
+
+In this demonstration, the epoch under dispute is the calculator’s
+[first epoch](#rolling-cartesi-machines). The referee and the players
+receive the epoch’s inputs in the command line, as the same encoded
+files the calculator processed, standing in for the record the
+blockchain keeps.
+
+### Settling a dispute
+
+The epoch under dispute is settled in three bisections rather than two.
+The first ranges over the epoch’s inputs and isolates the input whose
+processing the players disagree on. The second ranges over `mcycle`,
+counted as an offset from the value it had when the disputed input
+arrived, and isolates the disputed main processor instruction. The third
+ranges over `uarch_cycle` and isolates the disputed uarch step, as
+before. Just as the verification game limits each main processor
+instruction to 2<sup>20</sup> uarch cycles, the rolling verification
+game limits each input to 2<sup>48</sup> mcycles and each epoch to
+2<sup>16</sup> inputs. Every transition in the epoch is then identified
+by three coordinates: the input index, the mcycle offset within that
+input, and the uarch cycle within that instruction. Each bisection
+searches one of them.
+
+The uarch reset keeps the place it had in the verification game, sharing
+the transition out of `cartesi.UARCH_CYCLE_MAX - 1` with a step of the
+long-halted uarch. The inclusion of an input advances no cycle counter
+either, and shares a transition the same way. The transition out of
+input boundary *i*, with inputs numbered from 0, includes input *i* and
+performs the first uarch step of the instruction that resumes the
+machine. This division of the epoch is the one used by the [state
+transition](https://github.com/cartesi/dave/blob/main/prt/contracts/src/state-transition/CartesiStateTransition.sol)
+that Dave, the implementation mentioned at the end of this section,
+deploys on the blockchain.
+
+The referee runs the three bisections in turn, reusing `bisect_level`
+unchanged, then verifies the transition out of the position they
+converged on:
+
+``` lua
+local function adjudicate_dispute(players, initial_hash, dapp_contract)
+    local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
+
+    -- Bisect to the disputed input, then to the disputed main-processor instruction within it,
+    -- and finally to the disputed microarchitecture instruction.
+    bisect_level(players, "input", INPUTS_PER_EPOCH, state)
+    local input = state.lo
+    bisect_level(players, "mcycle", MCYCLES_PER_INPUT, state)
+    local mcycle_offset = state.lo
+    bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
+    local uarch_cycle = state.lo
+
+    phase("verdict")
+    local log = wait_for_log(players[1], state.branch, mcycle_offset, uarch_cycle)
+    eventf("Player 1 posted logs")
+
+    -- Player 1 won if its logs verify against the agreed before-hash, otherwise player 2 is honest.
+    local winner = verify_state_transition(
+        dapp_contract,
+        input,
+        mcycle_offset,
+        uarch_cycle,
+        state.last_agreed_hash,
+        log,
+        state.hash_after
+    ) and players[1] or players[2]
+    eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
+    return winner
+end
+```
+
+### Bisecting over inputs
+
+The input bisection ranges over input boundaries, the machine states in
+which the first *i* inputs, and no others, are done processing. An input
+boundary is a machine that has yielded manual with accept and is waiting
+for the next input. The emulator does not run a machine that has yielded
+manual, so input boundaries are fixed points.
+
+The bisection ranges over all 2<sup>16</sup> input indices, not just the
+inputs the epoch received. A boundary past the last input has no input
+to include, so the transition out of it is the first uarch step alone.
+The uarch runs only far enough to find the machine yielded manual and
+halts, leaving the main processor untouched, and the reset that ends the
+instruction returns it to pristine. Every boundary past the last input
+therefore repeats the state in which the last input is done processing,
+the same way every `mcycle` past the halt repeated the final state in
+the verification game. This is also how the state transition Dave
+deploys behaves when the input index falls outside the epoch’s input
+box.
+
+Rejected inputs also end at input boundaries. Recall that
+`machine:send_cmio_response()` records a revert state hash, and rejects
+any value other than the hash of the machine receiving the input. When
+the guest rejects an input, the transitions that process it lead back to
+this recorded revert state, so the boundary that follows a rejected
+input is the boundary that preceded it. No emulator operation moves a
+machine backwards, however, so producing the reverted state is left to
+the client code. This is why a Cartesi Node keeps a snapshot of the
+machine while an input is processed, and the players of this game do the
+same. Each player crosses one input with `advance`:
+
+``` lua
+local function advance(player, machine, data, sink)
+    if not data then
+        return machine
+    end
+    local _, yield_reason = machine:receive_cmio_request()
+    if yield_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        return machine, yield_reason
+    end
+    local snapshot = assert(machine:fork_server())
+    machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
+    run_to(machine, machine:read_reg("mcycle") + MCYCLES_PER_INPUT, sink)
+    local _, verdict, accept_data = machine:receive_cmio_request()
+    if verdict == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED or player.no_rollback then
+        snapshot:shutdown_server()
+        return machine, verdict, accept_data
+    end
+    machine:shutdown_server()
+    return snapshot, verdict
+end
+```
+
+A machine that rejects its input is discarded, and the snapshot taken
+when the input was fed, a machine standing at the recorded revert state,
+takes its place. A dishonest player could skip this and keep the
+rejecting machine instead, and we will later see the referee catch one
+that does.
+
+### Bisecting within an input
+
+The mcycle bisection ranges over the disputed input’s 2<sup>48</sup>
+mcycles. The input is included by the first of these transitions, so the
+state at offset *m* is the input boundary, fed, and run for *m* mcycles.
+The calculator is done with each input within about 50 million mcycles,
+after which the machine has yielded manual and no longer advances. A
+midpoint past the yield therefore repeats the yielded state, and the
+bisection ranges over the full ceiling without knowing where the guest
+yields, exactly as the halt allowed in the verification game. The
+uarch_cycle bisection that follows is unchanged, over the 2<sup>20</sup>
+uarch cycles of the disputed instruction. A single player operation
+serves the three levels:
+
+``` lua
+local function commit_bisection(player, branch, level, target)
+    take_branch(player, branch)
+    local agreed = player.agreed
+    if level == "input" then
+        local machine = assert(agreed.machine:fork_server())
+        for index = agreed.input_index + 1, target do
+            machine = advance(player, machine, player.inputs[index])
+        end
+        player.tentative = { machine = machine, input_index = target }
+    else
+        -- The first round below the input level pins the disputed input and its boundary.
+        local boundary = player.boundary
+            or {
+                machine = assert(agreed.machine:fork_server()),
+                mcycle = agreed.machine:read_reg("mcycle"),
+                data = player.inputs[agreed.input_index + 1],
+            }
+        player.boundary = boundary
+        local machine = assert(agreed.machine:fork_server())
+        if not agreed.offset and boundary.data then
+            machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, boundary.data)
+        end
+        local offset = agreed.offset or 0
+        if level == "mcycle" then
+            offset = target
+            if run_to(machine, boundary.mcycle + target) == cartesi.BREAK_REASON_YIELDED_MANUALLY then
+                local _, yield_reason = machine:receive_cmio_request()
+                if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED and not player.no_rollback then
+                    machine:shutdown_server()
+                    machine = assert(boundary.machine:fork_server())
+                end
+            end
+        else
+            machine:run_uarch(target)
+        end
+        player.tentative = { machine = machine, input_index = agreed.input_index, offset = offset }
+    end
+    return player.tentative.machine:get_root_hash()
+end
+```
+
+The first round below the input level keeps a fork of the disputed
+input’s boundary. A round that finds the guest rejecting the input
+answers with a fresh fork of that boundary, the recorded revert state. A
+fork that still stands at the boundary includes the input before
+running, at both lower levels, and the offset promoted along with each
+fork guarantees the input is included exactly once.
+
+### Verifying the disputed transition
+
+Once the bisections converge, the mcycle offset and uarch cycle they
+agreed on determine the form of the disputed transition, and the referee
+asks player 1 for the matching logs:
+
+``` lua
+local function commit_log(player, branch, mcycle_offset, uarch_cycle)
+    take_branch(player, branch)
+    local agreed = player.agreed.machine
+    if mcycle_offset == 0 and uarch_cycle == 0 and player.boundary.data then
+        local send_cmio_log = agreed:log_send_cmio_response(
+            agreed:get_root_hash(),
+            cartesi.HTIF_YIELD_REASON_ADVANCE_STATE,
+            player.boundary.data
+        )
+        return { send_cmio_log = send_cmio_log, step_log = agreed:log_step_uarch() }
+    end
+    if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+        local step_log = agreed:log_step_uarch()
+        return { step_log = step_log, reset_log = agreed:log_reset_uarch() }
+    end
+    return { step_log = agreed:log_step_uarch() }
+end
+```
+
+A combined transition is committed as its two access logs.
+
+The referee verifies the logs on their own, again without ever
+instantiating a machine, each verification starting from the hash the
+previous one returned:
+
+``` lua
+local function verify_state_transition(
+    dapp_contract,
+    input,
+    mcycle_offset,
+    uarch_cycle,
+    state_hash_before,
+    log,
+    state_hash_after
+)
+    local machine = cartesi.machine
+    local data = dapp_contract.inputs[input + 1]
+    local pass = pcall(function()
+        local hash = state_hash_before
+        if mcycle_offset == 0 and uarch_cycle == 0 and data then
+            eventf("Verifying input inclusion log!")
+            local reason = cartesi.HTIF_YIELD_REASON_ADVANCE_STATE
+            hash = machine:verify_send_cmio_response(hash, reason, data, hash, log.send_cmio_log)
+        end
+        eventf("Verifying uarch step log!")
+        hash = machine:verify_step_uarch(hash, log.step_log)
+        if uarch_cycle == cartesi.UARCH_CYCLE_MAX - 1 then
+            eventf("Verifying uarch reset log!")
+            hash = machine:verify_reset_uarch(hash, log.reset_log)
+        end
+        assert(hash == state_hash_after, "log does not reach the committed after-hash")
+    end)
+    eventf("Log is %s!", pass and "valid" or "invalid")
+    return pass
+end
+```
+
+For the transition that includes the input, the referee passes the
+agreed before-hash twice, once as the state the input arrives in and
+once as the revert state hash the operation must record, the same
+restriction `machine:send_cmio_response()` imposes. The disputed input
+is named by its index and taken from the dapp contract, which owns its
+own encoding of the epoch’s inputs, just as the blockchain does. A
+dishonest player can post a valid log of a machine including some other
+input, but no such log replays against the input the blockchain knows.
+When the contract holds no input at the disputed index, the epoch ended
+before it, there is nothing to include, and the transition out of the
+boundary is checked as an ordinary uarch step.
+
+For the transition that resets the uarch, `verify_reset_uarch` settles
+rejected inputs by itself. Replaying a reset from a state that has
+yielded manual with reject ends at the recorded revert state hash,
+rather than at the state with a pristine microarchitecture, so the
+processing of a rejected input ends at the boundary it started from, as
+the input bisection expects. Every other transition is a single uarch
+step, checked with `verify_step_uarch` as before.
+
+### Verifying an epoch result
+
+Naming the winner settles the epoch’s final state hash, and with it
+every output the epoch produced. The verification game extracted its
+result directly from the winner’s output drive. The outputs of a Rolling
+Cartesi Machine are verified as in [Output
+verification](#output-verification) instead, by an output hashes root
+hash proof that ties the root of the output hashes tree to the final
+state hash, and an output proof that places the output’s hash among that
+tree’s leaves. The honest player collects both proofs while committing,
+processing the epoch the same way the [output proofs](#output-proofs)
+script did: it folds each accepted input’s outputs into a frontier,
+checks the resulting root hash against the one the guest reports, saves
+the tx-buffer word proof from the accepting state, and produces the
+output proofs once the epoch closes. The referee accepts the first
+result that verifies against the winner’s final hash:
+
+``` lua
+local function verify_result(result, final_hash)
+    local output_hashes_root_hash_proof, output_proof = result.output_hashes_root_hash_proof, result.output_proof
+    return output_hashes_root_hash_proof.root_hash == final_hash
+        and output_hashes_root_hash_proof.log2_root_size == cartesi.HASH_TREE_LOG2_ROOT_SIZE
+        and output_hashes_root_hash_proof.target_address == cartesi.AR_CMIO_TX_BUFFER_START
+        and output_hashes_root_hash_proof.log2_target_size == cartesi.HASH_TREE_LOG2_WORD_SIZE
+        and pcall(hash_tree.verify_slice, output_hashes_root_hash_proof)
+        and cartesi.keccak256(output_proof.root_hash) == output_hashes_root_hash_proof.target_hash
+        and pcall(hash_tree.verify_slice, output_proof)
+        and cartesi.keccak256(result.output) == output_proof.target_hash
+end
+```
+
+### Running the rolling game
+
+The rolling game runs over `input-0.bin` to `input-2.bin`, the second of
+which the guest rejects. In the verification game, the honest player
+connected first and the referee verified its logs. This time the
+dishonest player connects first, so that every verdict follows from the
+failure of the cheater’s own logs. There are four ways to cheat. The
+first three make the dispute converge on each form the disputed
+transition can take, and the last claims an input the epoch never
+received.
+
+The first dishonest player cheats in the inputs alone. It runs the
+honest code over the wrong inputs, claiming input 2, the epoch’s last,
+asked for `2^1024` rather than `2^2048`. The input it wishes had been
+posted is fabricated as `fake-input-2.bin`, mirroring the fields of the
+real input 2 with the cheat payload. To run the game, start the referee,
+giving it the epoch’s input files:
+
+``` bash
+lua5.4 rolling-verification-game.lua referee 127.0.0.1:8090 \
+    input-0.bin input-1.bin input-2.bin
+```
+
+then the dishonest player, which connects first to become player 1:
+
+``` bash
+lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8090 wrong-input 2 fake-input-2.bin \
+    input-0.bin input-1.bin input-2.bin
+```
+
+and finally the honest player:
+
+``` bash
+lua5.4 rolling-verification-game.lua honest 127.0.0.1:8090 \
+    input-0.bin input-1.bin input-2.bin
+```
+
+The referee narrates the dispute from start to finish:
+
+``` text
+Player 1 posted final state hash 0x108a8373....
+Player 2 posted final state hash 0x42f585d3....
+input bisection round 1, interval of disagreement is [0x0, 0x8000]
+input bisection round 2, interval of disagreement is [0x0, 0x4000]
+input bisection round 3, interval of disagreement is [0x0, 0x2000]
+...
+input bisection round 14, interval of disagreement is [0x0, 0x4]
+input bisection round 15, interval of disagreement is [0x2, 0x4]
+input bisection round 16, interval of disagreement is [0x2, 0x3]
+mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
+mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
+mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
+...
+mcycle bisection round 46, interval of disagreement is [0x0, 0x4]
+mcycle bisection round 47, interval of disagreement is [0x0, 0x2]
+mcycle bisection round 48, interval of disagreement is [0x0, 0x1]
+uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x80000]
+uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x40000]
+uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x20000]
+...
+uarch_cycle bisection round 18, interval of disagreement is [0x0, 0x4]
+uarch_cycle bisection round 19, interval of disagreement is [0x0, 0x2]
+uarch_cycle bisection round 20, interval of disagreement is [0x0, 0x1]
+Player 1 posted logs
+Verifying input inclusion log!
+Log is invalid!
+Player 2 wins! Final state hash is 0x42f585d3....
+Result posted:
+179769313486231590772930519078902473361797697894230657273430081157732675805500963132708477322407536021120113879871393357658789768814416622492847430639474124377767893424865485276302219601246094119453082952085005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216Rejected!
+Result posted:
+32317006071311007300714876688669951960444102669715484032130345427524655138867890893197201411522913463688717960921898019494119559150490921095088152386448283120630877367300996091750197750389652106796057638384067568276792218642619756161838094338476170470581645852036305042887575891541065808607552399123930385521914333389668342420684974786564569494856176035326322058077805659331026192708460314150258592864177116725943603718461857357598351152301645904403697613233287231227125684710820209725157101726931323469678542580656697935045997268352998638215525166389437335543602135433229604645318478604952148193555853611059596230656Accepted!
+```
+
+The input bisection converges on input 2. It crosses the rejected input
+1 undisturbed, both players agreeing that its boundary repeats the one
+before it. The mcycle and uarch_cycle bisections both collapse to zero,
+since the players disagree on every state past the inclusion of the
+input. The logs player 1 posts are valid, a machine fed `2^1024` indeed
+transitions this way, but they do not replay against the true input 2,
+and the referee rejects them. The dishonest player’s result is rejected
+just the same, before the honest player’s result verifies against the
+settled hash. The settled hash is the one the calculator’s run saved as
+`epoch-0-state-hash.bin`, the dispute ends on the same state the direct
+run produced.
+
+The second dishonest player runs the honest code over the true inputs,
+but keeps the rejecting machine when the guest rejects input 1:
+
+``` bash
+lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8091 no-rollback \
+    input-0.bin input-1.bin input-2.bin
+```
+
+The two machines are now identical, and the players differ only in what
+they post for the states that follow the rejection, the recorded revert
+state on the honest side, the rejecting machine on the dishonest one.
+The mcycle bisection converges on the instruction in which the guest
+yields its rejection, and the uarch_cycle bisection climbs to the reset
+that ends it, the players agreeing on every uarch cycle before it:
+
+``` text
+input bisection round 16, interval of disagreement is [0x1, 0x2]
+mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
+mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
+mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
+...
+mcycle bisection round 46, interval of disagreement is [0x2ccc46c, 0x2ccc470]
+mcycle bisection round 47, interval of disagreement is [0x2ccc46e, 0x2ccc470]
+mcycle bisection round 48, interval of disagreement is [0x2ccc46f, 0x2ccc470]
+uarch_cycle bisection round 1, interval of disagreement is [0x80000, 0x100000]
+uarch_cycle bisection round 2, interval of disagreement is [0xc0000, 0x100000]
+uarch_cycle bisection round 3, interval of disagreement is [0xe0000, 0x100000]
+...
+uarch_cycle bisection round 18, interval of disagreement is [0xffffc, 0x100000]
+uarch_cycle bisection round 19, interval of disagreement is [0xffffe, 0x100000]
+uarch_cycle bisection round 20, interval of disagreement is [0xfffff, 0x100000]
+Player 1 posted logs
+Verifying uarch step log!
+Verifying uarch reset log!
+Log is invalid!
+Player 2 wins! Final state hash is 0x42f585d3....
+```
+
+The uarch step in player 1’s logs verifies, but the reset replays to the
+recorded revert state hash, the value the honest player posted, and the
+verification rejects the after-hash player 1 committed.
+
+The third dishonest player cheats like the one in the verification game,
+switching to a machine fed a fabricated `2+2` input in place of input 2,
+at mcycle offset 25 and uarch cycle 7 of its processing:
+
+``` bash
+lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8092 mid-processing 2 25 7 fake-input-2.bin \
+    input-0.bin input-1.bin input-2.bin
+```
+
+The dispute crosses the three levels and converges on an ordinary uarch
+step, and player 1’s log fails `verify_step_uarch`:
+
+``` text
+input bisection round 16, interval of disagreement is [0x2, 0x3]
+mcycle bisection round 1, interval of disagreement is [0x0, 0x800000000000]
+mcycle bisection round 2, interval of disagreement is [0x0, 0x400000000000]
+mcycle bisection round 3, interval of disagreement is [0x0, 0x200000000000]
+...
+mcycle bisection round 46, interval of disagreement is [0x18, 0x1c]
+mcycle bisection round 47, interval of disagreement is [0x18, 0x1a]
+mcycle bisection round 48, interval of disagreement is [0x19, 0x1a]
+uarch_cycle bisection round 1, interval of disagreement is [0x0, 0x80000]
+uarch_cycle bisection round 2, interval of disagreement is [0x0, 0x40000]
+uarch_cycle bisection round 3, interval of disagreement is [0x0, 0x20000]
+...
+uarch_cycle bisection round 18, interval of disagreement is [0x4, 0x8]
+uarch_cycle bisection round 19, interval of disagreement is [0x6, 0x8]
+uarch_cycle bisection round 20, interval of disagreement is [0x7, 0x8]
+Player 1 posted logs
+Verifying uarch step log!
+Log is invalid!
+Player 2 wins! Final state hash is 0x42f585d3....
+```
+
+The last dishonest player claims the epoch received a fourth input, a
+fabricated `3*5` request that was never posted:
+
+``` bash
+lua5.4 rolling-verification-game.lua dishonest 127.0.0.1:8093 extra-input fake-input-3.bin \
+    input-0.bin input-1.bin input-2.bin
+```
+
+The input bisection walks past the epoch’s end and isolates input 3. The
+boundaries the honest player posts there all repeat the state in which
+input 2 is done processing, while the dishonest machine took the extra
+input, so the two lower bisections collapse to zero as in the first run:
+
+``` text
+input bisection round 1, interval of disagreement is [0x0, 0x8000]
+input bisection round 2, interval of disagreement is [0x0, 0x4000]
+input bisection round 3, interval of disagreement is [0x0, 0x2000]
+...
+input bisection round 14, interval of disagreement is [0x0, 0x4]
+input bisection round 15, interval of disagreement is [0x2, 0x4]
+input bisection round 16, interval of disagreement is [0x3, 0x4]
+Player 1 posted logs
+Verifying uarch step log!
+Log is invalid!
+Player 2 wins! Final state hash is 0x42f585d3....
+```
+
+The dishonest player posts the logs of including its extra input. The
+referee, however, holds no input 3, so the disputed transition is an
+ordinary uarch step out of the yielded boundary, and the posted step
+log, which leaves a machine that just took an input, does not replay
+from it.
 
 For simplicity this model uses only two players, but the same idea is
 the basis for efficient algorithms that resolve disputes among many
