@@ -315,21 +315,21 @@ end
 -- and the small uarch bounds reduce to ordinary arithmetic. Each round is narrated into the
 -- level's own phase file, so the rendered walkthrough can show just its ends.
 -- docs:begin bisect_level
-local function bisect_level(players, level, hi, state)
+local function bisect_level(players, level, hi, bisection)
     phase("bisect_" .. level)
     local lo, round = 0, 0
     while math.ult(1, hi - lo) do
         local mid = lo + ((hi - lo) >> 1)
-        local hash = wait_for_bisection(players, state.branch, level, mid)
+        local hash = wait_for_bisection(players, bisection.branch, level, mid)
         if hash[1] == hash[2] then
-            lo, state.last_agreed_hash, state.branch = mid, hash[1], "agree"
+            lo, bisection.last_agreed_hash, bisection.branch = mid, hash[1], "agree"
         else
-            hi, state.hash_after, state.branch = mid, hash[1], "disagree"
+            hi, bisection.hash_after, bisection.branch = mid, hash[1], "disagree"
         end
         round = round + 1
         eventf("%s bisection round %d, interval of disagreement is [0x%x, 0x%x]", level, round, lo, hi)
     end
-    state.lo = lo
+    return lo
 end
 -- docs:end bisect_level
 

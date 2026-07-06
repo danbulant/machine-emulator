@@ -11,6 +11,8 @@
 -- recognizes the cheat input by its bytes, feeds the cheat machine a doctored input in its
 -- place, and positions it right after. Recognizing the input by its bytes survives rollbacks,
 -- since a rolled-back feed disappears with the fork that made it.
+-- Every mutable field lives in the instance's single data table, so forking copies it whole
+-- and trading places with another composite swaps it whole, with no field list to maintain.
 -- First access caches the result on the instance, so later accesses skip __index. A defined
 -- method copies over as is. An undefined key naming a function on the active machine becomes a
 -- forwarding method, built once and shared on composite_meta. Any other value passes through
@@ -21,10 +23,10 @@ local composite_meta = {}
 composite_meta.__index = function(self, key)
     local method = composite_meta[key]
     if not method then
-        local active_val = self.active[key]
+        local active_val = self.data.active[key]
         if type(active_val) == "function" then
             method = function(this, ...)
-                return this.active[key](this.active, ...)
+                return this.data.active[key](this.data.active, ...)
             end
             composite_meta[key] = method
         else
@@ -46,14 +48,14 @@ end
 
 -- True for positions strictly after the cheat point (lexicographic on the pair). Positions
 -- before the cheat input's feed are never past, and the offsets of positions after it only grow.
-local function past_cheat(self, mcycle, uarch_cycle)
-    if not self.cheated then
+local function past_cheat(data, mcycle, uarch_cycle)
+    if not data.cheated then
         return false
     end
-    if mcycle - self.feed_mcycle ~= self.cheat_offset then
-        return mcycle - self.feed_mcycle > self.cheat_offset
+    if mcycle - data.feed_mcycle ~= data.cheat_offset then
+        return mcycle - data.feed_mcycle > data.cheat_offset
     end
-    return uarch_cycle > self.cheat_uarch_cycle
+    return uarch_cycle > data.cheat_uarch_cycle
 end
 
 -- The composite for verification-game.lua, cheating at an absolute (mcycle, uarch_cycle) point
@@ -61,14 +63,16 @@ end
 local function new_composite_machine(real_machine, cheat_mcycle, cheat_uarch_cycle, cheat_machine)
     cheat_machine:run(cheat_mcycle)
     return setmetatable({
-        real_machine = real_machine,
-        cheat_machine = cheat_machine,
-        active = real_machine,
-        mcycle = 0,
-        cheated = true,
-        feed_mcycle = 0,
-        cheat_offset = cheat_mcycle,
-        cheat_uarch_cycle = cheat_uarch_cycle,
+        data = {
+            real_machine = real_machine,
+            cheat_machine = cheat_machine,
+            active = real_machine,
+            mcycle = 0,
+            cheated = true,
+            feed_mcycle = 0,
+            cheat_offset = cheat_mcycle,
+            cheat_uarch_cycle = cheat_uarch_cycle,
+        },
     }, composite_meta)
 end
 
@@ -84,81 +88,89 @@ local function new_rolling_composite_machine(
     cheat_data
 )
     return setmetatable({
-        real_machine = real_machine,
-        cheat_machine = cheat_machine,
-        active = real_machine,
-        mcycle = 0,
-        cheated = false,
-        feed_mcycle = 0,
-        cheat_offset = cheat_offset,
-        cheat_uarch_cycle = cheat_uarch_cycle,
-        cheat_input_data = cheat_input_data,
-        cheat_data = cheat_data,
+        data = {
+            real_machine = real_machine,
+            cheat_machine = cheat_machine,
+            active = real_machine,
+            mcycle = 0,
+            cheated = false,
+            feed_mcycle = 0,
+            cheat_offset = cheat_offset,
+            cheat_uarch_cycle = cheat_uarch_cycle,
+            cheat_input_data = cheat_input_data,
+            cheat_data = cheat_data,
+        },
     }, composite_meta)
 end
 
 function composite_meta.fork_server(self)
-    local fork = setmetatable({
-        real_machine = assert(self.real_machine:fork_server()),
-        cheat_machine = assert(self.cheat_machine:fork_server()),
-        mcycle = self.mcycle,
-        cheated = self.cheated,
-        feed_mcycle = self.feed_mcycle,
-        cheat_offset = self.cheat_offset,
-        cheat_uarch_cycle = self.cheat_uarch_cycle,
-        cheat_input_data = self.cheat_input_data,
-        cheat_data = self.cheat_data,
-    }, composite_meta)
-    fork.active = fork.real_machine
-    return fork
+    local data = {}
+    for key, value in pairs(self.data) do
+        data[key] = value
+    end
+    data.real_machine = assert(self.data.real_machine:fork_server())
+    data.cheat_machine = assert(self.data.cheat_machine:fork_server())
+    data.active = data.real_machine
+    return setmetatable({ data = data }, composite_meta)
 end
 
 -- Both machines take every input, the idle one first catching up to its own input boundary.
 -- Each records its own root hash, since their states diverge past the cheat input's feed. The
 -- cheat machine takes the doctored input in place of the cheat input and is then run to the
 -- switch point, where later rounds expect to find it.
-function composite_meta.send_cmio_response(self, _, reason, data)
-    for _, machine in ipairs({ self.real_machine, self.cheat_machine }) do
+function composite_meta.send_cmio_response(self, _, reason, input)
+    local data = self.data
+    for _, machine in ipairs({ data.real_machine, data.cheat_machine }) do
         run_idle(machine, math.maxinteger)
-        local input = data == self.cheat_input_data and machine == self.cheat_machine and self.cheat_data or data
-        machine:send_cmio_response(machine:get_root_hash(), reason, input)
+        local fed = input == data.cheat_input_data and machine == data.cheat_machine and data.cheat_data or input
+        machine:send_cmio_response(machine:get_root_hash(), reason, fed)
     end
-    if data == self.cheat_input_data then
-        self.cheated, self.feed_mcycle = true, self.real_machine:read_reg("mcycle")
-        run_idle(self.cheat_machine, self.feed_mcycle + self.cheat_offset)
+    if input == data.cheat_input_data then
+        data.cheated, data.feed_mcycle = true, data.real_machine:read_reg("mcycle")
+        run_idle(data.cheat_machine, data.feed_mcycle + data.cheat_offset)
     end
     -- The reported boundary is the active machine's, pinned at its own mcycle.
-    self.active = past_cheat(self, self.real_machine:read_reg("mcycle"), 0) and self.cheat_machine or self.real_machine
-    self.mcycle = self.active:read_reg("mcycle")
+    data.active = past_cheat(data, data.real_machine:read_reg("mcycle"), 0) and data.cheat_machine or data.real_machine
+    data.mcycle = data.active:read_reg("mcycle")
 end
 
 function composite_meta.run(self, m)
-    self.mcycle = m
-    self.active = past_cheat(self, m, 0) and self.cheat_machine or self.real_machine
-    return self.active:run(m)
+    local data = self.data
+    data.mcycle = m
+    data.active = past_cheat(data, m, 0) and data.cheat_machine or data.real_machine
+    return data.active:run(m)
 end
 
 -- The uarch stays within the pinned mcycle, so the switch is judged against that, not the
 -- live mcycle the uarch advances.
 function composite_meta.run_uarch(self, u)
-    self.active = past_cheat(self, self.mcycle, u) and self.cheat_machine or self.real_machine
-    self.active:run_uarch(u)
+    local data = self.data
+    data.active = past_cheat(data, data.mcycle, u) and data.cheat_machine or data.real_machine
+    data.active:run_uarch(u)
 end
 
 function composite_meta.shutdown_server(self)
-    self.real_machine:shutdown_server()
-    self.cheat_machine:shutdown_server()
+    self.data.real_machine:shutdown_server()
+    self.data.cheat_machine:shutdown_server()
+end
+
+-- Trading places trades the data tables. The other machine is always a composite too (a fork
+-- of one), so both sides carry one.
+function composite_meta.swap(self, other)
+    self.data, other.data = other.data, self.data
 end
 
 -- The log methods always report the second machine, rolled to the current position. self is
 -- always an ephemeral fork here, so rolling it forward in place is fine.
 function composite_meta.log_step_uarch(self, log_type)
-    self.cheat_machine:run_uarch(self.active:read_reg("uarch_cycle"))
-    return self.cheat_machine:log_step_uarch(log_type)
+    local data = self.data
+    data.cheat_machine:run_uarch(data.active:read_reg("uarch_cycle"))
+    return data.cheat_machine:log_step_uarch(log_type)
 end
 function composite_meta.log_reset_uarch(self, log_type)
-    self.cheat_machine:run_uarch(self.active:read_reg("uarch_cycle"))
-    return self.cheat_machine:log_reset_uarch(log_type)
+    local data = self.data
+    data.cheat_machine:run_uarch(data.active:read_reg("uarch_cycle"))
+    return data.cheat_machine:log_reset_uarch(log_type)
 end
 
 return { new_composite_machine = new_composite_machine, new_rolling_composite_machine = new_rolling_composite_machine }

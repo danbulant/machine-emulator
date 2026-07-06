@@ -205,29 +205,28 @@ end
 -- The converged uarch cycle says whether the disputed transition is an ordinary step or the
 -- step and reset out of UARCH_CYCLE_MAX-1. The referee names it to player 1, which logs the
 -- matching transition. Player 2 is not asked, only player 1 is verified.
--- docs:begin adjudicate_dispute
-local function adjudicate_dispute(players, initial_hash)
-    local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
+-- docs:begin settle_dispute
+local function settle_dispute(players, initial_hash)
+    local bisection = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
 
     -- Bisect to the disputed main-processor instruction.
-    bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, state)
-    local mcycle = state.lo
-    -- Narrow down to the microarchitecture instruction.
-    bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
-    local uarch_cycle = state.lo
+    local mcycle = bisect_level(players, "mcycle", cartesi.MCYCLE_MAX, bisection)
+    -- Narrow down to the uarch instruction.
+    local uarch_cycle = bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, bisection)
 
     -- A converged cycle of UARCH_CYCLE_MAX-1 means the disputed transition ends in the reset, else it is a step.
     phase("verdict")
-    local log = wait_for_log(players[1], state.branch, mcycle, uarch_cycle)
+    local log = wait_for_log(players[1], bisection.branch, mcycle, uarch_cycle)
     eventf("Player 1 posted log")
 
     -- Player 1 won if its log verifies against the agreed before-hash, otherwise player 2 is honest.
-    local winner = verify_state_transition(uarch_cycle, state.last_agreed_hash, log, state.hash_after) and players[1]
+    local winner = verify_state_transition(uarch_cycle, bisection.last_agreed_hash, log, bisection.hash_after)
+            and players[1]
         or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end
--- docs:end adjudicate_dispute
+-- docs:end settle_dispute
 
 -- Models application deployment, returning the contract context the referee works against. Its
 -- constant, expression-independent parts are fixed here before any dispute, as they would be on
@@ -271,7 +270,7 @@ local function run_referee(referee, dapp_contract)
 
     local winner = players[1]
     if players[1].final_hash ~= players[2].final_hash then
-        winner = adjudicate_dispute(players, referee.initial_hash)
+        winner = settle_dispute(players, referee.initial_hash)
     end
 
     wait_for_result(dapp_contract, players, winner.final_hash)

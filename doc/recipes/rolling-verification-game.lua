@@ -106,40 +106,48 @@ local function run_to(machine, target, sink)
         if break_reason ~= cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY then
             return break_reason
         end
-        local _, yield_reason, data = machine:receive_cmio_request()
-        if sink and yield_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+        local _, request_reason, data = machine:receive_cmio_request()
+        if sink and request_reason == cartesi.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
             sink[#sink + 1] = data
         end
     end
 end
 
--- Feeds one input and runs it out, returning the machine standing at the next input boundary,
--- the verdict, and, on acceptance, the output hashes root hash the guest reported. An index
--- past the epoch's last input carries no data and leaves the machine untouched. Only a machine
--- waiting on an accepted yield takes an input. A machine stuck on a rejected yield is a fixed
--- point and takes none. The run's target lies far past any yield, and a yielded machine no longer
--- advances, so the run just stops at the verdict. A rejecting machine must stand at the
--- recorded revert state, which is the snapshot taken at the feed, so the fed machine is
--- discarded and the snapshot takes its place, unless this player cheats by skipping the check.
+-- A machine that rejected its input must stand at the recorded revert state, so its server is
+-- shut down and it trades places with a fresh fork of the machine it reverts to, which is left
+-- untouched. Whoever holds the rejecting machine now holds the reverted one. Any other machine
+-- passes through, along with the data its request carried.
+-- docs:begin revert_if_rejected
+local function revert_if_rejected(_player, machine, revert_machine)
+    local _, request_reason, data = machine:receive_cmio_request()
+    if request_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+        machine:shutdown_server()
+        machine:swap(assert(revert_machine:fork_server()))
+        return request_reason
+    end
+    return request_reason, data
+end
+-- docs:end revert_if_rejected
+
+-- Feeds one input and runs it out, leaving the machine at the next input boundary and
+-- returning the reason of the request it yielded and, on acceptance, the output hashes root
+-- hash the guest reported. An index past the epoch's last input carries no data and leaves the
+-- machine untouched. The run's target lies far past any yield, and a yielded machine no longer
+-- advances, so the run just stops at the accept or reject request. The snapshot taken at the
+-- feed is the recorded revert state. Inputs are typically accepted, and an accepted input
+-- passes through the revert untouched, so a player crosses a whole epoch on the same server
+-- while the snapshot beside it comes and goes.
 -- docs:begin advance
 local function advance(player, machine, data, sink)
     if not data then
-        return machine
-    end
-    local _, yield_reason = machine:receive_cmio_request()
-    if yield_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-        return machine, yield_reason
+        return
     end
     local snapshot = assert(machine:fork_server())
     machine:send_cmio_response(machine:get_root_hash(), cartesi.HTIF_YIELD_REASON_ADVANCE_STATE, data)
     run_to(machine, machine:read_reg("mcycle") + MCYCLES_PER_INPUT, sink)
-    local _, verdict, accept_data = machine:receive_cmio_request()
-    if verdict == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED or player.no_rollback then
-        snapshot:shutdown_server()
-        return machine, verdict, accept_data
-    end
-    machine:shutdown_server()
-    return snapshot, verdict
+    local request_reason, accept_data = player:revert_if_rejected(machine, snapshot)
+    snapshot:shutdown_server()
+    return request_reason, accept_data
 end
 -- docs:end advance
 
@@ -156,9 +164,8 @@ local function commit_final_hash(player)
     local outputs, leaves, root_hash_proof = {}, {}, nil
     for _, data in ipairs(player.inputs) do
         local sink = {}
-        local verdict, reported_root
-        machine, verdict, reported_root = advance(player, machine, data, sink)
-        if verdict == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        local request_reason, reported_root = player:advance(machine, data, sink)
+        if request_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
             for _, output in ipairs(sink) do
                 outputs[#outputs + 1] = output
                 leaves[#leaves + 1] = cartesi.keccak256(output)
@@ -181,8 +188,8 @@ end
 -- One bisection round. After taking the previous branch, the player forks the agreed entry,
 -- advances the fork to the target on the round's level, and returns its root hash. The input
 -- level advances whole inputs. The mcycle level runs to an offset from the disputed input's
--- boundary, including the input first when the fork still stands there, and replaces a fork
--- that rejects by the boundary fork it must revert to. The uarch_cycle level runs the
+-- boundary, including the input first when the fork still stands there, and reverts a fork
+-- that finds the guest rejecting back to the boundary. The uarch_cycle level runs the
 -- microarchitecture within the disputed instruction, again including the input first when that
 -- instruction is the one that resumes the machine.
 -- docs:begin commit_bisection
@@ -192,11 +199,12 @@ local function commit_bisection(player, branch, level, target)
     if level == "input" then
         local machine = assert(agreed.machine:fork_server())
         for index = agreed.input_index + 1, target do
-            machine = advance(player, machine, player.inputs[index])
+            player:advance(machine, player.inputs[index])
         end
         player.tentative = { machine = machine, input_index = target }
     else
-        -- The first round below the input level pins the disputed input and its boundary.
+        -- The first round below the input level pins the disputed input and its boundary, the
+        -- recorded revert state any rejecting fork reverts to.
         local boundary = player.boundary
             or {
                 machine = assert(agreed.machine:fork_server()),
@@ -212,11 +220,7 @@ local function commit_bisection(player, branch, level, target)
         if level == "mcycle" then
             offset = target
             if run_to(machine, boundary.mcycle + target) == cartesi.BREAK_REASON_YIELDED_MANUALLY then
-                local _, yield_reason = machine:receive_cmio_request()
-                if yield_reason == cartesi.HTIF_YIELD_MANUAL_REASON_RX_REJECTED and not player.no_rollback then
-                    machine:shutdown_server()
-                    machine = assert(boundary.machine:fork_server())
-                end
+                player:revert_if_rejected(machine, boundary.machine)
             end
         else
             machine:run_uarch(target)
@@ -273,6 +277,8 @@ local function new_player(machine, inputs, send_result_delay)
         agreed = { machine = machine, input_index = 0 },
         inputs = inputs,
         send_result_delay = send_result_delay,
+        advance = advance,
+        revert_if_rejected = revert_if_rejected,
         commit_final_hash = commit_final_hash,
         commit_bisection = commit_bisection,
         commit_log = commit_log,
@@ -356,21 +362,19 @@ end
 -- hands player 1's logs to verify_state_transition, which checks them standalone against the
 -- agreed before-hash, the committed after-hash, and the contract's own copy of the disputed
 -- input. If they prove, player 1 won, otherwise player 2 is the honest one.
--- docs:begin adjudicate_dispute
-local function adjudicate_dispute(players, initial_hash, dapp_contract)
-    local state = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
+-- docs:begin settle_dispute
+local function settle_dispute(players, initial_hash, dapp_contract)
+    local bisection = { last_agreed_hash = initial_hash, hash_after = players[1].final_hash, branch = "start" }
 
-    -- Bisect to the disputed input, then to the disputed main-processor instruction within it,
-    -- and finally to the disputed microarchitecture instruction.
-    bisect_level(players, "input", INPUTS_PER_EPOCH, state)
-    local input = state.lo
-    bisect_level(players, "mcycle", MCYCLES_PER_INPUT, state)
-    local mcycle_offset = state.lo
-    bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, state)
-    local uarch_cycle = state.lo
+    -- Bisect to the disputed input
+    local input = bisect_level(players, "input", INPUTS_PER_EPOCH, bisection)
+    -- Narrow down to the disputed main-processor instruction.
+    local mcycle_offset = bisect_level(players, "mcycle", MCYCLES_PER_INPUT, bisection)
+    -- Narrow down to the uarch instruction.
+    local uarch_cycle = bisect_level(players, "uarch_cycle", cartesi.UARCH_CYCLE_MAX, bisection)
 
     phase("verdict")
-    local log = wait_for_log(players[1], state.branch, mcycle_offset, uarch_cycle)
+    local log = wait_for_log(players[1], bisection.branch, mcycle_offset, uarch_cycle)
     eventf("Player 1 posted logs")
 
     -- Player 1 won if its logs verify against the agreed before-hash, otherwise player 2 is honest.
@@ -379,14 +383,14 @@ local function adjudicate_dispute(players, initial_hash, dapp_contract)
         input,
         mcycle_offset,
         uarch_cycle,
-        state.last_agreed_hash,
+        bisection.last_agreed_hash,
         log,
-        state.hash_after
+        bisection.hash_after
     ) and players[1] or players[2]
     eventf("Player %d wins! Final state hash is %s.", winner.index, short_hash(winner.final_hash))
     return winner
 end
--- docs:end adjudicate_dispute
+-- docs:end settle_dispute
 
 -- Waits for the result, an output that proves into the winner's committed final state. It takes
 -- the first posted result that verifies, since the loser's proofs cannot match, and keeps
@@ -413,7 +417,7 @@ local function run_referee(referee, dapp_contract)
 
     local winner = players[1]
     if players[1].final_hash ~= players[2].final_hash then
-        winner = adjudicate_dispute(players, referee.initial_hash, dapp_contract)
+        winner = settle_dispute(players, referee.initial_hash, dapp_contract)
     end
 
     wait_for_result(players, winner.final_hash)
@@ -461,7 +465,20 @@ elseif role == "dishonest" then
     elseif cheat == "no-rollback" then
         -- Honest code and inputs, minus the revert on rejected inputs.
         player = new_player(new_remote_machine(), read_inputs(4))
-        player.no_rollback = true
+        -- Keeps the rejecting machine instead of reverting.
+        function player.revert_if_rejected(_player, machine)
+            local _, request_reason, data = machine:receive_cmio_request()
+            return request_reason, data
+        end
+        -- The kept machine is parked on its rejected yield, a fixed point no input can enter,
+        -- so the feed is skipped for it.
+        function player.advance(self, machine, data, sink)
+            local _, request_reason = machine:receive_cmio_request()
+            if data and request_reason ~= cartesi.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                return request_reason
+            end
+            return advance(self, machine, data, sink)
+        end
     elseif cheat == "extra-input" then
         -- Honest code over one input the epoch never received, appended after the real ones.
         local inputs = read_inputs(5)

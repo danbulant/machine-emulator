@@ -235,7 +235,7 @@ README.html: | check-docs-image
 endif
 
 clean:
-	rm -f README.md template.d
+	rm -f README.md README.html template.d
 	rm -f $(RECIPES_DIR)/rootfs-docs.tar
 	rm -f $(ROOTFS_DOCS_KEY) $(ROOTFS_DOCS_KEY)-have
 	rm -rf $(REPLACE_CACHE_DIR)
