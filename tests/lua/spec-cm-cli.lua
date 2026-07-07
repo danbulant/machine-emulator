@@ -764,7 +764,11 @@ describe("cartesi-machine CLI", function()
         expect.equal(net_entry2.hostfwd[1].is_udp, true)
 
         -- --virtio-net=<iface>: TUN/TAP interface (Linux only; skipped when /dev/net/tun is absent)
-        if cartesi.PLATFORM ~= "Mac OS" and io.open("/dev/net/tun", "r") then
+        if
+            cartesi.PLATFORM == "linux"
+            and io.open("/dev/net/tun", "r")
+            and io.open("/sys/class/net/tap0/iflink", "r")
+        then
             cfg = config_for({ "--virtio-net=tap0" })
             local found_tap
             for _, v in ipairs(cfg.virtio) do
