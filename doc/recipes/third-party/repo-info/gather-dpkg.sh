@@ -195,13 +195,14 @@ for src in "${sortedSources[@]}"; do
 	# cannot be reconciled because they use different algorithms. Rewrite
 	# every URL to the durable snapshot host and drop the digest field so
 	# the output changes only when the committed rootfs or the snapshot pin
-	# does.
+	# does. apt also emits the files (.dsc, .orig.tar, .debian.tar) of a
+	# source package in no particular order, so sort the lines as well.
 	if [ -n "$aptSource" ]; then
 		sedArgs=( -E -e 's/ [A-Za-z0-9]+:[0-9a-fA-F]+$//' )
 		if [ -n "${APT_SNAPSHOT:-}" ]; then
 			sedArgs+=( -e "s#'[^']*/pool/#'https://snapshot.ubuntu.com/ubuntu/${APT_SNAPSHOT}/pool/#" )
 		fi
-		aptSource="$(printf '%s\n' "$aptSource" | sed "${sedArgs[@]}")"
+		aptSource="$(printf '%s\n' "$aptSource" | sed "${sedArgs[@]}" | sort)"
 	fi
 
 	if [ -n "$aptSource" ]; then
