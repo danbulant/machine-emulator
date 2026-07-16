@@ -27,6 +27,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range.hpp"
@@ -52,6 +53,7 @@
 #include "uarch-interpret.hpp"
 #include "uarch-processor-state.hpp"
 #include "variant-hasher.hpp"
+#include "virtio-block-address-range.hpp"
 
 namespace cartesi {
 
@@ -325,6 +327,18 @@ public:
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
+
+    /// \brief Returns queued async VirtIO block requests and removes them from device queues.
+    std::vector<virtio_block_host_request> take_block_requests();
+
+    /// \brief Completes a queued VirtIO block read request.
+    bool complete_block_read(uint64_t id, const uint8_t *data, uint32_t length);
+
+    /// \brief Completes a queued VirtIO block write or flush request.
+    bool complete_block_operation(uint64_t id);
+
+    /// \brief Fails a queued VirtIO block request.
+    bool fail_block_operation(uint64_t id);
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
     const auto &get_address_ranges() const {

@@ -118,6 +118,11 @@ using nvram_configs = memory_range_configs;
 /// \brief VirtIO console device state config
 struct virtio_console_config final {};
 
+/// \brief VirtIO block device state config
+struct virtio_block_config final {
+    uint64_t capacity{0}; ///< Capacity in 512-byte sectors
+};
+
 /// \brief VirtIO Plan 9 filesystem device state config
 struct virtio_p9fs_config final {
     std::string tag;            ///< Guest mount tag
@@ -148,6 +153,7 @@ struct virtio_net_tuntap_config final {
 
 /// \brief VirtIO device state config
 using virtio_device_config = std::variant<virtio_console_config, ///< Console
+    virtio_block_config,                                         ///< Block device
     virtio_p9fs_config,                                          ///< Plan 9 filesystem
     virtio_net_user_config,                                      ///< User-mode networking
     virtio_net_tuntap_config                                     ///< TUN/TAP networking

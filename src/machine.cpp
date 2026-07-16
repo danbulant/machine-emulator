@@ -368,6 +368,58 @@ bool machine::has_virtio_console() const {
     return has_virtio_devices() && m_ars.virtio_view().front().get_device_id() == VIRTIO_DEVICE_CONSOLE;
 }
 
+std::vector<virtio_block_host_request> machine::take_block_requests() {
+    std::vector<virtio_block_host_request> requests;
+    for (auto &v : m_ars.virtio_view()) {
+        auto *block = dynamic_cast<virtio_block_address_range *>(&v);
+        if (block == nullptr) {
+            continue;
+        }
+        virtio_block_host_request request;
+        while (block->take_host_request(&request)) {
+            requests.push_back(std::move(request));
+            request = {};
+        }
+    }
+    return requests;
+}
+
+bool machine::complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) {
+    state_access a(*this);
+    device_state_access da(a, read_reg(reg::mcycle));
+    for (auto &v : m_ars.virtio_view()) {
+        auto *block = dynamic_cast<virtio_block_address_range *>(&v);
+        if (block != nullptr && block->complete_read(&da, id, data, length)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool machine::complete_block_operation(uint64_t id) {
+    state_access a(*this);
+    device_state_access da(a, read_reg(reg::mcycle));
+    for (auto &v : m_ars.virtio_view()) {
+        auto *block = dynamic_cast<virtio_block_address_range *>(&v);
+        if (block != nullptr && block->complete_operation(&da, id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool machine::fail_block_operation(uint64_t id) {
+    state_access a(*this);
+    device_state_access da(a, read_reg(reg::mcycle));
+    for (auto &v : m_ars.virtio_view()) {
+        auto *block = dynamic_cast<virtio_block_address_range *>(&v);
+        if (block != nullptr && block->fail_operation(&da, id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool machine::has_htif_console() const {
     return static_cast<bool>(read_reg(reg::htif_iconsole) & HTIF_CONSOLE_CMD_GETCHAR_MASK);
 }

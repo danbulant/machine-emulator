@@ -21,6 +21,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range-description.hpp"
@@ -36,6 +37,7 @@
 #include "mcycle-root-hashes.hpp"
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
+#include "virtio-block-address-range.hpp"
 
 namespace cartesi {
 
@@ -206,6 +208,26 @@ public:
         return do_translate_virtual_address(vaddr);
     }
 
+    /// \brief Returns queued async VirtIO block requests and removes them from device queues.
+    std::vector<virtio_block_host_request> take_block_requests() {
+        return do_take_block_requests();
+    }
+
+    /// \brief Completes a queued VirtIO block read request.
+    bool complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) {
+        return do_complete_block_read(id, data, length);
+    }
+
+    /// \brief Completes a queued VirtIO block write or flush request.
+    bool complete_block_operation(uint64_t id) {
+        return do_complete_block_operation(id);
+    }
+
+    /// \brief Fails a queued VirtIO block request.
+    bool fail_block_operation(uint64_t id) {
+        return do_fail_block_operation(id);
+    }
+
     /// \brief Reads console output buffer data
     uint64_t read_console_output(uint8_t *data, uint64_t max_length) {
         return do_read_console_output(data, max_length);
@@ -374,6 +396,10 @@ private:
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) = 0;
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
+    virtual std::vector<virtio_block_host_request> do_take_block_requests() = 0;
+    virtual bool do_complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) = 0;
+    virtual bool do_complete_block_operation(uint64_t id) = 0;
+    virtual bool do_fail_block_operation(uint64_t id) = 0;
     virtual uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) = 0;
     virtual uint64_t do_write_console_input(const uint8_t *data, uint64_t length) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;

@@ -403,6 +403,7 @@ LIBCARTESI_OBJS:= \
 	local-machine.o \
 	uarch-interpret.o \
 	virtio-address-range.o \
+	virtio-block-address-range.o \
 	virtio-console-address-range.o \
 	virtio-p9fs-address-range.o \
 	virtio-net-address-range.o \

@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range-description.hpp"
@@ -35,6 +36,7 @@
 #include "mcycle-root-hashes.hpp"
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
+#include "virtio-block-address-range.hpp"
 
 namespace cartesi {
 
@@ -76,6 +78,10 @@ private:
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) override;
+    std::vector<virtio_block_host_request> do_take_block_requests() override;
+    bool do_complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) override;
+    bool do_complete_block_operation(uint64_t id) override;
+    bool do_fail_block_operation(uint64_t id) override;
     uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) override;
     uint64_t do_write_console_input(const uint8_t *data, uint64_t length) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;

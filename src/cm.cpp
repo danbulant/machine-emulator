@@ -1080,6 +1080,61 @@ cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint64_t len
     return cm_result_failure();
 }
 
+cm_error cm_take_block_requests(cm_machine *m, const char **requests) try {
+    if (requests == nullptr) {
+        throw std::invalid_argument("invalid requests output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    nlohmann::json jrequests = nlohmann::json::array();
+    for (const auto &request : cpp_m->take_block_requests()) {
+        jrequests.push_back(nlohmann::json{{"id", std::to_string(request.id)},
+            {"type", request.type},
+            {"sector", std::to_string(request.sector)},
+            {"length", request.length},
+            {"data", request.data}});
+    }
+    *requests = cm_set_temp_string(jrequests.dump());
+    return cm_result_success();
+} catch (...) {
+    if (requests != nullptr) {
+        *requests = nullptr;
+    }
+    return cm_result_failure();
+}
+
+cm_error cm_complete_block_read(cm_machine *m, uint64_t id, const uint8_t *data, uint32_t length) try {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument("invalid block read data");
+    }
+    auto *cpp_m = convert_from_c(m);
+    if (!cpp_m->complete_block_read(id, data, length)) {
+        throw std::invalid_argument("unknown or invalid block read request");
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_complete_block_operation(cm_machine *m, uint64_t id) try {
+    auto *cpp_m = convert_from_c(m);
+    if (!cpp_m->complete_block_operation(id)) {
+        throw std::invalid_argument("unknown or invalid block operation request");
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_fail_block_operation(cm_machine *m, uint64_t id) try {
+    auto *cpp_m = convert_from_c(m);
+    if (!cpp_m->fail_block_operation(id)) {
+        throw std::invalid_argument("unknown block request");
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");

@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "access-log.hpp"
 #include "address-range-description.hpp"
@@ -154,6 +155,22 @@ void local_machine::do_write_virtual_memory(uint64_t address, const unsigned cha
 
 uint64_t local_machine::do_translate_virtual_address(uint64_t vaddr) {
     return get_machine()->translate_virtual_address(vaddr);
+}
+
+std::vector<virtio_block_host_request> local_machine::do_take_block_requests() {
+    return get_machine()->take_block_requests();
+}
+
+bool local_machine::do_complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) {
+    return get_machine()->complete_block_read(id, data, length);
+}
+
+bool local_machine::do_complete_block_operation(uint64_t id) {
+    return get_machine()->complete_block_operation(id);
+}
+
+bool local_machine::do_fail_block_operation(uint64_t id) {
+    return get_machine()->fail_block_operation(id);
 }
 
 uint64_t local_machine::do_read_console_output(uint8_t *data, uint64_t max_length) {

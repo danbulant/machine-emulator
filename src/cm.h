@@ -773,6 +773,32 @@ CM_API cm_error cm_read_console_output(cm_machine *m, uint8_t *data, uint64_t ma
 /// If the buffer is full, \p written_len is set to zero.
 CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint64_t length, uint64_t *written_len);
 
+/// \brief Returns queued async VirtIO block requests as a JSON array and clears the queue.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param requests Receives a JSON array with {id,type,sector,length,data} objects.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_take_block_requests(cm_machine *m, const char **requests);
+
+/// \brief Completes a queued VirtIO block read request.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param id Request id returned by cm_take_block_requests.
+/// \param data Bytes read from the block backend.
+/// \param length Number of bytes read. Must match the request length.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_complete_block_read(cm_machine *m, uint64_t id, const uint8_t *data, uint32_t length);
+
+/// \brief Completes a queued VirtIO block write or flush request.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param id Request id returned by cm_take_block_requests.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_complete_block_operation(cm_machine *m, uint64_t id);
+
+/// \brief Fails a queued VirtIO block request with an I/O error status.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param id Request id returned by cm_take_block_requests.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_fail_block_operation(cm_machine *m, uint64_t id);
+
 // ------------------------------------
 // Running
 // ------------------------------------

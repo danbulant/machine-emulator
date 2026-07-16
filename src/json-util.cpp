@@ -1790,6 +1790,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_confi
     ju_get_opt_field(jconfig, "type"s, type, new_path);
     if (type == "console") {
         value.emplace<virtio_console_config>(virtio_console_config{});
+    } else if (type == "block") {
+        virtio_block_config block_config;
+        ju_get_opt_field(jconfig, "capacity"s, block_config.capacity, new_path);
+        value.emplace<virtio_block_config>(block_config);
     } else if (type == "p9fs") {
         virtio_p9fs_config p9fs_config;
         ju_get_opt_field(jconfig, "tag"s, p9fs_config.tag, new_path);
@@ -2335,6 +2339,8 @@ void to_json(nlohmann::json &j, const virtio_device_config &config) {
             using T = std::decay_t<decltype(vdev_config)>;
             if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
                 j = nlohmann::json{{"type", "console"}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_block_config>) {
+                j = nlohmann::json{{"type", "block"}, {"capacity", vdev_config.capacity}};
             } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
                 j = nlohmann::json{{"type", "p9fs"}, {"tag", vdev_config.tag},
                     {"host_directory", vdev_config.host_directory}};

@@ -50,6 +50,7 @@
 #include "uarch-pristine.hpp"
 #include "uarch-processor-state.hpp"
 #include "virtio-address-range.hpp"
+#include "virtio-block-address-range.hpp"
 #include "virtio-console-address-range.hpp"
 #include "virtio-net-tuntap-address-range.hpp"
 #include "virtio-net-user-address-range.hpp"
@@ -546,6 +547,11 @@ void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint
             [this, virtio_idx, where, &console](const virtio_console_config &) {
                 const auto start = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
                 push_back(std::make_unique<virtio_console_address_range>(start, AR_VIRTIO_LENGTH, virtio_idx, console),
+                    where);
+            },
+            [this, virtio_idx, where](const virtio_block_config &c) {
+                const auto start = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
+                push_back(std::make_unique<virtio_block_address_range>(start, AR_VIRTIO_LENGTH, virtio_idx, c.capacity),
                     where);
             },
             [this, virtio_idx, where](const virtio_p9fs_config &c) {
