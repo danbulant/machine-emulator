@@ -420,6 +420,43 @@ bool machine::fail_block_operation(uint64_t id) {
     return false;
 }
 
+std::vector<std::vector<uint8_t>> machine::take_network_packets() {
+    std::vector<std::vector<uint8_t>> packets;
+    for (auto &v : m_ars.virtio_view()) {
+        auto *network = dynamic_cast<virtio_net_host_address_range *>(&v);
+        if (network == nullptr) {
+            continue;
+        }
+        std::vector<uint8_t> packet;
+        while (network->take_transmit_packet(&packet)) {
+            packets.push_back(std::move(packet));
+            packet = {};
+        }
+    }
+    return packets;
+}
+
+bool machine::push_network_packet(const uint8_t *data, uint32_t length) {
+    state_access a(*this);
+    device_state_access da(a, read_reg(reg::mcycle));
+    for (auto &v : m_ars.virtio_view()) {
+        auto *network = dynamic_cast<virtio_net_host_address_range *>(&v);
+        if (network != nullptr) {
+            return network->push_receive_packet(&da, data, length);
+        }
+    }
+    return false;
+}
+
+void machine::clear_network_packets() {
+    for (auto &v : m_ars.virtio_view()) {
+        auto *network = dynamic_cast<virtio_net_host_address_range *>(&v);
+        if (network != nullptr) {
+            network->clear_packets();
+        }
+    }
+}
+
 bool machine::has_htif_console() const {
     return static_cast<bool>(read_reg(reg::htif_iconsole) & HTIF_CONSOLE_CMD_GETCHAR_MASK);
 }

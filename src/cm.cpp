@@ -1102,6 +1102,28 @@ cm_error cm_take_block_requests(cm_machine *m, const char **requests) try {
     return cm_result_failure();
 }
 
+cm_error cm_visit_block_requests(
+    cm_machine *m, cm_block_request_callback callback, void *context) try {
+    if (callback == nullptr) {
+        throw std::invalid_argument("invalid block request callback");
+    }
+    auto *cpp_m = convert_from_c(m);
+    for (const auto &request : cpp_m->take_block_requests()) {
+        const cm_block_request view{
+            request.id,
+            request.type,
+            request.sector,
+            request.length,
+            request.data.empty() ? nullptr : request.data.data(),
+            static_cast<uint32_t>(request.data.size()),
+        };
+        callback(context, &view);
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_complete_block_read(cm_machine *m, uint64_t id, const uint8_t *data, uint32_t length) try {
     if (data == nullptr && length > 0) {
         throw std::invalid_argument("invalid block read data");
@@ -1130,6 +1152,45 @@ cm_error cm_fail_block_operation(cm_machine *m, uint64_t id) try {
     if (!cpp_m->fail_block_operation(id)) {
         throw std::invalid_argument("unknown block request");
     }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_visit_network_packets(
+    cm_machine *m, cm_network_packet_callback callback, void *context) try {
+    if (callback == nullptr) {
+        throw std::invalid_argument("invalid network packet callback");
+    }
+    auto *cpp_m = convert_from_c(m);
+    for (const auto &packet : cpp_m->take_network_packets()) {
+        const cm_network_packet view{
+            packet.empty() ? nullptr : packet.data(),
+            static_cast<uint32_t>(packet.size()),
+        };
+        callback(context, &view);
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_push_network_packet(cm_machine *m, const uint8_t *data, uint32_t length) try {
+    if (data == nullptr || length == 0) {
+        throw std::invalid_argument("invalid network packet data");
+    }
+    auto *cpp_m = convert_from_c(m);
+    if (!cpp_m->push_network_packet(data, length)) {
+        throw std::invalid_argument("network packet was rejected");
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_clear_network_packets(cm_machine *m) try {
+    auto *cpp_m = convert_from_c(m);
+    cpp_m->clear_network_packets();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

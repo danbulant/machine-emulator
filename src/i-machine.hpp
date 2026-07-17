@@ -38,6 +38,7 @@
 #include "uarch-cycle-root-hashes.hpp"
 #include "uarch-interpret.hpp"
 #include "virtio-block-address-range.hpp"
+#include "virtio-net-host-address-range.hpp"
 
 namespace cartesi {
 
@@ -228,6 +229,21 @@ public:
         return do_fail_block_operation(id);
     }
 
+    std::vector<std::vector<uint8_t>> take_network_packets() {
+        return do_take_network_packets();
+    }
+
+    bool push_network_packet(const uint8_t *data, uint32_t length) {
+        if (data == nullptr && length > 0) {
+            throw std::invalid_argument("invalid network packet data");
+        }
+        return do_push_network_packet(data, length);
+    }
+
+    void clear_network_packets() {
+        do_clear_network_packets();
+    }
+
     /// \brief Reads console output buffer data
     uint64_t read_console_output(uint8_t *data, uint64_t max_length) {
         return do_read_console_output(data, max_length);
@@ -400,6 +416,9 @@ private:
     virtual bool do_complete_block_read(uint64_t id, const uint8_t *data, uint32_t length) = 0;
     virtual bool do_complete_block_operation(uint64_t id) = 0;
     virtual bool do_fail_block_operation(uint64_t id) = 0;
+    virtual std::vector<std::vector<uint8_t>> do_take_network_packets() = 0;
+    virtual bool do_push_network_packet(const uint8_t *data, uint32_t length) = 0;
+    virtual void do_clear_network_packets() = 0;
     virtual uint64_t do_read_console_output(uint8_t *data, uint64_t max_length) = 0;
     virtual uint64_t do_write_console_input(const uint8_t *data, uint64_t length) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;

@@ -173,6 +173,18 @@ bool local_machine::do_fail_block_operation(uint64_t id) {
     return get_machine()->fail_block_operation(id);
 }
 
+std::vector<std::vector<uint8_t>> local_machine::do_take_network_packets() {
+    return get_machine()->take_network_packets();
+}
+
+bool local_machine::do_push_network_packet(const uint8_t *data, uint32_t length) {
+    return get_machine()->push_network_packet(data, length);
+}
+
+void local_machine::do_clear_network_packets() {
+    get_machine()->clear_network_packets();
+}
+
 uint64_t local_machine::do_read_console_output(uint8_t *data, uint64_t max_length) {
     return get_machine()->read_console_output(data, max_length);
 }

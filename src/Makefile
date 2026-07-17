@@ -406,6 +406,7 @@ LIBCARTESI_OBJS:= \
 	virtio-block-address-range.o \
 	virtio-console-address-range.o \
 	virtio-p9fs-address-range.o \
+	virtio-net-host-address-range.o \
 	virtio-net-address-range.o \
 	virtio-net-tuntap-address-range.o \
 	virtio-net-user-address-range.o

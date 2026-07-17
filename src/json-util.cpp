@@ -1819,6 +1819,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_confi
             }
         }
         value.emplace<virtio_net_user_config>(std::move(net_user_config));
+    } else if (type == "net-host") {
+        value.emplace<virtio_net_host_config>(virtio_net_host_config{});
     } else if (type == "net-tuntap") {
         virtio_net_tuntap_config net_tuntap_config;
         ju_get_opt_field(jconfig, "iface"s, net_tuntap_config.iface, new_path);
@@ -2359,6 +2361,8 @@ void to_json(nlohmann::json &j, const virtio_device_config &config) {
                 j = nlohmann::json{{"type", "net-user"}, {"hostfwd", std::move(jhostfwd)}};
             } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
                 j = nlohmann::json{{"type", "net-tuntap"}, {"iface", vdev_config.iface}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_host_config>) {
+                j = nlohmann::json{{"type", "net-host"}};
             } else {
                 throw std::domain_error("invalid virtio device configuration");
             }

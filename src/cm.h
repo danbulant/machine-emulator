@@ -384,6 +384,30 @@ typedef uint8_t cm_hash[CM_HASH_SIZE];
 /// \details It's used only as an opaque handle to pass machine objects through the C API.
 typedef struct cm_machine cm_machine;
 
+/// \brief Borrowed view of a queued asynchronous VirtIO block request.
+typedef struct cm_block_request {
+    uint64_t id;
+    uint32_t type;
+    uint64_t sector;
+    uint32_t length;
+    const uint8_t *data;
+    uint32_t data_length;
+} cm_block_request;
+
+/// \brief Callback invoked for each queued asynchronous VirtIO block request.
+/// \details The request and its data remain valid only for the duration of the callback.
+typedef void (*cm_block_request_callback)(void *context, const cm_block_request *request);
+
+/// \brief Borrowed Ethernet frame emitted by a host-backed VirtIO network device.
+typedef struct cm_network_packet {
+    const uint8_t *data;
+    uint32_t length;
+} cm_network_packet;
+
+/// \brief Callback invoked for each emitted Ethernet frame.
+/// \details The packet and its data remain valid only for the duration of the callback.
+typedef void (*cm_network_packet_callback)(void *context, const cm_network_packet *packet);
+
 // -----------------------------------------------------------------------------
 // API functions
 // -----------------------------------------------------------------------------
@@ -779,6 +803,10 @@ CM_API cm_error cm_write_console_input(cm_machine *m, const uint8_t *data, uint6
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_take_block_requests(cm_machine *m, const char **requests);
 
+/// \brief Visits queued async VirtIO block requests without JSON serialization and clears the queue.
+CM_API cm_error cm_visit_block_requests(
+    cm_machine *m, cm_block_request_callback callback, void *context);
+
 /// \brief Completes a queued VirtIO block read request.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param id Request id returned by cm_take_block_requests.
@@ -798,6 +826,16 @@ CM_API cm_error cm_complete_block_operation(cm_machine *m, uint64_t id);
 /// \param id Request id returned by cm_take_block_requests.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_fail_block_operation(cm_machine *m, uint64_t id);
+
+/// \brief Visits Ethernet frames emitted by host-backed VirtIO network devices and clears the queue.
+CM_API cm_error cm_visit_network_packets(
+    cm_machine *m, cm_network_packet_callback callback, void *context);
+
+/// \brief Injects one Ethernet frame into a host-backed VirtIO network device.
+CM_API cm_error cm_push_network_packet(cm_machine *m, const uint8_t *data, uint32_t length);
+
+/// \brief Clears queued packets in host-backed VirtIO network devices.
+CM_API cm_error cm_clear_network_packets(cm_machine *m);
 
 // ------------------------------------
 // Running

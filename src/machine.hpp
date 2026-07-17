@@ -54,6 +54,7 @@
 #include "uarch-processor-state.hpp"
 #include "variant-hasher.hpp"
 #include "virtio-block-address-range.hpp"
+#include "virtio-net-host-address-range.hpp"
 
 namespace cartesi {
 
@@ -339,6 +340,15 @@ public:
 
     /// \brief Fails a queued VirtIO block request.
     bool fail_block_operation(uint64_t id);
+
+    /// \brief Returns Ethernet frames emitted by host-backed VirtIO network devices.
+    std::vector<std::vector<uint8_t>> take_network_packets();
+
+    /// \brief Injects an Ethernet frame into a host-backed VirtIO network device.
+    bool push_network_packet(const uint8_t *data, uint32_t length);
+
+    /// \brief Clears pending host-backed VirtIO network packets.
+    void clear_network_packets();
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
     const auto &get_address_ranges() const {

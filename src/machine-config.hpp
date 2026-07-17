@@ -151,12 +151,16 @@ struct virtio_net_tuntap_config final {
     std::string iface; ///< Host's tap network interface (e.g "tap0")
 };
 
+/// \brief VirtIO network device backed directly by the embedding host
+struct virtio_net_host_config final {};
+
 /// \brief VirtIO device state config
 using virtio_device_config = std::variant<virtio_console_config, ///< Console
     virtio_block_config,                                         ///< Block device
     virtio_p9fs_config,                                          ///< Plan 9 filesystem
     virtio_net_user_config,                                      ///< User-mode networking
-    virtio_net_tuntap_config                                     ///< TUN/TAP networking
+    virtio_net_tuntap_config,                                    ///< TUN/TAP networking
+    virtio_net_host_config                                       ///< Embedding-host networking
     >;
 
 /// \brief List of VirtIO devices

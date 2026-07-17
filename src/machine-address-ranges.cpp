@@ -52,6 +52,7 @@
 #include "virtio-address-range.hpp"
 #include "virtio-block-address-range.hpp"
 #include "virtio-console-address-range.hpp"
+#include "virtio-net-host-address-range.hpp"
 #include "virtio-net-tuntap-address-range.hpp"
 #include "virtio-net-user-address-range.hpp"
 #include "virtio-p9fs-address-range.hpp"
@@ -540,6 +541,11 @@ void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint
     if (iunrep == 0) {
         throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
     }
+    const auto host_network_count = std::ranges::count_if(
+        virtio, [](const auto &config) { return std::holds_alternative<virtio_net_host_config>(config); });
+    if (host_network_count > 1) {
+        throw std::invalid_argument{"only one host-backed VirtIO network device is supported"};
+    }
     uint32_t virtio_idx = 0;
     for (const auto &c : virtio) {
         const auto where = register_where{.hash_tree = false, .pmas = true};
@@ -581,6 +587,10 @@ void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint
                 (void) where;
                 throw std::invalid_argument("virtio network TUN/TAP device is unsupported in this platform");
 #endif
+            },
+            [this, virtio_idx, where](const virtio_net_host_config &) {
+                const auto start = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
+                push_back(std::make_unique<virtio_net_host_address_range>(start, AR_VIRTIO_LENGTH, virtio_idx), where);
             },
             [this, virtio_idx, where](const virtio_net_user_config &c) {
 #ifdef HAVE_SLIRP
