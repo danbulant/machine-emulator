@@ -1624,6 +1624,33 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, simple_framebuffer_config &value,
+    const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    value.enabled = true;
+    ju_get_opt_field(jconfig, "enabled"s, value.enabled, new_path);
+    if (!value.enabled) {
+        return;
+    }
+    ju_get_field(jconfig, "start"s, value.start, new_path);
+    ju_get_field(jconfig, "length"s, value.length, new_path);
+    ju_get_field(jconfig, "width"s, value.width, new_path);
+    ju_get_field(jconfig, "height"s, value.height, new_path);
+    ju_get_field(jconfig, "stride"s, value.stride, new_path);
+    ju_get_opt_field(jconfig, "format"s, value.format, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    simple_framebuffer_config &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    simple_framebuffer_config &value, const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -1633,6 +1660,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, 
     ju_get_opt_field(jconfig, "bootargs"s, value.bootargs, new_path);
     ju_get_opt_field(jconfig, "init"s, value.init, new_path);
     ju_get_opt_field(jconfig, "entrypoint"s, value.entrypoint, new_path);
+    ju_get_opt_field(jconfig, "simple_framebuffer"s, value.simple_framebuffer, new_path);
     ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
 }
 
@@ -2383,11 +2411,24 @@ void to_json(nlohmann::json &j, const ram_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const simple_framebuffer_config &config) {
+    j = nlohmann::json{
+        {"enabled", config.enabled},
+        {"start", config.start},
+        {"length", config.length},
+        {"width", config.width},
+        {"height", config.height},
+        {"stride", config.stride},
+        {"format", config.format},
+    };
+}
+
 void to_json(nlohmann::json &j, const dtb_config &config) {
     j = nlohmann::json{
         {"bootargs", config.bootargs},
         {"init", config.init},
         {"entrypoint", config.entrypoint},
+        {"simple_framebuffer", config.simple_framebuffer},
         {"backing_store", config.backing_store},
     };
 }

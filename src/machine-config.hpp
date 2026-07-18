@@ -86,11 +86,23 @@ struct ram_config final {
 #define DTB_BOOTARGS_INIT                                                                                              \
     (DTB_BOOTARGS_CONSOLE_PART DTB_BOOTARGS_UIO_PART DTB_BOOTARGS_ROOT_PART DTB_BOOTARGS_INIT_PART)
 
+/// \brief Simple framebuffer node emitted into the DTB for guest software rendering.
+struct simple_framebuffer_config final {
+    bool enabled{false};
+    uint64_t start{0};
+    uint64_t length{0};
+    uint32_t width{0};
+    uint32_t height{0};
+    uint32_t stride{0};
+    std::string format{"x8r8g8b8"};
+};
+
 /// \brief DTB state config
 struct dtb_config final {
     std::string bootargs{DTB_BOOTARGS_INIT}; ///< Bootargs to pass to kernel
     std::string init;                        ///< Initialization commands to be executed as root on boot
     std::string entrypoint;                  ///< Commands to execute the main application
+    simple_framebuffer_config simple_framebuffer{}; ///< Optional software framebuffer exposed to Linux.
     backing_store_config backing_store;      ///< Backing store
 };
 

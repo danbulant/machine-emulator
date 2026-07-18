@@ -78,6 +78,24 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_string("bootargs", c.dtb.bootargs);
             // ??(edubart): make this configurable in machine config?
             fdt.prop("rng-seed", FDT_RNG_SEED, sizeof(FDT_RNG_SEED));
+            if (c.dtb.simple_framebuffer.enabled) {
+                const auto &fb = c.dtb.simple_framebuffer;
+                const uint64_t visible_bytes = static_cast<uint64_t>(fb.stride) * fb.height;
+                if (fb.start < AR_RAM_START || fb.length == 0 || fb.width == 0 || fb.height == 0 || fb.stride == 0 ||
+                    visible_bytes > fb.length || fb.start + fb.length < fb.start ||
+                    fb.start + fb.length > AR_RAM_START + c.ram.length) {
+                    throw std::runtime_error{"invalid simple framebuffer configuration"};
+                }
+                fdt.begin_node_num("framebuffer", fb.start);
+                fdt.prop_string("compatible", "simple-framebuffer");
+                fdt.prop_u64_list<2>("reg", {fb.start, fb.length});
+                fdt.prop_u32("width", fb.width);
+                fdt.prop_u32("height", fb.height);
+                fdt.prop_u32("stride", fb.stride);
+                fdt.prop_string("format", fb.format);
+                fdt.prop_string("status", "okay");
+                fdt.end_node();
+            }
             fdt.end_node();
         }
 
@@ -178,6 +196,13 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             { // reserve firmware M-mode code (such as OpenSBI)
                 fdt.begin_node_num("fw_resv", AR_RAM_START);
                 fdt.prop_u64_list<2>("reg", {AR_RAM_START, FW_RESV});
+                fdt.prop_empty("no-map");
+                fdt.end_node();
+            }
+            if (c.dtb.simple_framebuffer.enabled) {
+                const auto &fb = c.dtb.simple_framebuffer;
+                fdt.begin_node_num("framebuffer", fb.start);
+                fdt.prop_u64_list<2>("reg", {fb.start, fb.length});
                 fdt.prop_empty("no-map");
                 fdt.end_node();
             }
