@@ -584,8 +584,13 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
 /// \param mcycle Machine current cycle.
 template <typename STATE_ACCESS>
 static inline void set_rtc_interrupt(const STATE_ACCESS a, uint64_t mcycle) {
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+    const uint64_t mtimecmp = a.read_clint_mtimecmp();
+    if (mtimecmp != 0 && rtc_cycle_to_time(mcycle) >= mtimecmp) {
+#else
     const uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
     if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
+#endif
         const uint64_t mip = a.read_mip();
         a.write_mip(mip | MIP_MTIP_MASK);
     }
@@ -932,7 +937,6 @@ static i_state_access_fast_addr_t<STATE_ACCESS> replace_tlb_entry(const STATE_AC
     uint64_t pma_index, i_state_access_fast_addr_t<STATE_ACCESS> &vf_offset) {
     [[maybe_unused]] auto note = a.make_scoped_note("replace_tlb_entry");
     const auto slot_index = tlb_slot_index(vaddr);
-    flush_tlb_slot<SET>(a, slot_index);
     const auto vaddr_page = tlb_addr_page(vaddr);
     const auto faddr = a.get_faddr(paddr, pma_index);
     vf_offset = faddr - vaddr;
@@ -5771,11 +5775,30 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
     uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
     i_state_access_fast_addr_t<STATE_ACCESS> fetch_vf_offset{};
 
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+    const bool poll_external_periodically = [&]() {
+        if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+            return a.should_periodically_poll_external_interrupts();
+        }
+        return false;
+    }();
+#endif
+
     // The outer loop continues until there is an interruption that should be handled
     // externally, or mcycle reaches mcycle_end
     while (mcycle < mcycle_end) {
         DUMP_STATS_INCR(a, "outer_loop");
 
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+        // mtime is derived directly from mcycle, so only the programmed timer compare
+        // and host events that were pending before this synchronous run need deadlines.
+        set_rtc_interrupt(a, mcycle);
+        if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+            if (poll_external_periodically && rtc_is_tick(mcycle)) {
+                a.poll_external_interrupts(mcycle, mcycle);
+            }
+        }
+#else
         if (rtc_is_tick(mcycle)) {
             // Set interrupt flag for RTC
             set_rtc_interrupt(a, mcycle);
@@ -5788,6 +5811,7 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
                 a.poll_external_interrupts(mcycle, mcycle);
             }
         }
+#endif
 
         // Raise the highest priority pending interrupt, if any
         pc = raise_interrupt_if_any(a, pc, fetch_vaddr_page);
@@ -5797,8 +5821,21 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
         assert_no_brk(a);
 #endif
 
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+        uint64_t mcycle_tick_end = mcycle_end;
+        const uint64_t mtimecmp = a.read_clint_mtimecmp();
+        if (mtimecmp != 0 && rtc_cycle_to_time(mcycle) < mtimecmp && mtimecmp <= UINT64_MAX / RTC_FREQ_DIV) {
+            mcycle_tick_end = std::min(mcycle_tick_end, rtc_time_to_cycle(mtimecmp));
+        }
+        if (poll_external_periodically) {
+            const uint64_t next_poll =
+                mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
+            mcycle_tick_end = std::min(mcycle_tick_end, next_poll);
+        }
+#else
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
         const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
+#endif
 
         // The inner loop continues until there is an interrupt condition
         // or mcycle reaches mcycle_tick_end

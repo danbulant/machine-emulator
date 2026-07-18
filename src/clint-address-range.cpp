@@ -113,7 +113,12 @@ execute_status clint_address_range::do_write_device(i_device_state_access *a, ui
             if (log2_size == 3) {
                 a->write_clint_mtimecmp(val);
                 a->reset_mip(MIP_MTIP_MASK);
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+                // The interpreter caches the next timer deadline for its current inner span.
+                return execute_status::success_and_serve_interrupts;
+#else
                 return execute_status::success;
+#endif
             }
             // partial mtimecmp is not supported
             return execute_status::failure;

@@ -54,6 +54,11 @@ public:
         return derived().do_poll_external_interrupts(mcycle, mcycle_max);
     }
 
+    /// \brief Returns whether the interpreter should poll external devices periodically under load.
+    bool should_periodically_poll_external_interrupts() const {
+        return derived().do_should_periodically_poll_external_interrupts();
+    }
+
     /// \brief Returns true if soft yield HINT instruction is enabled at runtime
     bool get_soft_yield() const {
         return derived().do_get_soft_yield();

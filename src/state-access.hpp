@@ -524,6 +524,10 @@ private:
         return m_m.poll_external_interrupts(mcycle, mcycle_max);
     }
 
+    bool do_should_periodically_poll_external_interrupts() const {
+        return m_m.should_periodically_poll_external_interrupts();
+    }
+
     bool do_get_soft_yield() const {
         return m_m.get_soft_yield();
     }

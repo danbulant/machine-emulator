@@ -780,6 +780,17 @@ public:
         return m_c.processor.registers.iunrep != 0;
     }
 
+    /// \brief Returns whether external devices need periodic polling while the guest is running.
+    bool should_periodically_poll_external_interrupts() const {
+#ifdef EVENT_DRIVEN_INTERPRETER_DEADLINES
+        // Browser events cannot arrive during a synchronous WASM run. Buffered console input
+        // is the only host event that may already be pending when the run starts.
+        return m_console.is_input_ready();
+#else
+        return true;
+#endif
+    }
+
     /// \brief Returns whether runtime soft yields are enabled
     bool get_soft_yield() const {
         return m_r.soft_yield;
